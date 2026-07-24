@@ -1,0 +1,21 @@
+# Real sample IDs from the 412-sample compatibility subset.
+O-DSMX
+O-WMMX
+O-ZNMX
+W-CP-1
+W-CP-2
+W-CP-3
+W-CP-4
+W-CP-5
+W-CP-6
+W-CX-2
+W-CX-3
+W-CX-4
+W-CX-5
+W-CX-7
+W-CX-9
+W-DA-1
+W-DA-2
+W-DA-4
+W-DA-6
+W-DA-7

@@ -1,0 +1,13 @@
+# Positions intentionally removed after applying positions.keep.txt.
+chr1	5590
+chr1	5781
+chr1	6099
+chr1	6143
+chr2	13283
+chr2	13485
+chr2	13627
+chr2	13682
+chr3	9359
+chr3	12259
+chr3	14148
+chr3	14607

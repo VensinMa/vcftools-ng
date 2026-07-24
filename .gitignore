@@ -6,8 +6,42 @@ CMakeFiles/
 cmake_install.cmake
 Makefile
 
-# Large data files (not suitable for GitHub)
-data/
-tests/fixtures/
-tests/golden/
+# Large data/fixture files (generate locally, see data/README.md)
+data/*.bcf
+data/*.bcf.csi
+data/*.vcf
+data/*.vcf.gz
+data/*.vcf.gz.tbi
+tests/fixtures/*.bcf
+tests/fixtures/*.bcf.csi
+tests/fixtures/*.vcf.gz
+tests/fixtures/*.vcf.gz.tbi
 tests/output/
+
+# Large golden reference files (>100K lines, keep SHA256SUMS for verification)
+tests/golden/subset-freq.frq
+tests/golden/subset-counts.frq.count
+tests/golden/subset-missing-site.lmiss
+tests/golden/subset-site-depth.ldepth
+tests/golden/subset-site-mean-depth.ldepth.mean
+tests/golden/subset-filtered-freq.frq
+tests/golden/subset-filtered-counts.frq.count
+tests/golden/subset-filtered-missing-site.lmiss
+tests/golden/subset-filtered-site-depth.ldepth
+tests/golden/subset-filtered-site-mean-depth.ldepth.mean
+tests/golden/subset-samples-freq.frq
+tests/golden/subset-samples-counts.frq.count
+tests/golden/subset-samples-missing-site.lmiss
+tests/golden/subset-samples-site-depth.ldepth
+tests/golden/subset-samples-site-mean-depth.ldepth.mean
+tests/golden/subset-bed-exclude-counts.frq.count
+tests/golden/subset-bed-include-counts.frq.count
+tests/golden/subset-bed-thin-counts.frq.count
+tests/golden/subset-non-ref-counts.frq.count
+tests/golden/subset-mac-hwe-recode.recode.vcf
+tests/golden/subset-mac-hwe-recode.counts.frq.count
+tests/golden/flags-ft-all.recode.vcf
+tests/golden/flags-ft-all.frq.count
+tests/golden/flags-ft-all.lmiss
+tests/golden/flags-site-remove-all.frq.count
+tests/golden/*.recode.vcf
