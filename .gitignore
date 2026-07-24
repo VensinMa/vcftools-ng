@@ -1,0 +1,13 @@
+build/
+*.o
+*.o.d
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Large data files (not suitable for GitHub)
+data/
+tests/fixtures/
+tests/golden/
+tests/output/

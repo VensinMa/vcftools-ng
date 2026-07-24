@@ -1,0 +1,23 @@
+	Command being timed: "bcftools view --threads 28 -Ob -o /home/vensin/workspace/vcftools-ng/data/osmanthus412.snps.bcf.tmp /home/vensin/workspace/vcftools-ng/data/osmanthus412.snps.vcf.gz"
+	User time (seconds): 2018.78
+	System time (seconds): 51.04
+	Percent of CPU this job got: 731%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 4:42.96
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 31508
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 32277506
+	Voluntary context switches: 7016364
+	Involuntary context switches: 63246
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 43113904
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

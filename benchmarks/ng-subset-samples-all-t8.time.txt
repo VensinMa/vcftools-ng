@@ -1,0 +1,5 @@
+wall_seconds=4.08
+user_seconds=18.75
+system_seconds=1.27
+cpu=490%
+max_rss_kb=65176

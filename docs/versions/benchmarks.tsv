@@ -1,0 +1,15 @@
+version	workload	fixture	original_seconds	ng8_seconds	ng16_seconds	speedup8	speedup16	exact	retained_records	evidence
+0.1.0	five_statistics	main_2.3m	352.61	7.55	6.56	46.70	53.75	PASS	2300000	benchmarks/README.md
+0.1.0	five_statistics_bgzf	main_2.3m	352.61	56.29	56.23	6.26	6.27	PASS	2300000	benchmarks/README.md
+0.2.0	filtered_recode_info_all	main_2.3m	156.14	5.42	4.58	28.81	34.09	PASS	129855	benchmarks/README.md
+0.3.0	position_lists	main_2.3m	39.80	3.39	NA	11.74	NA	PASS	16	benchmarks/README.md
+0.3.0	indexed_chr7_range	main_2.3m	48.88	0.24	0.19	203.67	257.26	PASS	29816	benchmarks/README.md
+0.4.0	sample_selection_six_outputs	main_2.3m	623.49	4.08	3.73	152.82	167.16	PASS	63776	benchmarks/README.md
+0.5.0	mac_hwe_recode	main_2.3m	104.85	4.01	3.64	26.15	28.80	PASS	57595	benchmarks/README.md
+0.6.0	bed_include_counts	main_2.3m	40.95	3.50	3.39	11.70	12.08	PASS	79437	benchmarks/README.md
+0.6.0	bed_exclude_counts	main_2.3m	66.29	NA	4.13	NA	16.05	PASS	2220563	benchmarks/README.md
+0.7.0	bed_thin_counts	main_2.3m	39.94	3.49	3.36	11.44	11.89	PASS	433	benchmarks/README.md
+0.8.0	non_ref_counts	main_2.3m	41.02	3.47	3.36	11.82	12.21	PASS	22168	benchmarks/README.md
+0.9.0	sample_selection_six_outputs	main_2.3m	623.49	3.11	3.13	200.48	199.20	PASS	63776	benchmarks/results/subset-samples-all-t*.time.txt
+0.9.0	filtered_recode_info_all	main_2.3m	156.14	3.37	3.37	46.33	46.33	PASS	129855	benchmarks/results/subset-filtered-recode-info-all-t*.time.txt
+0.9.0	flag_semantics	flags_23k	NA	NA	NA	NA	NA	PASS	various	tests/golden/flags-*

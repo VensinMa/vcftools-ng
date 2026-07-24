@@ -1,0 +1,6 @@
+header_lines=50
+samples=412
+total_lines=11230442
+records=11230392
+first=chr1	5330	chr1_5330_T_A	T	A
+last=chr23	22351121	chr23_22351121_C_T	C	T

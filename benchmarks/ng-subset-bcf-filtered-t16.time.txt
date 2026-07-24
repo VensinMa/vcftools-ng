@@ -1,0 +1,5 @@
+wall=4.68
+user=27.56
+sys=1.37
+cpu=617%
+maxrss_kb=65320

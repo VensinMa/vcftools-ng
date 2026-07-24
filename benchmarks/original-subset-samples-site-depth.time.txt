@@ -1,0 +1,23 @@
+	Command being timed: "/home/vensin/anaconda3/envs/vcftools/bin/vcftools --gzvcf tests/fixtures/osmanthus412.23chr_100k.vcf.gz --keep tests/fixtures/samples.keep.txt --indv W-DA-8 --remove tests/fixtures/samples.remove.txt --remove-indv W-CP-5 --min-alleles 2 --max-alleles 2 --remove-indels --minQ 40 --minGQ 20 --minDP 5 --maxDP 30 --min-meanDP 10 --max-missing 0.9 --maf 0.1 --site-depth --out tests/golden/subset-samples-site-depth"
+	User time (seconds): 103.17
+	System time (seconds): 0.26
+	Percent of CPU this job got: 99%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:43.46
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 5440
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 548
+	Voluntary context switches: 5
+	Involuntary context switches: 731
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 2840
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0
