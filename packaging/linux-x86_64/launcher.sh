@@ -7,4 +7,3 @@ LD_LIBRARY_PATH="${package_root}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 export PATH LD_LIBRARY_PATH
 
 exec "${package_root}/libexec/vcftools-ng.bin" "$@"
-

@@ -19,4 +19,3 @@ docker run --rm \
     -v "${output_directory}:/output" \
     "${container_image}" \
     /source/packaging/linux-x86_64/build-in-container.sh
-
