@@ -1,0 +1,11 @@
+vcftools-ng 0.11.2
+Input: /home/vensin/workspace/vcftools-ng/data/osmanthus412.subset.vcf
+Input backend: plain-ranges (plain VCF aligned byte ranges)
+Samples: 412
+Threads: 8 (user specified)
+Stage concurrency: input 6, HTSlib I/O 0, compute 2
+Planned input shards: 563
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 2300000 out of 2300000 sites

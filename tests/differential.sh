@@ -27,6 +27,24 @@ cmp "$golden/subset-missing-site.lmiss" "$output/all.lmiss"
 cmp "$golden/subset-site-depth.ldepth" "$output/all.ldepth"
 cmp "$golden/subset-site-mean-depth.ldepth.mean" "$output/all.ldepth.mean"
 
+"$ng_binary" \
+    --bcf "$fixture" \
+    --threads 8 \
+    --depth \
+    --missing-indv \
+    --het \
+    --hardy \
+    --site-quality \
+    --out "$output/v010-statistics"
+
+cmp "$golden/v010-depth.idepth" "$output/v010-statistics.idepth"
+cmp "$golden/v010-missing-indv.imiss" "$output/v010-statistics.imiss"
+cmp "$golden/v010-het.het" "$output/v010-statistics.het"
+cmp "$golden/v010-hardy.hwe" "$output/v010-statistics.hwe"
+cmp \
+    "$golden/v010-site-quality.lqual" \
+    "$output/v010-statistics.lqual"
+
 filters=(
     --min-alleles 2
     --max-alleles 2
@@ -304,6 +322,237 @@ cmp \
     "$golden/flags-ft-specific.recode.vcf" \
     "$output/flags-ft-specific.recode.vcf"
 
+"$ng_binary" \
+    --bcf "$flag_fixture" \
+    --threads 16 \
+    "${flag_sample_filters[@]}" \
+    --minGQ 10 \
+    --minDP 3 \
+    --maxDP 60 \
+    --remove-filtered-geno-all \
+    --thin 100 \
+    --depth \
+    --missing-indv \
+    --het \
+    --hardy \
+    --site-quality \
+    --out "$output/flags-v010-filtered"
+
+cmp \
+    "$golden/flags-v010-filtered.idepth" \
+    "$output/flags-v010-filtered.idepth"
+cmp \
+    "$golden/flags-v010-filtered.imiss" \
+    "$output/flags-v010-filtered.imiss"
+cmp \
+    "$golden/flags-v010-filtered.het" \
+    "$output/flags-v010-filtered.het"
+cmp \
+    "$golden/flags-v010-filtered.hwe" \
+    "$output/flags-v010-filtered.hwe"
+cmp \
+    "$golden/flags-v010-filtered.lqual" \
+    "$output/flags-v010-filtered.lqual"
+
+"$ng_binary" \
+    --bcf "$flag_fixture" \
+    --threads 8 \
+    --site-pi \
+    --window-pi 100000 \
+    --window-pi-step 50000 \
+    --TajimaD 100000 \
+    --out "$output/flags-v010-pi"
+
+cmp \
+    "$golden/flags-v010-site-pi.sites.pi" \
+    "$output/flags-v010-pi.sites.pi"
+cmp \
+    "$golden/flags-v010-window-pi.windowed.pi" \
+    "$output/flags-v010-pi.windowed.pi"
+cmp \
+    "$golden/flags-v010-tajima.Tajima.D" \
+    "$output/flags-v010-pi.Tajima.D"
+
+fst_populations=(
+    --weir-fst-pop "$project_root/tests/fixtures/population-a.txt"
+    --weir-fst-pop "$project_root/tests/fixtures/population-b.txt"
+)
+
+"$ng_binary" \
+    --bcf "$flag_fixture" \
+    --threads 16 \
+    "${fst_populations[@]}" \
+    --out "$output/flags-v010-site-fst"
+
+cmp \
+    "$golden/flags-v010-site-fst.weir.fst" \
+    "$output/flags-v010-site-fst.weir.fst"
+
+"$ng_binary" \
+    --bcf "$flag_fixture" \
+    --threads 8 \
+    "${fst_populations[@]}" \
+    --fst-window-size 100000 \
+    --fst-window-step 50000 \
+    --out "$output/flags-v010-window-fst"
+
+cmp \
+    "$golden/flags-v010-window-fst.windowed.weir.fst" \
+    "$output/flags-v010-window-fst.windowed.weir.fst"
+
+"$ng_binary" \
+    --bcf "$fixture" \
+    --threads 8 \
+    --site-pi \
+    --window-pi 100000 \
+    --window-pi-step 50000 \
+    --TajimaD 100000 \
+    --out "$output/v010-pi"
+
+cmp "$golden/v010-site-pi.sites.pi" "$output/v010-pi.sites.pi"
+cmp \
+    "$golden/v010-window-pi.windowed.pi" \
+    "$output/v010-pi.windowed.pi"
+cmp "$golden/v010-tajima.Tajima.D" "$output/v010-pi.Tajima.D"
+
+"$ng_binary" \
+    --bcf "$fixture" \
+    --threads 8 \
+    "${fst_populations[@]}" \
+    --out "$output/v010-site-fst"
+
+cmp \
+    "$golden/v010-site-fst.weir.fst" \
+    "$output/v010-site-fst.weir.fst"
+
+"$ng_binary" \
+    --bcf "$fixture" \
+    --threads 16 \
+    "${fst_populations[@]}" \
+    --fst-window-size 100000 \
+    --fst-window-step 50000 \
+    --out "$output/v010-window-fst"
+
+cmp \
+    "$golden/v010-window-fst.windowed.weir.fst" \
+    "$output/v010-window-fst.windowed.weir.fst"
+
+"$ng_binary" \
+    --bcf "$fixture" \
+    --threads 8 \
+    --thin 50000 \
+    --geno-r2 \
+    --ld-window 20 \
+    --ld-window-bp 500000 \
+    --min-r2 0.01 \
+    --out "$output/v010-geno-r2"
+
+cmp \
+    "$golden/v010-geno-r2.geno.ld" \
+    "$output/v010-geno-r2.geno.ld"
+
+"$ng_binary" \
+    --bcf "$fixture" \
+    --threads 16 \
+    --keep "$project_root/tests/fixtures/population-a.txt" \
+    --max-missing 1 \
+    --thin 100000 \
+    --pca \
+    --out "$output/v010-pca"
+
+cmp "$golden/v010-pca.pca" "$output/v010-pca.pca"
+
+"$ng_binary" \
+    --bcf "$fixture" \
+    --threads 8 \
+    --keep "$project_root/tests/fixtures/population-a.txt" \
+    --max-missing 1 \
+    --thin 100000 \
+    --pca-no-norm \
+    --out "$output/v010-pca-no-norm"
+
+cmp \
+    "$golden/v010-pca-no-norm.pca" \
+    "$output/v010-pca-no-norm.pca"
+
+for threads in 8 16; do
+    "$ng_binary" \
+        --bcf "$fixture" \
+        --threads "$threads" \
+        --chr chr1 \
+        --to-bp 1000000 \
+        --recode-bcf \
+        --recode-INFO-all \
+        --out "$output/v010-bcf-t$threads"
+
+    cmp \
+        "$golden/v010-chr1-1m.recode.bcf" \
+        "$output/v010-bcf-t$threads.recode.bcf"
+    rm -f -- "$output/v010-bcf-t$threads.recode.bcf"
+done
+
+for threads in 8 16; do
+    "$ng_binary" \
+        --bcf "$flag_fixture" \
+        --threads "$threads" \
+        --keep-filtered q10 \
+        --keep-filtered PASS \
+        --remove-filtered Cluster \
+        --keep-INFO Hotspot \
+        --remove-INFO Artifact \
+        --recode-vcf-gz \
+        --recode-INFO-all \
+        --out "$output/v010-vcf-gz-t$threads"
+
+    gzip -dc \
+        "$output/v010-vcf-gz-t$threads.recode.vcf.gz" \
+        > "$output/v010-vcf-gz-t$threads.recode.vcf"
+    cmp \
+        "$golden/flags-site-info.recode.vcf" \
+        "$output/v010-vcf-gz-t$threads.recode.vcf"
+    rm -f -- \
+        "$output/v010-vcf-gz-t$threads.recode.vcf.gz" \
+        "$output/v010-vcf-gz-t$threads.recode.vcf"
+done
+
+for mode in \
+    diff-site \
+    diff-indv \
+    diff-site-discordance \
+    diff-indv-discordance
+do
+    "$ng_binary" \
+        --bcf "$flag_fixture" \
+        --diff-bcf "$flag_fixture" \
+        --"$mode" \
+        --threads 8 \
+        --out "$output/flags-v010-$mode"
+done
+
+cmp \
+    "$golden/flags-v010-diff.sites_in_files" \
+    "$output/flags-v010-diff-site.diff.sites_in_files"
+cmp \
+    "$golden/flags-v010-diff.indv_in_files" \
+    "$output/flags-v010-diff-indv.diff.indv_in_files"
+cmp \
+    "$golden/flags-v010-diff.sites" \
+    "$output/flags-v010-diff-site-discordance.diff.sites"
+cmp \
+    "$golden/flags-v010-diff.indv" \
+    "$output/flags-v010-diff-indv-discordance.diff.indv"
+
+"$ng_binary" \
+    --bcf "$fixture" \
+    --diff-bcf "$fixture" \
+    --diff-site-discordance \
+    --threads 16 \
+    --out "$output/v010-diff-site-discordance"
+
+cmp \
+    "$golden/v010-diff-site-discordance.diff.sites" \
+    "$output/v010-diff-site-discordance.diff.sites"
+
 if "$ng_binary" \
     --bcf "$flag_fixture" \
     --threads 8 \
@@ -314,4 +563,4 @@ if "$ng_binary" \
     exit 1
 fi
 
-echo "All 2,300,000-record outputs and 23,000-record flag semantics are byte-identical to VCFtools 0.1.17."
+echo "All v0.11 cumulative 2,300,000-record outputs, exact BCF conversions, and 23,000-record flag/diff semantics are byte-identical to VCFtools 0.1.17."

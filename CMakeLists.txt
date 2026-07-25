@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(vcftools_ng VERSION 0.1.0 LANGUAGES CXX)
+project(vcftools_ng VERSION 0.11.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -24,14 +24,24 @@ find_library(
 )
 
 find_package(Threads REQUIRED)
+find_package(LAPACK REQUIRED)
+find_package(ZLIB REQUIRED)
 
 add_executable(
   vcftools-ng
+  src/input_source.cpp
   src/main.cpp
 )
 
 target_include_directories(vcftools-ng PRIVATE "${HTSLIB_INCLUDE_DIR}")
-target_link_libraries(vcftools-ng PRIVATE "${HTSLIB_LIBRARY}" Threads::Threads)
+target_link_libraries(
+  vcftools-ng
+  PRIVATE
+    "${HTSLIB_LIBRARY}"
+    Threads::Threads
+    ${LAPACK_LIBRARIES}
+    ZLIB::ZLIB
+)
 target_compile_options(vcftools-ng PRIVATE -Wall -Wextra -Wpedantic)
 
 get_filename_component(HTSLIB_LIBRARY_DIR "${HTSLIB_LIBRARY}" DIRECTORY)
@@ -44,6 +54,13 @@ set_target_properties(
 
 include(CTest)
 if(BUILD_TESTING)
+  add_test(
+    NAME input_backend_differential
+    COMMAND
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/input_backends.sh"
+      "$<TARGET_FILE:vcftools-ng>"
+      "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
   add_test(
     NAME differential_compatibility
     COMMAND

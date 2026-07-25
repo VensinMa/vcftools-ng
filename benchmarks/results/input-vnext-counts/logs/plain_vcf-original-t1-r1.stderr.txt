@@ -1,0 +1,14 @@
+
+VCFtools - 0.1.17
+(C) Adam Auton and Anthony Marcketta 2009
+
+Parameters as interpreted:
+	--vcf /home/vensin/workspace/vcftools-ng/data/osmanthus412.subset.vcf
+	--counts
+	--out /run/user/1000/codex-desktop/tmp/vcftools-ng-input-matrix.Uw2TGo/plain_vcf-original
+
+Warning: Expected at least 2 parts in FORMAT entry: ID=RNC,Number=2,Type=Character,Description="Reason for No Call in GT: . = n/a, M = Missing data, P = Partial data, I = gVCF input site is non-called, D = insufficient Depth of coverage, - = unrepresentable overlapping deletion, L = Lost/unrepresentable allele (other than deletion), U = multiple Unphased variants present, O = multiple Overlapping variants present, 1 = site is Monoallelic, no assertion about presence of REF or ALT allele">
+After filtering, kept 412 out of 412 Individuals
+Outputting Frequency Statistics...
+After filtering, kept 2300000 out of a possible 2300000 Sites
+Run Time = 36.00 seconds

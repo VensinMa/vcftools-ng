@@ -1,0 +1,3 @@
+case	threads	original_wall_s	ng_wall_s	speedup	exact	index_bytes	output_sha256
+bgzf_auto_csi_first_run	8	68.22	27.84	2.4504	PASS	99846	c2d9a316a7630f092eeec8ab89043f0a5dcc2b0bd579da95b2776bae566731cd
+bgzf_auto_csi_first_run	16	68.22	22.69	3.0066	PASS	99846	c2d9a316a7630f092eeec8ab89043f0a5dcc2b0bd579da95b2776bae566731cd

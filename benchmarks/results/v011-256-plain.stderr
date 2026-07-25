@@ -1,0 +1,11 @@
+vcftools-ng 0.11.0
+Input: /tmp/vcftools-ng-256-release.A0NmYS/input.vcf
+Input backend: plain-ranges (plain VCF aligned byte ranges)
+Samples: 412
+Threads: 256 (user specified)
+Stage concurrency: input 192, HTSlib I/O 0, compute 64
+Planned input shards: 77
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 23000 out of 23000 sites

@@ -19,6 +19,7 @@ Simplified dataset prefix: `osmanthus412.snps`
 | `osmanthus412.snps.bcf` | BCF | 21 GB | Generated locally |
 | `osmanthus412.snps.bcf.csi` | CSI index | 471 KB | Generated locally |
 | `osmanthus412.snps.vcf` | Uncompressed VCF | 115 GB | Generated locally |
+| `osmanthus412.subset.vcf` | Uncompressed 2.3M-record VCF | 23.4 GiB | Direct BGZF decompression |
 
 ## Conversion
 
@@ -44,6 +45,7 @@ Measured conversion times on the development machine:
 - BGZF VCF to BCF: 4 minutes 42.96 seconds
 - BCF to uncompressed VCF: 3 minutes 27.99 seconds
 - Raw line scan of uncompressed VCF: 41.53 seconds
+- Real-subset BGZF decompression to plain VCF: 14.08 seconds
 
 ## gVCF
 
@@ -58,4 +60,3 @@ gVCF.
 ```text
 /home/vensin/workspace/Sweet_Osmanthus/05.variant_filter/02.vcftools_filter_snp_indel/412samples.SNP.biallelic.minGQ10.minQ30.meanDP6.maxmiss0.8.maf0.05.vcf.gz
 ```
-

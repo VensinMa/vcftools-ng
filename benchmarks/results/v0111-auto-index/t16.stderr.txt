@@ -1,0 +1,13 @@
+Auto-index: no CSI/TBI sidecar found; running /home/vensin/software/bcftools/bcftools index --csi --threads 16 for /run/user/1000/codex-desktop/tmp/vcftools-ng-auto-index.RfRWrx/input-t16.vcf.gz
+Auto-index: created /run/user/1000/codex-desktop/tmp/vcftools-ng-auto-index.RfRWrx/input-t16.vcf.gz.csi
+vcftools-ng 0.11.1
+Input: /run/user/1000/codex-desktop/tmp/vcftools-ng-auto-index.RfRWrx/input-t16.vcf.gz
+Input backend: indexed-regions (BGZF VCF TBI/CSI ordered regions)
+Samples: 412
+Threads: 16 (user specified)
+Stage concurrency: input 12, HTSlib I/O 0, compute 4
+Planned input shards: 3381
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 2300000 out of 2300000 sites
