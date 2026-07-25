@@ -14,6 +14,27 @@ workers and the ordered committer overlap work on up to three batches. Each
 worker reuses its decode scratch space; recoded records are committed in
 exact input order.
 
+## Install (recommended)
+
+The portable Linux x86_64 archive is ready to run after extraction. It
+includes vcftools-ng, bcftools for automatic CSI construction, HTSlib, and
+the required non-glibc runtime libraries.
+
+```bash
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.11.2/vcftools-ng-v0.11.2-linux-x86_64.tar.gz
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.11.2/vcftools-ng-v0.11.2-linux-x86_64.tar.gz.sha256
+sha256sum -c vcftools-ng-v0.11.2-linux-x86_64.tar.gz.sha256
+tar -xzf vcftools-ng-v0.11.2-linux-x86_64.tar.gz
+./vcftools-ng-v0.11.2-linux-x86_64/bin/vcftools-ng --version
+```
+
+The archive requires Linux x86_64 with glibc 2.17 or newer. It is built on a
+CentOS 7-compatible manylinux2014 baseline and is tested in clean CentOS 7
+and Ubuntu 20.04 containers. It therefore also covers newer CentOS Stream,
+Rocky Linux, AlmaLinux, Ubuntu, and Debian releases on x86_64. No CMake,
+compiler, Conda environment, system HTSlib, or system bcftools is required.
+Keep the extracted `bin`, `lib`, and `libexec` directories together.
+
 ## Version records
 
 Every development version has a local record of supported parameters,
@@ -124,12 +145,16 @@ sample subsetting or genotype masking; those cases lack a valid VCFtools
 decompressed stream with original `--recode`. Current diff filtering is
 limited to chromosome/position/BED and sample selection.
 
-## Build
+## Build from source
+
+Source builds are intended for developers or platforms not covered by the
+portable archive. They require CMake, a C++20 compiler, HTSlib, LAPACK, zlib,
+and POSIX threads.
 
 ```bash
 cmake -S . -B build \
   -DCMAKE_BUILD_TYPE=Release \
-  -DHTSLIB_ROOT=/home/vensin/anaconda3/pkgs/htslib-1.23.1-h633afcb_0
+  -DHTSLIB_ROOT=/path/to/htslib
 cmake --build build -j
 ```
 
