@@ -1,0 +1,6 @@
+case	kind	indexed	path	bytes	expected_records
+bgzf_tbi	gzvcf	yes	/home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.vcf.gz	3956690872	2300000
+bgzf_no_index	gzvcf	no	/run/user/1000/codex-desktop/tmp/vcftools-ng-input-matrix.nsAh0I/no-index.vcf.gz	3956690872	2300000
+plain_vcf	vcf	no	/home/vensin/workspace/vcftools-ng/data/osmanthus412.subset.vcf	25173128179	2300000
+bcf_csi	bcf	yes	/home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf	4514051703	2300000
+bcf_no_index	bcf	no	/run/user/1000/codex-desktop/tmp/vcftools-ng-input-matrix.nsAh0I/no-index.bcf	4514051703	2300000

@@ -13,6 +13,7 @@ RESULT_ROOT=${1:-"$source_root/benchmarks/results/final-full-v0112"}
 THREAD_LIST=${THREAD_LIST:-"1 2 4 8 16 32"}
 REPEATS=${REPEATS:-5}
 EXPECTED_RECORDS=${EXPECTED_RECORDS:-11230392}
+STRICT_FINAL_MATRIX=${STRICT_FINAL_MATRIX:-1}
 
 case_names=(
     bgzf_tbi
@@ -44,12 +45,17 @@ if [[ ! -f "$FULL_BCF.csi" ]]; then
     printf 'Indexed BCF case requires a CSI sidecar\n' >&2
     exit 2
 fi
-if [[ "$REPEATS" != 5 ]]; then
+if [[ "$STRICT_FINAL_MATRIX" == 1 && "$REPEATS" != 5 ]]; then
     printf 'Final benchmark requires REPEATS=5, got %s\n' "$REPEATS" >&2
     exit 2
 fi
-if [[ "$THREAD_LIST" != "1 2 4 8 16 32" ]]; then
+if [[ "$STRICT_FINAL_MATRIX" == 1 &&
+      "$THREAD_LIST" != "1 2 4 8 16 32" ]]; then
     printf 'Final benchmark requires THREAD_LIST=\"1 2 4 8 16 32\"\n' >&2
+    exit 2
+fi
+if [[ ! "$REPEATS" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'REPEATS must be a positive integer\n' >&2
     exit 2
 fi
 
@@ -280,13 +286,17 @@ for case_name in "${case_names[@]}"; do
         printf 'GATE PASS %s\n' "$case_name"
     fi
 
-    for repeat in 2 3 4 5; do
-        run_one "$case_name" original 1 "$repeat"
-    done
-    for threads in $THREAD_LIST; do
-        for repeat in 2 3 4 5; do
-            run_one "$case_name" vcftools-ng "$threads" "$repeat"
+    if ((REPEATS > 1)); then
+        for repeat in $(seq 2 "$REPEATS"); do
+            run_one "$case_name" original 1 "$repeat"
         done
+    fi
+    for threads in $THREAD_LIST; do
+        if ((REPEATS > 1)); then
+            for repeat in $(seq 2 "$REPEATS"); do
+                run_one "$case_name" vcftools-ng "$threads" "$repeat"
+            done
+        fi
     done
 done
 

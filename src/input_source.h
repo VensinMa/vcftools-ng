@@ -64,6 +64,7 @@ public:
 
 AvailableThreads detect_available_threads();
 Backend parse_backend(const std::string& value);
+std::string prepare_variant_index(const SourceOptions& options);
 std::unique_ptr<OrderedShardSource> make_ordered_source(
     const SourceOptions& options);
 

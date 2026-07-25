@@ -2,17 +2,20 @@
 
 Experimental high-performance, output-compatible successor to VCFtools 0.1.17.
 
-**Latest release:** [v0.11.2](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.11.2)
-· 245/245 full-dataset benchmark runs byte-identical to VCFtools 0.1.17
+**Latest release:** [v0.11.3](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.11.3)
+· all 42 adaptive-counts subset runs faster than VCFtools 0.1.17
 
 The current implementation uses adaptive ordered input shards and a bounded,
 order-preserving pipeline. Plain VCF uses aligned byte ranges; BGZF VCF plus
 TBI/CSI and BCF plus CSI use independent indexed regions; inputs without a
 sidecar are automatically indexed with bcftools when possible, and inputs
 without a usable direct backend fall back to an HTSlib stream. Persistent compute
-workers and the ordered committer overlap work on up to three batches. Each
-worker reuses its decode scratch space; recoded records are committed in
-exact input order.
+workers and the ordered committer overlap work on up to three batches. For
+unfiltered `--counts`, an adaptive fused path avoids `bcf1_t` construction:
+Plain VCF workers parse aligned byte ranges directly, and indexed BGZF
+workers query ordered tabix regions and count GT alleles from the original
+text. Each worker reuses its scratch space and outputs are committed in exact
+input order.
 
 ## Install (recommended)
 
@@ -21,11 +24,11 @@ includes vcftools-ng, bcftools for automatic CSI construction, HTSlib, and
 the required non-glibc runtime libraries.
 
 ```bash
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.11.2/vcftools-ng-v0.11.2-linux-x86_64.tar.gz
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.11.2/vcftools-ng-v0.11.2-linux-x86_64.tar.gz.sha256
-sha256sum -c vcftools-ng-v0.11.2-linux-x86_64.tar.gz.sha256
-tar -xzf vcftools-ng-v0.11.2-linux-x86_64.tar.gz
-./vcftools-ng-v0.11.2-linux-x86_64/bin/vcftools-ng --version
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.11.3/vcftools-ng-v0.11.3-linux-x86_64.tar.gz
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.11.3/vcftools-ng-v0.11.3-linux-x86_64.tar.gz.sha256
+sha256sum -c vcftools-ng-v0.11.3-linux-x86_64.tar.gz.sha256
+tar -xzf vcftools-ng-v0.11.3-linux-x86_64.tar.gz
+./vcftools-ng-v0.11.3-linux-x86_64/bin/vcftools-ng --version
 ```
 
 The archive requires Linux x86_64 with glibc 2.17 or newer. It is built on a
@@ -55,7 +58,10 @@ from each of 23 chromosomes. Every supported output must pass `cmp` against
 the original program. The v0.11.2 final input-backend matrix additionally ran
 the complete 11,230,392-record dataset in seven input/index scenarios, with
 original plus 1/2/4/8/16/32-thread vcftools-ng runs repeated five times. All
-245 outputs were byte-identical.
+245 outputs were byte-identical. v0.11.3 then ran its unfiltered `--counts`
+fast path on the standard 2,300,000-record subset in the same seven scenarios
+at 1/2/4/8/16/32 threads. All 42 candidate outputs were byte-identical and
+every candidate was faster than its scenario's original run.
 
 ### Supported parameters
 
@@ -182,6 +188,23 @@ streaming behavior, `--input-backend stream` to force it, or
 and `--to-bp` selections are pushed into indexed shards and rechecked by the
 compatibility filter.
 
+For unfiltered `--counts`, v0.11.3 uses a lower-overhead adaptive fused
+backend. The 2.3-million-record validation on the 32-CPU host measured:
+
+| Input path | Original | 1 thread | 2 threads | 4 threads | 8 threads | 16 threads | 32 threads |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| BGZF VCF + TBI | 59.72 s | 18.59 s | 10.51 s | 8.41 s | 4.45 s | 2.89 s | 1.79 s |
+| BGZF VCF + automatic CSI | 60.02 s | 18.43 s | 10.42 s | 10.52 s | 15.85 s | 14.57 s | 13.45 s |
+| BGZF VCF, no automatic index | 60.18 s | 18.50 s | 10.46 s | 10.44 s | 10.40 s | 10.40 s | 10.42 s |
+| Plain VCF | 31.21 s | 12.69 s | 6.82 s | 4.10 s | 3.22 s | 2.56 s | 2.21 s |
+| BCF + CSI | 41.56 s | 12.64 s | 12.61 s | 7.16 s | 5.04 s | 3.22 s | 2.49 s |
+| BCF + automatic CSI | 41.52 s | 12.75 s | 12.74 s | 14.48 s | 8.80 s | 5.24 s | 4.04 s |
+| BCF, no automatic index | 41.46 s | 12.68 s | 12.58 s | 11.25 s | 5.78 s | 3.37 s | 3.36 s |
+
+Automatic-CSI timings include first-run index construction. With
+`--no-auto-index`, BGZF is deliberately limited by one ordered compressed
+stream; extra requested threads do not add overhead or change output.
+
 Plain VCF cannot use CSI/TBI because those formats store BGZF virtual
 offsets. It remains on the parallel aligned-byte-range adapter and never
 invokes automatic indexing. Existing `.csi` and `.tbi` files are loaded and
@@ -189,13 +212,14 @@ validated independently. A valid sidecar is always preserved; if only
 unusable or stale sidecars exist, automatic mode warns and falls back instead
 of overwriting user files.
 
-The input architecture, remaining ordered-BGZF work, 8/16-thread development
-gate, and final 32-256-thread scaling matrix are documented here:
+The input architecture, remaining ordered-BGZF work, and 1–32-thread
+development gate are documented here:
 
 - [Adaptive input backend design](docs/architecture/adaptive-input-backends.md)
 - [Input backend benchmark driver](benchmarks/run-input-backend-matrix.sh)
 - [Final full-dataset benchmark driver](benchmarks/run-final-full-matrix.sh)
 - [Final full-dataset summary](benchmarks/results/final-full-v0112/summary.tsv)
+- [v0.11.3 subset summary](benchmarks/results/adaptive-v0113-subset-final/summary.tsv)
 
 ## Verify
 

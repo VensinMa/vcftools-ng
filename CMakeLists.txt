@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(vcftools_ng VERSION 0.11.2 LANGUAGES CXX)
+project(vcftools_ng VERSION 0.11.3 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -29,6 +29,7 @@ find_package(ZLIB REQUIRED)
 
 add_executable(
   vcftools-ng
+  src/fast_counts.cpp
   src/input_source.cpp
   src/main.cpp
 )
@@ -65,6 +66,13 @@ if(BUILD_TESTING)
     NAME differential_compatibility
     COMMAND
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/differential.sh"
+      "$<TARGET_FILE:vcftools-ng>"
+      "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
+  add_test(
+    NAME adaptive_counts
+    COMMAND
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/adaptive_counts.sh"
       "$<TARGET_FILE:vcftools-ng>"
       "${CMAKE_CURRENT_SOURCE_DIR}"
   )

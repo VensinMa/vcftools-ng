@@ -1,0 +1,16 @@
+case	threads	repeat	original_wall_s	ng_wall_s	speedup	exact
+bgzf_tbi	1	1	61.04	18.96	3.2194	PASS
+bgzf_tbi	2	1	61.04	11.10	5.4991	PASS
+bgzf_tbi	4	1	61.04	27.81	2.1949	PASS
+bgzf_no_index	1	1	60.66	18.88	3.2129	PASS
+bgzf_no_index	2	1	60.66	10.83	5.6011	PASS
+bgzf_no_index	4	1	60.66	53.00	1.1445	PASS
+plain_vcf	1	1	31.67	19.35	1.6367	PASS
+plain_vcf	2	1	31.67	10.16	3.1171	PASS
+plain_vcf	4	1	31.67	21.03	1.5059	PASS
+bcf_csi	1	1	41.42	12.69	3.2640	PASS
+bcf_csi	2	1	41.42	12.69	3.2640	PASS
+bcf_csi	4	1	41.42	7.21	5.7448	PASS
+bcf_no_index	1	1	41.72	12.96	3.2191	PASS
+bcf_no_index	2	1	41.72	12.93	3.2266	PASS
+bcf_no_index	4	1	41.72	11.22	3.7184	PASS

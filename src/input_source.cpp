@@ -1523,6 +1523,59 @@ Backend parse_backend(const std::string& value) {
         " (use auto, stream, plain, or indexed)");
 }
 
+std::string prepare_variant_index(const SourceOptions& options) {
+    auto inspection = open_input(options.path);
+    const htsFormat* format_pointer =
+        hts_get_format(inspection.get());
+    if (format_pointer == nullptr) {
+        fail("Could not inspect input format: " + options.path);
+    }
+    const htsFormat format = *format_pointer;
+    HeaderPtr header =
+        read_header(inspection.get(), options.path);
+    inspection.reset();
+
+    const bool is_bgzf_variant =
+        (format.format == vcf || format.format == bcf) &&
+        format.compression == bgzf;
+    if (!is_bgzf_variant) {
+        return {};
+    }
+
+    SidecarInspection indexes = inspect_sidecars(
+        options.path, format.format == bcf, header.get());
+    for (const auto& diagnostic : indexes.invalid) {
+        std::cerr
+            << "Index warning: protected sidecar is unusable: "
+            << diagnostic << "\n";
+    }
+    if (!indexes.selected_path.empty()) {
+        return indexes.selected_path;
+    }
+    if (indexes.any_present) {
+        std::cerr
+            << "Auto-index warning: existing CSI/TBI sidecar is "
+               "unusable; refusing to overwrite it: "
+            << invalid_sidecar_summary(indexes) << "\n";
+        return {};
+    }
+    if (!options.auto_index ||
+        !std::filesystem::is_regular_file(options.path)) {
+        return {};
+    }
+
+    const IndexBuildResult build = build_csi_index(
+        options, format.format == bcf, header.get());
+    if (!build.success) {
+        std::cerr
+            << "Auto-index warning: automatic CSI construction "
+               "failed: "
+            << build.detail << "\n";
+        return {};
+    }
+    return build.index_path;
+}
+
 std::unique_ptr<OrderedShardSource> make_ordered_source(
     const SourceOptions& options) {
     SourceOptions prepared = options;
@@ -1543,6 +1596,12 @@ std::unique_ptr<OrderedShardSource> make_ordered_source(
     const bool is_bgzf_variant =
         (format.format == vcf || format.format == bcf) &&
         format.compression == bgzf;
+    const bool automatic_parallel_worthwhile =
+        options.parallel_safe && options.total_threads >= 3;
+    const bool index_backend_wanted =
+        options.requested_backend == Backend::indexed_regions ||
+        (options.requested_backend == Backend::automatic &&
+         automatic_parallel_worthwhile);
     std::string auto_index_failure;
     SidecarInspection indexes;
     if (is_bgzf_variant) {
@@ -1563,8 +1622,7 @@ std::unique_ptr<OrderedShardSource> make_ordered_source(
         } else if (
             prepared.index_path.empty() &&
             options.auto_index &&
-            options.requested_backend != Backend::stream &&
-            options.requested_backend != Backend::plain_ranges &&
+            index_backend_wanted &&
             std::filesystem::is_regular_file(options.path)) {
             const IndexBuildResult build =
                 build_csi_index(
@@ -1586,14 +1644,12 @@ std::unique_ptr<OrderedShardSource> make_ordered_source(
     }
     const bool is_indexable =
         is_bgzf_variant && !prepared.index_path.empty();
-    const bool parallel_allowed =
-        options.parallel_safe && options.total_threads > 1;
 
     Backend selected = options.requested_backend;
     if (selected == Backend::automatic) {
-        if (parallel_allowed && is_plain_vcf) {
+        if (automatic_parallel_worthwhile && is_plain_vcf) {
             selected = Backend::plain_ranges;
-        } else if (parallel_allowed && is_indexable) {
+        } else if (automatic_parallel_worthwhile && is_indexable) {
             selected = Backend::indexed_regions;
         } else {
             selected = Backend::stream;

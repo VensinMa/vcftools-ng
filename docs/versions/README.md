@@ -14,7 +14,9 @@ development version.
   FILTER/INFO/FT annotations.
 - Exactness: complete output files are compared with `cmp`; golden hashes are
   stored in `tests/golden/SHA256SUMS`.
-- The complete 11,230,392-record dataset has not yet been benchmarked.
+- v0.11.2 completed a five-repeat, seven-scenario benchmark on all
+  11,230,392 records. Later routine development returns to the 2.3-million
+  subset until the next final-stage full-data gate.
 
 ## Required record for every future version
 

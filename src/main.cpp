@@ -34,17 +34,19 @@
 
 #include <unistd.h>
 
+#include "fast_counts.h"
 #include "input_source.h"
 
 namespace {
 
-constexpr const char* kVersion = "0.11.2";
+constexpr const char* kVersion = "0.11.3";
 
 struct Options {
     std::string input;
     std::string output_prefix = "out";
     unsigned threads =
         vcftools_ng::input::detect_available_threads().count;
+    unsigned requested_threads = threads;
     bool threads_explicit = false;
     std::size_t batch_size = 2048;
     vcftools_ng::input::Backend input_backend =
@@ -134,6 +136,102 @@ struct Options {
     int min_non_ref_ac_any = -1;
     int max_non_ref_ac_any = std::numeric_limits<int>::max();
 };
+
+bool can_use_fused_counts(const Options& options) {
+    const bool counts_only =
+        options.output_counts &&
+        !options.output_freq &&
+        !options.output_missing_site &&
+        !options.output_site_depth &&
+        !options.output_site_mean_depth &&
+        !options.output_individual_depth &&
+        !options.output_individual_missingness &&
+        !options.output_heterozygosity &&
+        !options.output_hardy_weinberg &&
+        !options.output_site_quality &&
+        !options.output_site_pi &&
+        options.pi_window_size == 0 &&
+        options.pi_window_step == 0 &&
+        options.tajima_window_size == 0 &&
+        options.fst_population_files.empty() &&
+        options.fst_window_size == 0 &&
+        options.fst_window_step == 0 &&
+        !options.output_genotype_r2 &&
+        options.ld_snp_window_size ==
+            std::numeric_limits<int>::max() &&
+        options.ld_snp_window_min == -1 &&
+        options.ld_bp_window_size ==
+            std::numeric_limits<int>::max() &&
+        options.ld_bp_window_min == -1 &&
+        options.min_r2 == -1.0 &&
+        !options.output_pca &&
+        !options.output_recode &&
+        !options.output_recode_bcf &&
+        !options.output_recode_vcf_gz &&
+        !options.recode_info_all &&
+        options.diff_input.empty() &&
+        !options.output_diff_sites_in_files &&
+        !options.output_diff_individuals_in_files &&
+        !options.output_diff_site_discordance &&
+        !options.output_diff_individual_discordance;
+    const bool no_selection =
+        options.chromosomes_to_keep.empty() &&
+        options.chromosomes_to_exclude.empty() &&
+        options.start_position == -1 &&
+        options.end_position == std::numeric_limits<int>::max() &&
+        options.positions_file.empty() &&
+        options.exclude_positions_file.empty() &&
+        options.bed_file.empty() &&
+        options.site_filters_to_keep.empty() &&
+        options.site_filters_to_remove.empty() &&
+        !options.remove_all_filtered_sites &&
+        options.info_flags_to_keep.empty() &&
+        options.info_flags_to_remove.empty() &&
+        options.genotype_filters_to_remove.empty() &&
+        !options.remove_all_filtered_genotypes &&
+        options.samples_to_keep.empty() &&
+        options.samples_to_exclude.empty() &&
+        options.sample_keep_files.empty() &&
+        options.sample_exclude_files.empty();
+    const bool no_numeric_filters =
+        options.min_alleles == -1 &&
+        options.max_alleles == std::numeric_limits<int>::max() &&
+        !options.remove_indels &&
+        !options.keep_only_indels &&
+        options.min_qual == -1.0 &&
+        options.min_gq == -1.0 &&
+        options.min_dp == -1 &&
+        options.max_dp == std::numeric_limits<int>::max() &&
+        options.min_mean_dp == -1.0 &&
+        options.max_mean_dp == std::numeric_limits<double>::max() &&
+        options.min_call_rate == 0.0 &&
+        options.max_missing_count == std::numeric_limits<int>::max() &&
+        options.min_maf == -1.0 &&
+        options.max_maf == std::numeric_limits<double>::max() &&
+        options.min_mac == -1 &&
+        options.max_mac == std::numeric_limits<int>::max() &&
+        options.min_hwe == -1.0 &&
+        options.thin_distance == -1 &&
+        options.min_non_ref_af == -1.0 &&
+        options.max_non_ref_af == std::numeric_limits<double>::max() &&
+        options.min_non_ref_af_any == -1.0 &&
+        options.max_non_ref_af_any ==
+            std::numeric_limits<double>::max() &&
+        options.min_non_ref_ac == -1 &&
+        options.max_non_ref_ac == std::numeric_limits<int>::max() &&
+        options.min_non_ref_ac_any == -1 &&
+        options.max_non_ref_ac_any == std::numeric_limits<int>::max();
+    const bool backend_allows_fused_stream =
+        options.input_backend ==
+            vcftools_ng::input::Backend::automatic ||
+        (options.threads <= 2 &&
+         options.input_backend ==
+             vcftools_ng::input::Backend::stream);
+    return counts_only &&
+           no_selection &&
+           no_numeric_filters &&
+           backend_allows_fused_stream;
+}
 
 [[noreturn]] void fail(const std::string& message) {
     throw std::runtime_error(message);
@@ -245,8 +343,9 @@ Options parse_options(int argc, char** argv) {
         } else if (arg == "--out") {
             options.output_prefix = require_value(argc, argv, i);
         } else if (arg == "--threads" || arg == "-t") {
-            options.threads =
+            options.requested_threads =
                 parse_unsigned(require_value(argc, argv, i), arg);
+            options.threads = options.requested_threads;
             options.threads_explicit = true;
         } else if (arg == "--batch-size") {
             options.batch_size =
@@ -489,6 +588,11 @@ Options parse_options(int argc, char** argv) {
 
     if (options.input.empty()) {
         fail("Input file required");
+    }
+    if (options.threads_explicit) {
+        options.threads = std::min(
+            options.requested_threads,
+            vcftools_ng::input::detect_available_threads().count);
     }
     if (!(options.output_freq || options.output_counts ||
           options.output_missing_site || options.output_site_depth ||
@@ -4264,6 +4368,56 @@ int run(const Options& options) {
     if (!options.diff_input.empty()) {
         return run_diff(options);
     }
+    if (can_use_fused_counts(options)) {
+        vcftools_ng::input::SourceOptions fast_options{
+            .path = options.input,
+            .requested_backend = options.input_backend,
+            .total_threads = options.threads,
+            .target_batch_records = options.batch_size,
+            .parallel_safe = true,
+            .auto_index = options.auto_index,
+            .bcftools_path = options.bcftools_path,
+            .index_path = {},
+            .selected_contigs = {},
+            .start_position = -1,
+            .end_position = std::numeric_limits<int>::max(),
+        };
+        const auto fast = vcftools_ng::run_fast_text_counts(
+            options.output_prefix, fast_options);
+        if (fast.has_value()) {
+            const auto detected_threads =
+                vcftools_ng::input::detect_available_threads();
+            std::cerr
+                << "vcftools-ng " << kVersion << "\n"
+                << "Input: " << options.input << "\n"
+                << "Input backend: " << fast->backend
+                << " (" << fast->description << ")\n"
+                << "Samples: " << fast->samples << "\n"
+                << "Threads: " << options.threads
+                << (options.threads_explicit &&
+                            options.requested_threads != options.threads
+                        ? " (capped from user request " +
+                              std::to_string(
+                                  options.requested_threads) +
+                              " by " + detected_threads.source + ")"
+                        : options.threads_explicit
+                        ? " (user specified)"
+                        : " (auto from " +
+                              detected_threads.source + ")")
+                << "\n"
+                << "Stage concurrency: input "
+                << fast->input_threads
+                << ", HTSlib I/O " << fast->hts_io_threads
+                << ", compute fused\n"
+                << "Planned input shards: "
+                << fast->planned_shards << "\n"
+                << "Selected samples: " << fast->samples << "\n"
+                << "Scheduler: adaptive fused text counts\n"
+                << "After filtering, kept " << fast->kept
+                << " out of " << fast->total << " sites\n";
+            return 0;
+        }
+    }
     vcftools_ng::input::SourceOptions source_options{
         .path = options.input,
         .requested_backend = options.input_backend,
@@ -4291,7 +4445,12 @@ int run(const Options& options) {
               << " (" << source->description() << ")\n"
               << "Samples: " << bcf_hdr_nsamples(header) << "\n"
               << "Threads: " << options.threads
-              << (options.threads_explicit
+              << (options.threads_explicit &&
+                          options.requested_threads != options.threads
+                      ? " (capped from user request " +
+                            std::to_string(options.requested_threads) +
+                            " by " + detected_threads.source + ")"
+                      : options.threads_explicit
                       ? " (user specified)"
                       : " (auto from " +
                             detected_threads.source + ")")

@@ -42,37 +42,37 @@ gzip -dc "$fixture" >"$work/input.vcf"
 cp "$fixture" "$work/auto-index.vcf.gz"
 "$ng" --gzvcf "$work/auto-index.vcf.gz" --threads 4 \
     --bcftools "$bcftools_bin" \
-    --counts --out "$work/auto-index" \
+    --freq --counts --out "$work/auto-index" \
     >/dev/null 2>"$work/auto-index.log"
 
 cp "$bcf_fixture" "$work/auto-index.bcf"
 "$ng" --bcf "$work/auto-index.bcf" --threads 4 \
     --bcftools "$bcftools_bin" \
-    --counts --out "$work/auto-index-bcf" \
+    --freq --counts --out "$work/auto-index-bcf" \
     >/dev/null 2>"$work/auto-index-bcf.log"
 
 cp "$fixture" "$work/no-auto-index.vcf.gz"
 "$ng" --gzvcf "$work/no-auto-index.vcf.gz" --threads 4 \
     --no-auto-index --bcftools "$bcftools_bin" \
-    --counts --out "$work/no-auto-index" \
+    --freq --counts --out "$work/no-auto-index" \
     >/dev/null 2>"$work/no-auto-index.log"
 
 cp "$fixture" "$work/auto-threads.vcf.gz"
 SLURM_CPUS_PER_TASK=3 \
     "$ng" --gzvcf "$work/auto-threads.vcf.gz" \
     --bcftools "$bcftools_bin" \
-    --counts --out "$work/auto-threads" \
+    --freq --counts --out "$work/auto-threads" \
     >/dev/null 2>"$work/auto-threads.log"
 
 cp "$fixture" "$work/concurrent.vcf.gz"
 "$ng" --gzvcf "$work/concurrent.vcf.gz" --threads 4 \
     --bcftools "$bcftools_bin" \
-    --counts --out "$work/concurrent-a" \
+    --freq --counts --out "$work/concurrent-a" \
     >/dev/null 2>"$work/concurrent-a.log" &
 first_pid=$!
 "$ng" --gzvcf "$work/concurrent.vcf.gz" --threads 4 \
     --bcftools "$bcftools_bin" \
-    --counts --out "$work/concurrent-b" \
+    --freq --counts --out "$work/concurrent-b" \
     >/dev/null 2>"$work/concurrent-b.log" &
 second_pid=$!
 wait "$first_pid"
@@ -81,12 +81,12 @@ wait "$second_pid"
 cp "$fixture" "$work/missing-bcftools.vcf.gz"
 "$ng" --gzvcf "$work/missing-bcftools.vcf.gz" --threads 4 \
     --bcftools "$work/does-not-exist" \
-    --counts --out "$work/missing-bcftools" \
+    --freq --counts --out "$work/missing-bcftools" \
     >/dev/null 2>"$work/missing-bcftools.log"
 if "$ng" --gzvcf "$work/missing-bcftools.vcf.gz" \
     --input-backend indexed --threads 4 \
     --bcftools "$work/does-not-exist" \
-    --counts --out "$work/missing-bcftools-explicit" \
+    --freq --counts --out "$work/missing-bcftools-explicit" \
     >/dev/null 2>"$work/missing-bcftools-explicit.log"; then
     printf 'Explicit indexed backend unexpectedly accepted no index\n' >&2
     exit 1
@@ -99,7 +99,7 @@ corrupt_index_sha256=$(
 )
 "$ng" --gzvcf "$work/corrupt-index.vcf.gz" --threads 4 \
     --bcftools "$bcftools_bin" \
-    --counts --out "$work/corrupt-index" \
+    --freq --counts --out "$work/corrupt-index" \
     >/dev/null 2>"$work/corrupt-index.log"
 
 cp "$fixture" "$work/valid-tbi-corrupt-csi.vcf.gz"
@@ -111,7 +111,7 @@ dual_bad_csi_sha256=$(
 )
 "$ng" --gzvcf "$work/valid-tbi-corrupt-csi.vcf.gz" --threads 4 \
     --bcftools "$bcftools_bin" \
-    --counts --out "$work/valid-tbi-corrupt-csi" \
+    --freq --counts --out "$work/valid-tbi-corrupt-csi" \
     >/dev/null 2>"$work/valid-tbi-corrupt-csi.log"
 
 cp "$fixture" "$work/stale-index.vcf.gz"
@@ -122,7 +122,7 @@ stale_index_sha256=$(
 )
 "$ng" --gzvcf "$work/stale-index.vcf.gz" --threads 4 \
     --bcftools "$bcftools_bin" \
-    --counts --out "$work/stale-index" \
+    --freq --counts --out "$work/stale-index" \
     >/dev/null 2>"$work/stale-index.log"
 
 for candidate in indexed-vcf indexed-bcf plain; do

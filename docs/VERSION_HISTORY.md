@@ -19,13 +19,14 @@ otherwise, validation uses the real 2,300,000-record, 23-chromosome,
 | [v0.11.0](versions/v0.11.0.md) | Adaptive Plain/TBI/CSI ordered input shards | 68.23 | 16.06 | 11.25 | PASS |
 | [v0.11.1](versions/v0.11.1.md) | Automatic CSI construction, including first-run cost | 68.22 | 27.84 | 22.69 | PASS |
 | [v0.11.2](versions/v0.11.2.md) | Protected CSI/TBI validation, including first-run cost | 68.22 | 27.82 | 23.17 | PASS |
+| [v0.11.3](versions/v0.11.3.md) | Adaptive direct text-to-count fusion | 59.72 | 4.45 | 2.89 | PASS |
 
 The workload in each row is the version's representative compatibility
 benchmark; workloads differ between rows. Consult the per-version page before
 comparing versions directly. v0.9.0 also reran the six-output sample workload
 at 3.11/3.13 seconds for 8/16 threads.
 
-## Cumulative supported surface in v0.11.2
+## Cumulative supported surface in v0.11.3
 
 - Inputs: VCF, BGZF VCF, BCF.
 - Outputs: `--freq`, `--counts`, `--missing-site`, `--site-depth`,
@@ -46,6 +47,10 @@ at 3.11/3.13 seconds for 8/16 threads.
   thread compatibility gates and deterministic parallel BGZF compression.
   Local BGZF VCF/BCF inputs without an index automatically acquire a CSI
   using the effective vcftools-ng thread count.
+- Fast path: unfiltered `--counts` on Plain VCF and BGZF VCF directly parses
+  VCF text into deterministic count lines. Indexed BGZF uses ordered tabix
+  windows from four threads upward; requested concurrency is capped by CPU
+  affinity and the file-descriptor budget.
 
 v0.11.0 also measured exact counts at:
 

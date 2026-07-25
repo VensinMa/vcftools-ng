@@ -19,8 +19,8 @@ Build:
 Artifacts are written to `dist/`:
 
 ```text
-vcftools-ng-v0.11.2-linux-x86_64.tar.gz
-vcftools-ng-v0.11.2-linux-x86_64.tar.gz.sha256
+vcftools-ng-v0.11.3-linux-x86_64.tar.gz
+vcftools-ng-v0.11.3-linux-x86_64.tar.gz.sha256
 ```
 
 The build pins and verifies the HTSlib 1.23 and bcftools 1.23 source

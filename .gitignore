@@ -1,4 +1,5 @@
 build/
+build-*/
 dist/
 *.o
 *.o.d
@@ -57,6 +58,12 @@ benchmarks/results/final-full-v0112/gates/
 benchmarks/results/final-full-v0112/logs/
 benchmarks/results/final-full-v0112/runs/
 benchmarks/results/final-full-v0112/scratch/
+benchmarks/results/adaptive-v0113-subset-final/golden/
+benchmarks/results/adaptive-v0113-subset-final/gates/
+benchmarks/results/adaptive-v0113-subset-final/logs/
+benchmarks/results/adaptive-v0113-subset-final/runs/
+benchmarks/results/adaptive-v0113-subset-final/scratch/
+benchmarks/results/low-thread-v0113/*/logs/
 
 # Reproducible index-construction products are local benchmark artifacts.
 benchmarks/results/csi-index-build/*.csi

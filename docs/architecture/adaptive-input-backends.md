@@ -2,8 +2,9 @@
 
 Status: Plain-range and indexed-region adapters implemented in v0.11.0;
 automatic CSI construction implemented in v0.11.1; protected explicit index
-validation implemented in v0.11.2; ordered BGZF blocks remain the next
-input-engine milestone.
+validation implemented in v0.11.2; direct text-to-count fusion implemented
+in v0.11.3 for Plain VCF and indexed BGZF VCF. Ordered BGZF blocks remain the
+next input-engine milestone.
 
 Reference reviewed: `VensinMa/vcf2phylip` commit
 `3a1d3ab24af2334bfa6bb61d5c3faaf45d5c4625`.
@@ -253,17 +254,20 @@ throughput gain.
    construction using the effective thread budget.
 5. **Complete in v0.11.2:** explicit CSI/TBI validation, protected invalid
    sidecars, and Plain VCF no-index policy.
-6. Implement ordered BGZF block decompression and VCF/BCF record framing for
+6. **Complete in v0.11.3 for unfiltered `--counts`:** direct aligned-range
+   VCF parsing and direct ordered-tabix GT counting without intermediate
+   `bcf1_t` records; CPU-affinity and file-descriptor constrained workers.
+7. Implement ordered BGZF block decompression and VCF/BCF record framing for
    no-index input.
-7. Add cross-shard protocols for thinning and window statistics.
-8. Add LD/PCA/diff shard consumers.
-9. Profile and replace the single ordered committer with ordered segment
+8. Add cross-shard protocols for thinning and window statistics.
+9. Add LD/PCA/diff shard consumers.
+10. Profile and replace the single ordered committer with ordered segment
    publication where exactness permits.
 
 For every step, VCFtools 0.1.17 remains the oracle. During development the
-real 2.3-million-record subset is compared byte for byte at 8 and 16 threads.
-The full 11.23-million-record benchmark and the 32/64/128/256-thread scaling
-matrix are final-stage gates, not routine development runs.
+real 2.3-million-record subset is compared byte for byte. Routine local
+scaling tests stop at the machine's 32 available CPUs. The complete
+11.23-million-record benchmark is reserved for a later final-stage gate.
 
 ## Benchmark matrix
 
@@ -280,6 +284,5 @@ thread count, wall/user/system time, CPU percentage, maximum RSS, speedup,
 record count, byte-comparison status, selected backend, effective stage
 concurrency, storage type, cold/warm cache state, and repetitions.
 
-The development default remains 8 and 16 threads. Final scaling uses all
-available points up to the allocation, normally
-`1,2,4,8,16,32,64,128,256`.
+The development default remains 8 and 16 threads. Release-candidate local
+scaling uses `1,2,4,8,16,32`, bounded by the process CPU affinity.
