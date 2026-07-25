@@ -1,0 +1,399 @@
+Start testing: Jul 24 16:48 CST
+----------------------------------------------------------
+1/2 Testing: input_backend_differential
+1/2 Test: input_backend_differential
+Command: "/home/vensin/workspace/vcftools-ng/tests/input_backends.sh" "/home/vensin/workspace/vcftools-ng/build/vcftools-ng" "/home/vensin/workspace/vcftools-ng"
+Directory: /home/vensin/workspace/vcftools-ng/build
+"input_backend_differential" start time: Jul 24 16:48 CST
+Output:
+----------------------------------------------------------
+Input backend differential test passed
+<end of output>
+Test time =   2.29 sec
+----------------------------------------------------------
+Test Passed.
+"input_backend_differential" end time: Jul 24 16:48 CST
+"input_backend_differential" time elapsed: 00:00:02
+----------------------------------------------------------
+
+2/2 Testing: differential_compatibility
+2/2 Test: differential_compatibility
+Command: "/home/vensin/workspace/vcftools-ng/tests/differential.sh" "/home/vensin/workspace/vcftools-ng/build/vcftools-ng" "/home/vensin/workspace/vcftools-ng"
+Directory: /home/vensin/workspace/vcftools-ng/build
+"differential_compatibility" start time: Jul 24 16:48 CST
+Output:
+----------------------------------------------------------
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 8 (user specified)
+Stage concurrency: input 3, HTSlib I/O 0, compute 5
+Planned input shards: 2254
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 2300000 out of 2300000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 8 (user specified)
+Stage concurrency: input 3, HTSlib I/O 0, compute 5
+Planned input shards: 2254
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 2300000 out of 2300000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 8 (user specified)
+Stage concurrency: input 3, HTSlib I/O 0, compute 5
+Planned input shards: 2254
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 129855 out of 2300000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 16 (user specified)
+Stage concurrency: input 6, HTSlib I/O 0, compute 10
+Planned input shards: 2254
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 129855 out of 2300000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: stream (HTSlib ordered stream)
+Samples: 412
+Threads: 1 (user specified)
+Stage concurrency: input 0, HTSlib I/O 0, compute 1
+Planned input shards: 0
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 129855 out of 2300000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 8 (user specified)
+Stage concurrency: input 3, HTSlib I/O 0, compute 5
+Planned input shards: 2254
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 16 out of 2300000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 16 (user specified)
+Stage concurrency: input 6, HTSlib I/O 0, compute 10
+Planned input shards: 7
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 29816 out of 29816 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 8 (user specified)
+Stage concurrency: input 3, HTSlib I/O 0, compute 5
+Planned input shards: 2254
+Batch size: 2048
+Selected samples: 17
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 63776 out of 2300000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 16 (user specified)
+Stage concurrency: input 6, HTSlib I/O 0, compute 10
+Planned input shards: 2254
+Batch size: 2048
+Selected samples: 17
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 57595 out of 2300000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 8 (user specified)
+Stage concurrency: input 3, HTSlib I/O 0, compute 5
+Planned input shards: 2254
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 79437 out of 2300000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 16 (user specified)
+Stage concurrency: input 6, HTSlib I/O 0, compute 10
+Planned input shards: 2254
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 2220563 out of 2300000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 16 (user specified)
+Stage concurrency: input 6, HTSlib I/O 0, compute 10
+Planned input shards: 2254
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 433 out of 2300000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 8 (user specified)
+Stage concurrency: input 3, HTSlib I/O 0, compute 5
+Planned input shards: 2254
+Batch size: 2048
+Selected samples: 17
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 22168 out of 2300000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 16 (user specified)
+Stage concurrency: input 6, HTSlib I/O 0, compute 10
+Planned input shards: 2254
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 2300000 out of 2300000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.flags.23chr_1k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 16 (user specified)
+Stage concurrency: input 6, HTSlib I/O 0, compute 10
+Planned input shards: 46
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 5750 out of 23000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.flags.23chr_1k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 8 (user specified)
+Stage concurrency: input 3, HTSlib I/O 0, compute 5
+Planned input shards: 23
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 5750 out of 23000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.flags.23chr_1k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 8 (user specified)
+Stage concurrency: input 3, HTSlib I/O 0, compute 5
+Planned input shards: 23
+Batch size: 2048
+Selected samples: 17
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 23000 out of 23000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.flags.23chr_1k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 16 (user specified)
+Stage concurrency: input 6, HTSlib I/O 0, compute 10
+Planned input shards: 46
+Batch size: 2048
+Selected samples: 17
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 23000 out of 23000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.flags.23chr_1k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 16 (user specified)
+Stage concurrency: input 6, HTSlib I/O 0, compute 10
+Planned input shards: 46
+Batch size: 2048
+Selected samples: 17
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 7788 out of 23000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.flags.23chr_1k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 8 (user specified)
+Stage concurrency: input 3, HTSlib I/O 0, compute 5
+Planned input shards: 23
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 23000 out of 23000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.flags.23chr_1k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 16 (user specified)
+Stage concurrency: input 6, HTSlib I/O 0, compute 10
+Planned input shards: 46
+Batch size: 2048
+Selected samples: 20
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 23000 out of 23000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.flags.23chr_1k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 8 (user specified)
+Stage concurrency: input 3, HTSlib I/O 0, compute 5
+Planned input shards: 23
+Batch size: 2048
+Selected samples: 20
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 23000 out of 23000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 8 (user specified)
+Stage concurrency: input 3, HTSlib I/O 0, compute 5
+Planned input shards: 2254
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 2300000 out of 2300000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 8 (user specified)
+Stage concurrency: input 3, HTSlib I/O 0, compute 5
+Planned input shards: 2254
+Batch size: 2048
+Selected samples: 20
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 2300000 out of 2300000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 16 (user specified)
+Stage concurrency: input 6, HTSlib I/O 0, compute 10
+Planned input shards: 2254
+Batch size: 2048
+Selected samples: 20
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 2300000 out of 2300000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 8 (user specified)
+Stage concurrency: input 3, HTSlib I/O 0, compute 5
+Planned input shards: 2254
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 2705 out of 2300000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 16 (user specified)
+Stage concurrency: input 6, HTSlib I/O 0, compute 10
+Planned input shards: 2254
+Batch size: 2048
+Selected samples: 10
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 1356 out of 2300000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 8 (user specified)
+Stage concurrency: input 3, HTSlib I/O 0, compute 5
+Planned input shards: 2254
+Batch size: 2048
+Selected samples: 10
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 1356 out of 2300000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 8 (user specified)
+Stage concurrency: input 3, HTSlib I/O 0, compute 5
+Planned input shards: 3
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 16498 out of 16498 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 16 (user specified)
+Stage concurrency: input 6, HTSlib I/O 0, compute 10
+Planned input shards: 3
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 16498 out of 16498 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.flags.23chr_1k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 8 (user specified)
+Stage concurrency: input 3, HTSlib I/O 0, compute 5
+Planned input shards: 23
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 5750 out of 23000 sites
+vcftools-ng 0.11.0
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.flags.23chr_1k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 16 (user specified)
+Stage concurrency: input 6, HTSlib I/O 0, compute 10
+Planned input shards: 46
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 5750 out of 23000 sites
+Diff common sites: 23000
+Diff sites only in first: 0
+Diff sites only in second: 0
+Diff common sites: 23000
+Diff sites only in first: 0
+Diff sites only in second: 0
+Diff common sites: 23000
+Diff sites only in first: 0
+Diff sites only in second: 0
+Diff common sites: 2300000
+Diff sites only in first: 0
+Diff sites only in second: 0
+All v0.11 cumulative 2,300,000-record outputs, exact BCF conversions, and 23,000-record flag/diff semantics are byte-identical to VCFtools 0.1.17.
+<end of output>
+Test time = 107.34 sec
+----------------------------------------------------------
+Test Passed.
+"differential_compatibility" end time: Jul 24 16:50 CST
+"differential_compatibility" time elapsed: 00:01:47
+----------------------------------------------------------
+
+End testing: Jul 24 16:50 CST

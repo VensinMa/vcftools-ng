@@ -10,6 +10,127 @@ from each of chromosomes `chr1` through `chr23` and all 412 samples. The full
 All reported `vcftools-ng` outputs were checked byte for byte with `cmp`
 against files produced by VCFtools 0.1.17.
 
+## v0.11 adaptive input backends
+
+The counts workload isolates input, parsing, shared GT decoding, and ordered
+output on the same 2,300,000 records. Every row was compared byte for byte
+with an original VCFtools 0.1.17 output.
+
+| Input | Original | 8 threads | 16 threads | Speedup 8/16 | CPU 8/16 | RSS KB 8/16 | Exact |
+|---|---:|---:|---:|---:|---:|---:|---|
+| BGZF VCF + TBI | 68.23 | 16.06 | 11.25 | 4.25× / 6.06× | 535% / 894% | 409,476 / 541,000 | PASS |
+| BGZF VCF, no index | 68.22 | 53.01 | 53.12 | 1.29× / 1.28× | 140% / 145% | 24,768 / 25,020 | PASS |
+| Plain VCF | 36.15 | 11.11 | 8.23 | 3.25× / 4.39× | 685% / 1156% | 483,716 / 795,148 | PASS |
+| BCF + CSI | 43.89 | 5.15 | 3.32 | 8.52× / 13.22× | 458% / 832% | 268,756 / 514,536 | PASS |
+| BCF, no index | 43.78 | 5.80 | 3.52 | 7.55× / 12.44× | 430% / 846% | 37,392 / 47,356 | PASS |
+
+The indexed BGZF and Plain adapters retain substantial 8-to-16-thread
+scaling. Unindexed BCF still benefits from HTSlib's parallel BGZF
+decompression. Unindexed BGZF VCF remains flat because one thread performs
+text record parsing after decompression.
+
+Raw evidence, backend logs, SHA256 comparisons, environment metadata, and
+summary values are stored in
+[`benchmarks/results/input-vnext-counts`](results/input-vnext-counts).
+The complete regression log is
+[`benchmarks/results/v011-ctest.txt`](results/v011-ctest.txt).
+
+## v0.11.1 automatic CSI construction
+
+When a local BGZF VCF/BCF lacks TBI/CSI, the default behavior now builds CSI
+with the effective vcftools-ng thread count and then uses indexed regions.
+The real-subset first-run measurement includes both indexing and counts:
+
+| Engine | Original | 8 threads | 16 threads | Speedup 8/16 | Exact |
+|---|---:|---:|---:|---:|---|
+| BGZF VCF, starting without index | 68.22 | 27.84 | 22.69 | 2.45× / 3.01× | PASS |
+
+Raw timings, logs, and hashes are stored in
+[`benchmarks/results/v0111-auto-index`](results/v0111-auto-index). CSI-only
+construction measurements are in
+[`benchmarks/results/csi-index-build`](results/csi-index-build), and the
+cumulative regression log is
+[`benchmarks/results/v0111-ctest.txt`](results/v0111-ctest.txt).
+
+## v0.11.2 validated and protected indices
+
+v0.11.2 explicitly validates CSI and TBI rather than treating file existence
+as validity. It also confirms that Plain VCF never enters the index-building
+path.
+
+| Case | Original | 8 threads | 16 threads | Speedup 8/16 | Exact |
+|---|---:|---:|---:|---:|---|
+| BGZF, build and validate CSI, then counts | 68.22 | 27.82 | 23.17 | 2.45× / 2.94× | PASS |
+| Plain VCF, no index attempt | 36.15 | 11.18 | 8.29 | 3.23× / 4.36× | PASS |
+
+Evidence is stored in
+[`benchmarks/results/v0112-index-validation`](results/v0112-index-validation);
+the cumulative test log is
+[`benchmarks/results/v0112-ctest.txt`](results/v0112-ctest.txt).
+
+## Input-backend matrix
+
+The post-v0.10 input-engine work treats file encodings as separate execution
+paths. Its design and correctness constraints are recorded in
+[`docs/architecture/adaptive-input-backends.md`](../docs/architecture/adaptive-input-backends.md).
+
+The benchmark driver covers:
+
+- BGZF VCF with TBI;
+- the same BGZF bytes without an index sidecar;
+- plain VCF;
+- BCF with CSI;
+- the same BCF bytes without an index sidecar.
+
+It always runs original VCFtools 0.1.17 and byte-compares each vcftools-ng
+result. Its deliberately unindexed historical cases pass `--no-auto-index`;
+all ordinary vcftools-ng runs retain automatic CSI construction. Development
+runs default to 8 and 16 threads:
+
+```bash
+NG=./build/vcftools-ng \
+ORIGINAL=/path/to/vcftools-0.1.17/bin/vcftools \
+SUBSET_BGZF=tests/fixtures/osmanthus412.23chr_100k.vcf.gz \
+SUBSET_PLAIN=/path/to/osmanthus412.23chr_100k.vcf \
+SUBSET_BCF=tests/fixtures/osmanthus412.23chr_100k.bcf \
+./benchmarks/run-input-backend-matrix.sh
+```
+
+The final scalability gate can extend the same command without changing its
+correctness oracle:
+
+```bash
+THREAD_LIST="1 2 4 8 16 32 64 128 256" REPEATS=3 \
+CACHE_STATE=warm \
+./benchmarks/run-input-backend-matrix.sh benchmarks/results/input-final
+```
+
+Thread points above the scheduler allocation are omitted by the caller. Final
+reports must also state storage type and whether each repetition used a cold
+or warm page cache; the script records the available host and block-device
+metadata plus the caller-supplied `CACHE_STATE`, but does not flush the
+operating-system cache. `EXPECTED_RECORDS` defaults to 2,300,000 for the real
+subset and is stored in the manifest.
+
+## v0.10 individual and HWE statistics
+
+The five new outputs are `--depth`, `--missing-indv`, `--het`, `--hardy`,
+and `--site-quality`. Original VCFtools requires five independent scans;
+vcftools-ng can produce all five from one shared GT/DP decode.
+
+| Workload | Original | 8 threads | 16 threads | Speedup 8/16 | Exact |
+|---|---:|---:|---:|---:|---|
+| Five separate outputs | 335.08 s | 23.01 s | 19.72 s | 14.56× / 16.99× | PASS |
+| Five outputs, one scan | 335.08 s | 8.63 s | 8.52 s | 38.83× / 39.33× | PASS |
+
+The combined 8-thread run used 428% CPU and 68,344 KB peak RSS; the
+16-thread run used 457% CPU and 63,576 KB peak RSS. Reproduce the original,
+8-thread, and 16-thread measurements and complete-file comparisons with:
+
+```bash
+./benchmarks/run-v010-statistics.sh
+```
+
 ## First vertical-slice results
 
 One invocation produced all five outputs: allele frequencies, allele counts,
@@ -259,3 +380,39 @@ Against the removed batch-barrier scheduler:
 | sample selection + six outputs | 16 | 3.76 s | 3.13 s | 16.8% |
 | 1.4 GB filtered recode | 8 | 5.72 s | 3.37 s | 41.1% |
 | 1.4 GB filtered recode | 16 | 4.67 s | 3.37 s | 27.8% |
+
+## v0.10 individual, population, LD/PCA, conversion, and diff
+
+v0.10 keeps the 2,300,000-record real-subset gate and adds individual
+statistics, ordered population/window statistics, genotype LD, PCA,
+deterministic parallel BGZF conversion, and two-file comparison.
+
+The five new individual outputs require 335.08 seconds as five original
+scans. A single shared vcftools-ng scan takes 8.63/8.52 seconds at 8/16
+threads, a 38.83×/39.33× speedup. Site π, FST, LD, and PCA each remain
+byte-identical and take approximately 3.0–3.5 seconds.
+
+The full 4.3 GB BCF output is compared as a compressed byte stream:
+
+| Implementation | Wall | CPU | Peak RSS | Speedup | Exact |
+|---|---:|---:|---:|---:|---|
+| Original 0.1.17 | 425.51 s | 99% | 5,980 KB | 1.00× | oracle |
+| vcftools-ng, 8 threads | 38.81 s | 868% | 57,024 KB | 10.96× | PASS |
+| vcftools-ng, 16 threads | 22.53 s | 1677% | 61,392 KB | 18.89× | PASS |
+
+Two-file site discordance compares the complete 2,300,001-line output:
+
+| Implementation | Wall | CPU | Peak RSS | Speedup | Exact |
+|---|---:|---:|---:|---:|---|
+| Original 0.1.17 | 136.14 s | 99% | 6,728 KB | 1.00× | oracle |
+| vcftools-ng, 8 threads | 8.97 s | 393% | 8,660 KB | 15.18× | PASS |
+| vcftools-ng, 16 threads | 8.99 s | 392% | 8,824 KB | 15.14× | PASS |
+
+The diff workload is limited by reading two BCF streams, hence the flat
+8-to-16-thread scaling. Raw evidence is under `benchmarks/results/v010-*`.
+Reproduce the release measurements with:
+
+```bash
+./benchmarks/run-v010-statistics.sh
+./benchmarks/run-v010-advanced.sh
+```

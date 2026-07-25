@@ -1,0 +1,11 @@
+date	2026-07-24T16:46:40+08:00
+host	Ubuntu24
+kernel	Linux 6.14.0-37-generic
+cpu_available	32
+thread_list	8 16
+repeats	1
+workload	counts
+expected_records	2300000
+cache_state	warm
+cpu_model	Intel(R) Core(TM) i9-14900KF
+block_devices	loop0      0 loop;loop1      0 loop;loop2      0 loop;loop3      0 loop;loop4      0 loop;loop5      0 loop;loop6      0 loop;loop7      0 loop;loop8      0 loop;loop9      0 loop;loop10     0 loop;loop11     0 loop;loop12     0 loop;loop13     0 loop;loop14     0 loop;loop15     0 loop;loop16     0 loop;loop17     0 loop;loop18     0 loop;loop19     0 loop;loop20     0 loop;loop21     0 loop;loop22     0 loop;loop23     0 loop;loop24     0 loop;loop25     0 loop;loop26     0 loop;loop27     0 loop;loop28     0 loop;loop29     0 loop;loop30     0 loop;sda        1 disk;sdb        1 disk;nvme1n1    0 disk;nvme2n1    0 disk;nvme0n1    0 disk;nvme3n1    0 disk

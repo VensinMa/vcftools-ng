@@ -45,3 +45,17 @@ tests/golden/flags-ft-all.frq.count
 tests/golden/flags-ft-all.lmiss
 tests/golden/flags-site-remove-all.frq.count
 tests/golden/*.recode.vcf
+
+# Locally generated v0.10 full-subset goldens are verified through
+# tests/golden/SHA256SUMS but are too large for the source repository.
+tests/golden/v010-*
+
+# Final full-dataset evidence keeps only the compact machine-readable tables.
+benchmarks/results/final-full-v0112/golden/
+benchmarks/results/final-full-v0112/gates/
+benchmarks/results/final-full-v0112/logs/
+benchmarks/results/final-full-v0112/runs/
+benchmarks/results/final-full-v0112/scratch/
+
+# Reproducible index-construction products are local benchmark artifacts.
+benchmarks/results/csi-index-build/*.csi

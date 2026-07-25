@@ -1,0 +1,6 @@
+wall_s=11.18
+user_s=65.44
+sys_s=10.60
+cpu_pct=679%
+max_rss_kb=473492
+exit=0

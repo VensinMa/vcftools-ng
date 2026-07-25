@@ -1,0 +1,8 @@
+vcftools-ng v0.10.0 differential compatibility gate
+Date: 2026-07-24
+Command: ctest --test-dir build --output-on-failure
+Result: PASS
+Tests: 1/1 passed, 0 failed
+Wall time: 91.15 seconds
+Scope: 2.3M individual, pi/Tajima/FST, LD/PCA, BCF/diff goldens;
+       23k FILTER/INFO/FT, VCF.gz, and four diff-mode semantic goldens.

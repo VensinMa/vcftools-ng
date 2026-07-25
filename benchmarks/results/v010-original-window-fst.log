@@ -1,0 +1,23 @@
+
+VCFtools - 0.1.17
+(C) Adam Auton and Anthony Marcketta 2009
+
+Parameters as interpreted:
+	--gzvcf tests/fixtures/osmanthus412.23chr_100k.vcf.gz
+	--fst-window-size 100000
+	--fst-window-step 50000
+	--weir-fst-pop tests/fixtures/population-a.txt
+	--weir-fst-pop tests/fixtures/population-b.txt
+	--keep tests/fixtures/population-a.txt
+	--keep tests/fixtures/population-b.txt
+	--out tests/golden/v010-window-fst
+
+Using zlib version: 1.3.1
+Warning: Expected at least 2 parts in FORMAT entry: ID=RNC,Number=2,Type=Character,Description="Reason for No Call in GT: . = n/a, M = Missing data, P = Partial data, I = gVCF input site is non-called, D = insufficient Depth of coverage, - = unrepresentable overlapping deletion, L = Lost/unrepresentable allele (other than deletion), U = multiple Unphased variants present, O = multiple Overlapping variants present, 1 = site is Monoallelic, no assertion about presence of REF or ALT allele">
+Keeping individuals in 'keep' list
+After filtering, kept 20 out of 412 Individuals
+Outputting Windowed Weir and Cockerham Fst estimates.
+Weir and Cockerham mean Fst estimate: 0.051965
+Weir and Cockerham weighted Fst estimate: 0.071448
+After filtering, kept 2300000 out of a possible 2300000 Sites
+Run Time = 68.00 seconds

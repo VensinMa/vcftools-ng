@@ -1,0 +1,17 @@
+
+VCFtools - 0.1.17
+(C) Adam Auton and Anthony Marcketta 2009
+
+Parameters as interpreted:
+	--gzvcf tests/fixtures/osmanthus412.23chr_100k.vcf.gz
+	--out tests/golden/v010-window-pi
+	--window-pi 100000
+	--window-pi-step 50000
+
+Using zlib version: 1.3.1
+Warning: Expected at least 2 parts in FORMAT entry: ID=RNC,Number=2,Type=Character,Description="Reason for No Call in GT: . = n/a, M = Missing data, P = Partial data, I = gVCF input site is non-called, D = insufficient Depth of coverage, - = unrepresentable overlapping deletion, L = Lost/unrepresentable allele (other than deletion), U = multiple Unphased variants present, O = multiple Overlapping variants present, 1 = site is Monoallelic, no assertion about presence of REF or ALT allele">
+After filtering, kept 412 out of 412 Individuals
+Outputting Windowed Nucleotide Diversity Statistics...
+Calculating Windowed Nucleotide Diversity without a mask can give misleading results. It is recommended you use a mask to define well characterized sites in the genome.
+After filtering, kept 2300000 out of a possible 2300000 Sites
+Run Time = 69.00 seconds

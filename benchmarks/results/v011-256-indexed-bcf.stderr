@@ -1,0 +1,11 @@
+vcftools-ng 0.11.0
+Input: tests/fixtures/osmanthus412.flags.23chr_1k.bcf
+Input backend: indexed-regions (BCF CSI ordered regions)
+Samples: 412
+Threads: 256 (user specified)
+Stage concurrency: input 86, HTSlib I/O 0, compute 170
+Planned input shards: 667
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 23000 out of 23000 sites

@@ -1,0 +1,8 @@
+vcftools-ng 0.10.0
+Input: tests/fixtures/osmanthus412.23chr_100k.bcf
+Samples: 412
+Threads: 8 (HTSlib I/O: 4)
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 2300000 out of 2300000 sites
