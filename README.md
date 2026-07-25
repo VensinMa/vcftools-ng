@@ -2,6 +2,9 @@
 
 Experimental high-performance, output-compatible successor to VCFtools 0.1.17.
 
+**Latest release:** [v0.11.2](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.11.2)
+· 245/245 full-dataset benchmark runs byte-identical to VCFtools 0.1.17
+
 The current implementation uses adaptive ordered input shards and a bounded,
 order-preserving pipeline. Plain VCF uses aligned byte ranges; BGZF VCF plus
 TBI/CSI and BCF plus CSI use independent indexed regions; inputs without a
@@ -33,31 +36,83 @@ the complete 11,230,392-record dataset in seven input/index scenarios, with
 original plus 1/2/4/8/16/32-thread vcftools-ng runs repeated five times. All
 245 outputs were byte-identical.
 
-The current compatibility gate covers:
+### Supported parameters
 
-- Outputs: `--freq`, `--counts`, `--missing-site`, `--site-depth`,
-  `--site-mean-depth`, `--depth`, `--missing-indv`, `--het`, `--hardy`,
-  `--site-quality`, `--site-pi`, `--window-pi`, `--TajimaD`,
-  `--weir-fst-pop`, `--geno-r2`, `--pca`, `--pca-no-norm`,
-  `--recode`, `--recode-bcf`, `--recode-vcf-gz`,
-  `--recode-INFO-all`
-- Two-file outputs: `--diff-site`, `--diff-indv`,
-  `--diff-site-discordance`, `--diff-indv-discordance`
-- Site filters: `--min-alleles`, `--max-alleles`, `--remove-indels`,
-  `--keep-only-indels`, `--minQ`, `--min-meanDP`, `--max-meanDP`,
-  `--max-missing`, `--max-missing-count`, `--maf`, `--max-maf`,
-  `--mac`, `--max-mac`, `--hwe`,
-  `--non-ref-af`, `--max-non-ref-af`, `--non-ref-af-any`,
-  `--max-non-ref-af-any`, `--non-ref-ac`, `--max-non-ref-ac`,
-  `--non-ref-ac-any`, `--max-non-ref-ac-any`,
-  `--chr`, `--not-chr`, `--from-bp`, `--to-bp`, `--positions`,
-  `--exclude-positions`, `--bed`, `--exclude-bed`, `--thin`
-- Site flag filters: `--keep-filtered`, `--remove-filtered`,
-  `--remove-filtered-all`, `--keep-INFO`, `--remove-INFO`
-- Genotype filters: `--minGQ`, `--minDP`, `--maxDP`,
-  `--remove-filtered-geno`, `--remove-filtered-geno-all`
-- Sample filters: `--keep`, `--remove`, `--indv`, `--remove-indv`
-- Inputs: VCF, BGZF VCF, and BCF
+The compatibility gate currently covers VCF, BGZF VCF, and BCF input.
+Expand a group to view its output-compatible command-line surface.
+
+<details>
+<summary><strong>Statistics and outputs</strong> — 21 options</summary>
+
+```text
+--freq              --counts            --missing-site       --site-depth
+--site-mean-depth   --depth             --missing-indv       --het
+--hardy             --site-quality      --site-pi            --window-pi
+--TajimaD           --weir-fst-pop      --geno-r2            --pca
+--pca-no-norm       --recode            --recode-bcf         --recode-vcf-gz
+--recode-INFO-all
+```
+
+</details>
+
+<details>
+<summary><strong>Two-file comparison</strong> — 4 options</summary>
+
+```text
+--diff-site                  --diff-indv
+--diff-site-discordance      --diff-indv-discordance
+```
+
+</details>
+
+<details>
+<summary><strong>Site and interval filters</strong> — 31 options</summary>
+
+```text
+--min-alleles          --max-alleles          --remove-indels
+--keep-only-indels     --minQ                 --min-meanDP
+--max-meanDP           --max-missing          --max-missing-count
+--maf                  --max-maf              --mac
+--max-mac              --hwe                  --non-ref-af
+--max-non-ref-af       --non-ref-af-any       --max-non-ref-af-any
+--non-ref-ac           --max-non-ref-ac       --non-ref-ac-any
+--max-non-ref-ac-any   --chr                  --not-chr
+--from-bp              --to-bp                --positions
+--exclude-positions    --bed                  --exclude-bed
+--thin
+```
+
+</details>
+
+<details>
+<summary><strong>FILTER and INFO flag filters</strong> — 5 options</summary>
+
+```text
+--keep-filtered        --remove-filtered      --remove-filtered-all
+--keep-INFO            --remove-INFO
+```
+
+</details>
+
+<details>
+<summary><strong>Genotype filters</strong> — 5 options</summary>
+
+```text
+--minGQ                     --minDP
+--maxDP                     --remove-filtered-geno
+--remove-filtered-geno-all
+```
+
+</details>
+
+<details>
+<summary><strong>Sample filters</strong> — 4 options</summary>
+
+```text
+--keep              --remove              --indv              --remove-indv
+```
+
+</details>
 
 This is not yet a complete replacement for every VCFtools option. Unsupported
 options must not be treated as compatible until they have their own
