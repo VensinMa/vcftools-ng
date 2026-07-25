@@ -48,3 +48,10 @@ version	workload	fixture	original_seconds	ng8_seconds	ng16_seconds	speedup8	spee
 0.11.3	counts_bcf_csi	main_2.3m	41.56	5.04	3.22	8.25	12.91	PASS	2300000	benchmarks/results/adaptive-v0113-subset-final/summary.tsv
 0.11.3	counts_bcf_auto_csi_first_run	main_2.3m	41.52	8.80	5.24	4.72	7.92	PASS	2300000	benchmarks/results/adaptive-v0113-subset-final/summary.tsv
 0.11.3	counts_bcf_no_auto_index	main_2.3m	41.46	5.78	3.37	7.17	12.30	PASS	2300000	benchmarks/results/adaptive-v0113-subset-final/summary.tsv
+0.11.3	counts_bgzf_tbi	full_11.23m	296.69	21.46	12.69	13.83	23.39	PASS	11230392	benchmarks/results/final-full-v0113/summary.tsv
+0.11.3	counts_bgzf_auto_csi	full_11.23m	297.06	77.88	69.39	3.81	4.28	PASS	11230392	benchmarks/results/final-full-v0113/summary.tsv
+0.11.3	counts_bgzf_no_auto_index	full_11.23m	293.28	48.99	48.96	5.99	5.99	PASS	11230392	benchmarks/results/final-full-v0113/summary.tsv
+0.11.3	counts_plain_vcf	full_11.23m	163.95	20.98	20.56	7.81	7.97	PASS	11230392	benchmarks/results/final-full-v0113/summary.tsv
+0.11.3	counts_bcf_csi	full_11.23m	199.39	25.84	14.96	7.72	13.32	PASS	11230392	benchmarks/results/final-full-v0113/summary.tsv
+0.11.3	counts_bcf_auto_csi	full_11.23m	198.45	43.76	25.07	4.53	7.92	PASS	11230392	benchmarks/results/final-full-v0113/summary.tsv
+0.11.3	counts_bcf_no_auto_index	full_11.23m	198.44	28.14	16.50	7.05	12.03	PASS	11230392	benchmarks/results/final-full-v0113/summary.tsv

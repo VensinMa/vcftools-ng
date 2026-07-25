@@ -64,6 +64,11 @@ benchmarks/results/adaptive-v0113-subset-final/logs/
 benchmarks/results/adaptive-v0113-subset-final/runs/
 benchmarks/results/adaptive-v0113-subset-final/scratch/
 benchmarks/results/low-thread-v0113/*/logs/
+benchmarks/results/final-full-v0113/golden/
+benchmarks/results/final-full-v0113/gates/
+benchmarks/results/final-full-v0113/logs/
+benchmarks/results/final-full-v0113/runs/
+benchmarks/results/final-full-v0113/scratch/
 
 # Reproducible index-construction products are local benchmark artifacts.
 benchmarks/results/csi-index-build/*.csi

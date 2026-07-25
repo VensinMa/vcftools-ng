@@ -1,0 +1,31 @@
+key	value
+started	2026-07-25T14:37:43+08:00
+host	Ubuntu24
+kernel	Linux 6.14.0-37-generic
+cpu_available	32
+memory_bytes	134860877824
+ng	/home/vensin/workspace/vcftools-ng/build/vcftools-ng
+ng_version	vcftools-ng 0.11.3
+original	/home/vensin/anaconda3/pkgs/vcftools-0.1.17-pl5321h077b44d_0/bin/vcftools
+bcftools	/home/vensin/software/bcftools/bcftools
+bgzf	/home/vensin/workspace/Sweet_Osmanthus/05.variant_filter/02.vcftools_filter_snp_indel/412samples.SNP.biallelic.minGQ10.minQ30.meanDP6.maxmiss0.8.maf0.05.vcf.gz
+bgzf_bytes	18940264903
+bgzf_sha256	24d9dceeb6cf174c5112523cdc1488c55f92f8f5a484c89ac2f61807384313b4
+plain	/home/vensin/workspace/vcftools-ng/data/osmanthus412.snps.vcf
+plain_bytes	122911664549
+bcf	/home/vensin/workspace/vcftools-ng/data/osmanthus412.snps.bcf
+bcf_bytes	22074294040
+bcf_sha256	dfba81b4ed44985eae27eb883a0bcb1df51486ea323074d654e128221047324d
+expected_records	11230392
+threads	1 2 4 8 16 32
+repeats	5
+original_baseline	reused
+original_baseline_root	/home/vensin/workspace/vcftools-ng/benchmarks/results/final-full-v0112
+baseline_matrix_ng_version	vcftools-ng 0.11.2
+execution	strictly_serial
+cache	operating_system_cache_not_flushed
+bgzf_tbi_sha256_before	f2dd96154a2f75f1c8bd49acc005036785ea03d8ab1d373e2c0a655f89bff371
+bcf_csi_sha256_before	8b82bbae9a6977f67d122abd936a89a1cc01ab0b3869f522b53490bd39312a31
+finished	2026-07-25T17:20:35+08:00
+bgzf_tbi_sha256_after	f2dd96154a2f75f1c8bd49acc005036785ea03d8ab1d373e2c0a655f89bff371
+bcf_csi_sha256_after	8b82bbae9a6977f67d122abd936a89a1cc01ab0b3869f522b53490bd39312a31

@@ -3,7 +3,8 @@
 Experimental high-performance, output-compatible successor to VCFtools 0.1.17.
 
 **Latest release:** [v0.11.3](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.11.3)
-· all 42 adaptive-counts subset runs faster than VCFtools 0.1.17
+· all 210 full-data adaptive-counts candidate runs byte-identical and faster
+than VCFtools 0.1.17
 
 The current implementation uses adaptive ordered input shards and a bounded,
 order-preserving pipeline. Plain VCF uses aligned byte ranges; BGZF VCF plus
@@ -61,7 +62,10 @@ original plus 1/2/4/8/16/32-thread vcftools-ng runs repeated five times. All
 245 outputs were byte-identical. v0.11.3 then ran its unfiltered `--counts`
 fast path on the standard 2,300,000-record subset in the same seven scenarios
 at 1/2/4/8/16/32 threads. All 42 candidate outputs were byte-identical and
-every candidate was faster than its scenario's original run.
+every candidate was faster than its scenario's original run. The final
+11,230,392-record gate then reused the hash-validated five-run Original
+oracles from v0.11.2 and ran v0.11.3 five times at every thread count:
+210/210 new outputs were byte-identical and faster than Original.
 
 ### Supported parameters
 
@@ -205,6 +209,18 @@ Automatic-CSI timings include first-run index construction. With
 `--no-auto-index`, BGZF is deliberately limited by one ordered compressed
 stream; extra requested threads do not add overhead or change output.
 
+The final five-repeat 11.23-million-record means were:
+
+| Input path | Original | 1 thread | 2 threads | 4 threads | 8 threads | 16 threads | 32 threads |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| BGZF VCF + TBI | 296.69 s | 97.20 s | 51.76 s | 41.67 s | 21.46 s | 12.69 s | 8.37 s |
+| BGZF VCF + automatic CSI | 297.06 s | 96.92 s | 51.44 s | 49.10 s | 77.88 s | 69.39 s | 64.92 s |
+| BGZF VCF, no automatic index | 293.28 s | 96.34 s | 51.09 s | 49.03 s | 48.99 s | 48.96 s | 49.03 s |
+| Plain VCF | 163.95 s | 90.53 s | 47.27 s | 27.24 s | 20.98 s | 20.56 s | 20.97 s |
+| BCF + CSI | 199.39 s | 60.36 s | 60.17 s | 36.46 s | 25.84 s | 14.96 s | 10.90 s |
+| BCF + automatic CSI | 198.45 s | 60.54 s | 60.05 s | 71.56 s | 43.76 s | 25.07 s | 18.66 s |
+| BCF, no automatic index | 198.44 s | 61.32 s | 62.20 s | 55.47 s | 28.14 s | 16.50 s | 16.02 s |
+
 Plain VCF cannot use CSI/TBI because those formats store BGZF virtual
 offsets. It remains on the parallel aligned-byte-range adapter and never
 invokes automatic indexing. Existing `.csi` and `.tbi` files are loaded and
@@ -220,6 +236,7 @@ development gate are documented here:
 - [Final full-dataset benchmark driver](benchmarks/run-final-full-matrix.sh)
 - [Final full-dataset summary](benchmarks/results/final-full-v0112/summary.tsv)
 - [v0.11.3 subset summary](benchmarks/results/adaptive-v0113-subset-final/summary.tsv)
+- [v0.11.3 full-data summary](benchmarks/results/final-full-v0113/summary.tsv)
 
 ## Verify
 

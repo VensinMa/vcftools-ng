@@ -19,7 +19,7 @@ otherwise, validation uses the real 2,300,000-record, 23-chromosome,
 | [v0.11.0](versions/v0.11.0.md) | Adaptive Plain/TBI/CSI ordered input shards | 68.23 | 16.06 | 11.25 | PASS |
 | [v0.11.1](versions/v0.11.1.md) | Automatic CSI construction, including first-run cost | 68.22 | 27.84 | 22.69 | PASS |
 | [v0.11.2](versions/v0.11.2.md) | Protected CSI/TBI validation, including first-run cost | 68.22 | 27.82 | 23.17 | PASS |
-| [v0.11.3](versions/v0.11.3.md) | Adaptive direct text-to-count fusion | 59.72 | 4.45 | 2.89 | PASS |
+| [v0.11.3](versions/v0.11.3.md) | Adaptive direct text-to-count fusion | 296.69 | 21.46 | 12.69 | PASS |
 
 The workload in each row is the version's representative compatibility
 benchmark; workloads differ between rows. Consult the per-version page before

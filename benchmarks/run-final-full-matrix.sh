@@ -14,6 +14,7 @@ THREAD_LIST=${THREAD_LIST:-"1 2 4 8 16 32"}
 REPEATS=${REPEATS:-5}
 EXPECTED_RECORDS=${EXPECTED_RECORDS:-11230392}
 STRICT_FINAL_MATRIX=${STRICT_FINAL_MATRIX:-1}
+REUSE_ORIGINAL_ROOT=${REUSE_ORIGINAL_ROOT:-}
 
 case_names=(
     bgzf_tbi
@@ -49,9 +50,11 @@ if [[ "$STRICT_FINAL_MATRIX" == 1 && "$REPEATS" != 5 ]]; then
     printf 'Final benchmark requires REPEATS=5, got %s\n' "$REPEATS" >&2
     exit 2
 fi
+required_threads="1 2 4 8 16 32"
 if [[ "$STRICT_FINAL_MATRIX" == 1 &&
-      "$THREAD_LIST" != "1 2 4 8 16 32" ]]; then
-    printf 'Final benchmark requires THREAD_LIST=\"1 2 4 8 16 32\"\n' >&2
+      "$THREAD_LIST" != "$required_threads" ]]; then
+    printf 'Final benchmark requires THREAD_LIST=\"%s\"\n' \
+        "$required_threads" >&2
     exit 2
 fi
 if [[ ! "$REPEATS" =~ ^[1-9][0-9]*$ ]]; then
@@ -65,6 +68,11 @@ BCFTOOLS=$(realpath "$BCFTOOLS")
 FULL_BGZF=$(realpath "$FULL_BGZF")
 FULL_PLAIN=$(realpath "$FULL_PLAIN")
 FULL_BCF=$(realpath "$FULL_BCF")
+FULL_BGZF_SHA256=
+FULL_BCF_SHA256=
+if [[ -n "$REUSE_ORIGINAL_ROOT" ]]; then
+    REUSE_ORIGINAL_ROOT=$(realpath "$REUSE_ORIGINAL_ROOT")
+fi
 mkdir -p \
     "$RESULT_ROOT/runs" \
     "$RESULT_ROOT/logs" \
@@ -72,8 +80,83 @@ mkdir -p \
     "$RESULT_ROOT/gates" \
     "$RESULT_ROOT/scratch"
 RESULT_ROOT=$(realpath "$RESULT_ROOT")
-
 manifest="$RESULT_ROOT/manifest.tsv"
+if [[ -n "$REUSE_ORIGINAL_ROOT" || ! -s "$manifest" ]]; then
+    FULL_BGZF_SHA256=$(sha256sum "$FULL_BGZF" | cut -d' ' -f1)
+    FULL_BCF_SHA256=$(sha256sum "$FULL_BCF" | cut -d' ' -f1)
+fi
+
+baseline_value() {
+    local key=$1
+    awk -F '\t' -v key="$key" \
+        '$1 == key { print $2; exit }' \
+        "$REUSE_ORIGINAL_ROOT/manifest.tsv"
+}
+
+if [[ -n "$REUSE_ORIGINAL_ROOT" ]]; then
+    if [[ ! -s "$REUSE_ORIGINAL_ROOT/manifest.tsv" ||
+          ! -s "$REUSE_ORIGINAL_ROOT/summary.tsv" ]]; then
+        printf 'Reusable Original baseline is incomplete: %s\n' \
+            "$REUSE_ORIGINAL_ROOT" >&2
+        exit 2
+    fi
+    if [[ "$(baseline_value expected_records)" != "$EXPECTED_RECORDS" ||
+          "$(baseline_value bgzf)" != "$FULL_BGZF" ||
+          "$(baseline_value bgzf_bytes)" != \
+              "$(stat -c '%s' "$FULL_BGZF")" ||
+          "$(baseline_value plain)" != "$FULL_PLAIN" ||
+          "$(baseline_value plain_bytes)" != \
+              "$(stat -c '%s' "$FULL_PLAIN")" ||
+          "$(baseline_value bcf)" != "$FULL_BCF" ||
+          "$(baseline_value bcf_bytes)" != \
+              "$(stat -c '%s' "$FULL_BCF")" ]]; then
+        printf 'Current full inputs do not match the reusable baseline\n' >&2
+        exit 2
+    fi
+    if [[ "$(baseline_value bgzf_sha256)" != "$FULL_BGZF_SHA256" ||
+          "$(baseline_value bcf_sha256)" != "$FULL_BCF_SHA256" ]]; then
+        printf 'Current BGZF/BCF content hash differs from baseline\n' >&2
+        exit 2
+    fi
+    current_bgzf_index=
+    baseline_bgzf_index=
+    if [[ -f "$FULL_BGZF.csi" ]]; then
+        current_bgzf_index=$(sha256sum "$FULL_BGZF.csi" | cut -d' ' -f1)
+        baseline_bgzf_index=$(baseline_value bgzf_csi_sha256_after)
+    elif [[ -f "$FULL_BGZF.tbi" ]]; then
+        current_bgzf_index=$(sha256sum "$FULL_BGZF.tbi" | cut -d' ' -f1)
+        baseline_bgzf_index=$(baseline_value bgzf_tbi_sha256_after)
+    fi
+    if [[ -z "$baseline_bgzf_index" ||
+          "$current_bgzf_index" != "$baseline_bgzf_index" ||
+          "$(sha256sum "$FULL_BCF.csi" | cut -d' ' -f1)" != \
+              "$(baseline_value bcf_csi_sha256_after)" ]]; then
+        printf 'Current CSI/TBI content differs from baseline\n' >&2
+        exit 2
+    fi
+    for case_name in "${case_names[@]}"; do
+        baseline_golden="$REUSE_ORIGINAL_ROOT/golden/$case_name.frq.count"
+        if [[ ! -s "$baseline_golden" ]]; then
+            printf 'Reusable Original golden is missing: %s\n' \
+                "$baseline_golden" >&2
+            exit 2
+        fi
+        ln -sfn "$baseline_golden" \
+            "$RESULT_ROOT/golden/$case_name.frq.count"
+        for repeat in $(seq 1 "$REPEATS"); do
+            baseline_run="$REUSE_ORIGINAL_ROOT/runs/${case_name}-original-t1-r${repeat}.tsv"
+            if [[ ! -s "$baseline_run" ]]; then
+                printf 'Reusable Original timing is missing: %s\n' \
+                    "$baseline_run" >&2
+                exit 2
+            fi
+            cp "$baseline_run" "$RESULT_ROOT/runs/"
+        done
+    done
+    printf 'REUSED validated Original baseline %s\n' \
+        "$REUSE_ORIGINAL_ROOT"
+fi
+
 if [[ ! -s "$manifest" ]]; then
     printf 'key\tvalue\n' >"$manifest"
     {
@@ -88,15 +171,24 @@ if [[ ! -s "$manifest" ]]; then
         printf 'bcftools\t%s\n' "$BCFTOOLS"
         printf 'bgzf\t%s\n' "$FULL_BGZF"
         printf 'bgzf_bytes\t%s\n' "$(stat -c '%s' "$FULL_BGZF")"
-        printf 'bgzf_sha256\t%s\n' "$(sha256sum "$FULL_BGZF" | cut -d' ' -f1)"
+        printf 'bgzf_sha256\t%s\n' "$FULL_BGZF_SHA256"
         printf 'plain\t%s\n' "$FULL_PLAIN"
         printf 'plain_bytes\t%s\n' "$(stat -c '%s' "$FULL_PLAIN")"
         printf 'bcf\t%s\n' "$FULL_BCF"
         printf 'bcf_bytes\t%s\n' "$(stat -c '%s' "$FULL_BCF")"
-        printf 'bcf_sha256\t%s\n' "$(sha256sum "$FULL_BCF" | cut -d' ' -f1)"
+        printf 'bcf_sha256\t%s\n' "$FULL_BCF_SHA256"
         printf 'expected_records\t%s\n' "$EXPECTED_RECORDS"
         printf 'threads\t%s\n' "$THREAD_LIST"
         printf 'repeats\t%s\n' "$REPEATS"
+        if [[ -n "$REUSE_ORIGINAL_ROOT" ]]; then
+            printf 'original_baseline\treused\n'
+            printf 'original_baseline_root\t%s\n' \
+                "$REUSE_ORIGINAL_ROOT"
+            printf 'baseline_matrix_ng_version\t%s\n' \
+                "$(baseline_value ng_version)"
+        else
+            printf 'original_baseline\tmeasured_in_this_run\n'
+        fi
         printf 'execution\tstrictly_serial\n'
         printf 'cache\toperating_system_cache_not_flushed\n'
         if [[ -f "$FULL_BGZF.csi" ]]; then
@@ -285,20 +377,22 @@ for case_name in "${case_names[@]}"; do
             "$case_name" "$(date --iso-8601=seconds)" >"$gate"
         printf 'GATE PASS %s\n' "$case_name"
     fi
+done
 
-    if ((REPEATS > 1)); then
+if ((REPEATS > 1)); then
+    printf 'ALL FIRST-REPEAT GATES PASSED; STARTING REPEATS 2-%s\n' \
+        "$REPEATS"
+    for case_name in "${case_names[@]}"; do
         for repeat in $(seq 2 "$REPEATS"); do
             run_one "$case_name" original 1 "$repeat"
         done
-    fi
-    for threads in $THREAD_LIST; do
-        if ((REPEATS > 1)); then
+        for threads in $THREAD_LIST; do
             for repeat in $(seq 2 "$REPEATS"); do
                 run_one "$case_name" vcftools-ng "$threads" "$repeat"
             done
-        fi
+        done
     done
-done
+fi
 
 all_runs="$RESULT_ROOT/all-runs.tsv"
 head -1 "$RESULT_ROOT/runs/${case_names[0]}-original-t1-r1.tsv" >"$all_runs"
