@@ -1,0 +1,36 @@
+key	value
+started	2026-07-26T13:54:56+08:00
+release	v0.12.1
+title	Fused Site Statistics and Scalable Exact Recode
+git_commit	f33751479f875a962039d92bd4ba17753d5bef15
+ng_version	vcftools-ng 0.12.1
+original	VCFtools (0.1.17)
+bcftools	bcftools 1.23-1-g638bee2d
+expected_records	11230392
+threads	1 2 4 8 16 32
+repeats	5
+execution	strictly_serial
+cache	operating_system_cache_not_flushed
+workload	--min-alleles 2 --max-alleles 2 --minGQ 10 --minQ 30 --min-meanDP 7 --max-missing 0.9 --maf 0.1 --recode --recode-INFO-all --stdout
+bgzf	/home/vensin/workspace/Sweet_Osmanthus/05.variant_filter/02.vcftools_filter_snp_indel/412samples.SNP.biallelic.minGQ10.minQ30.meanDP6.maxmiss0.8.maf0.05.vcf.gz
+bgzf_bytes	18940264903
+bgzf_sha256	24d9dceeb6cf174c5112523cdc1488c55f92f8f5a484c89ac2f61807384313b4
+bgzf_index	/home/vensin/workspace/Sweet_Osmanthus/05.variant_filter/02.vcftools_filter_snp_indel/412samples.SNP.biallelic.minGQ10.minQ30.meanDP6.maxmiss0.8.maf0.05.vcf.gz.tbi
+bgzf_index_bytes	539057
+bgzf_index_sha256	f2dd96154a2f75f1c8bd49acc005036785ea03d8ab1d373e2c0a655f89bff371
+plain	/home/vensin/workspace/vcftools-ng/data/osmanthus412.snps.vcf
+plain_bytes	122911664549
+plain_sha256	22e0589561425f700f691f458994710ebec6d615c17d790dd500ad1c131d981e
+bcf	/home/vensin/workspace/vcftools-ng/data/osmanthus412.snps.bcf
+bcf_bytes	22074294040
+bcf_sha256	dfba81b4ed44985eae27eb883a0bcb1df51486ea323074d654e128221047324d
+bcf_index	/home/vensin/workspace/vcftools-ng/data/osmanthus412.snps.bcf.csi
+bcf_index_bytes	481397
+bcf_index_sha256	8b82bbae9a6977f67d122abd936a89a1cc01ab0b3869f522b53490bd39312a31
+host	Ubuntu24
+os	Ubuntu 24.04.4 LTS
+kernel	Linux 6.14.0-37-generic x86_64 GNU/Linux
+cpu_model	Intel(R) Core(TM) i9-14900KF
+logical_cpus	32
+memory	125Gi
+first_repeat_gates_passed	2026-07-26T18:46:43+08:00

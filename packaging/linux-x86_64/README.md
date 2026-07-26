@@ -16,14 +16,20 @@ Build:
 ./packaging/linux-x86_64/build-portable.sh
 ```
 
+Validate the archive in clean CentOS 7 and Ubuntu 20.04 containers:
+
+```bash
+./packaging/linux-x86_64/test-portable.sh
+```
+
 Artifacts are written to `dist/`:
 
 ```text
-vcftools-ng-v0.11.3-linux-x86_64.tar.gz
-vcftools-ng-v0.11.3-linux-x86_64.tar.gz.sha256
+vcftools-ng-v0.12.1-linux-x86_64.tar.gz
+vcftools-ng-v0.12.1-linux-x86_64.tar.gz.sha256
 ```
 
-The build pins and verifies the HTSlib 1.23 and bcftools 1.23 source
-archives, builds vcftools-ng in the same container, recursively bundles
-non-glibc shared-library dependencies, strips release binaries, and emits a
-stable archive file order and metadata.
+The build installs the CentOS SCL GCC 11 toolchain, pins and verifies the
+HTSlib 1.23 and bcftools 1.23 source archives, builds vcftools-ng in the same
+container, recursively bundles non-glibc shared-library dependencies, strips
+release binaries, and emits a stable archive file order and metadata.

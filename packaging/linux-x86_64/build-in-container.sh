@@ -18,9 +18,14 @@ mkdir -p "${work_directory}/downloads" "${dependency_prefix}" \
 
 yum install -y \
     blas-devel \
+    devtoolset-11-gcc-c++ \
     lapack-devel \
     zlib-devel \
     >/dev/null
+
+source /opt/rh/devtoolset-11/enable
+export CC=gcc
+export CXX=g++
 
 curl -fsSL \
     "https://github.com/samtools/htslib/releases/download/${htslib_version}/htslib-${htslib_version}.tar.bz2" \
@@ -135,8 +140,12 @@ for executable in \
 done
 
 for source_path in "${dependency_sources[@]}"; do
-    rpm_package=$(rpm -qf --queryformat '%{NAME}' "${source_path}" 2>/dev/null || true)
-    [[ -n "${rpm_package}" ]] || continue
+    if ! rpm -qf "${source_path}" >/dev/null 2>&1; then
+        continue
+    fi
+    rpm_package=$(
+        rpm -qf --queryformat '%{NAME}' "${source_path}" 2>/dev/null
+    )
     license_target="${package_root}/LICENSES/system-${rpm_package}"
     mkdir -p "${license_target}"
     while IFS= read -r license_path; do

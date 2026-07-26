@@ -47,6 +47,14 @@ repeat. Inputs, original indexes, actual golden outputs, and output hashes must
 remain available after the run. Large artifacts stay local; compact TSV,
 manifest, environment, and reproduction scripts are committed.
 
+When the release owner explicitly chooses staged qualification, run the driver
+with `GATE_ONLY=1`. Publication may proceed only after all 42 first-repeat
+candidate gates pass. Documentation and Release notes must then label every
+value as single-run, state that repeats 2–5 are pending, and avoid five-run
+mean or monotonic-scaling claims. Resume later with `GATE_ONLY=0`; completed
+Original and first-repeat records are hash-validated and skipped. Commit the
+five-run summary to master when it completes.
+
 ## 4. User-facing records
 
 - Update `README.md` and `README.zh-CN.md` together.
@@ -63,6 +71,8 @@ manifest, environment, and reproduction scripts are committed.
 - Test extraction, `--version`, bundled bcftools, runtime dependencies, a
   real-data compatibility smoke test, and automatic CSI in clean CentOS 7 and
   Ubuntu 20.04 containers.
+- Use `packaging/linux-x86_64/test-portable.sh` so both clean-container checks
+  stay identical across releases.
 - Keep the archive layout (`bin`, `lib`, `libexec`) intact.
 
 ## 6. Publish
@@ -76,6 +86,11 @@ manifest, environment, and reproduction scripts are committed.
 5. Upload the portable archive and checksum.
 6. Verify the public release body, assets, download links, source commit,
    README language links, and displayed version.
+
+For a staged qualification release, the tag records the fully gated runtime
+candidate while the later repeat-only evidence is a documentation update on
+master. Runtime code must not change during the continuation; otherwise the
+affected release matrix must restart from a newly frozen candidate.
 
 If any validation or public verification fails, fix it and repeat the affected
 stage. A release is complete only when source, documentation, benchmark

@@ -12,6 +12,7 @@ FULL_BCF=${FULL_BCF:-"$source_root/data/osmanthus412.snps.bcf"}
 THREAD_LIST=${THREAD_LIST:-"1 2 4 8 16 32"}
 REPEATS=${REPEATS:-5}
 EXPECTED_RECORDS=${EXPECTED_RECORDS:-11230392}
+GATE_ONLY=${GATE_ONLY:-0}
 RESULT_ROOT=${1:-"$source_root/benchmarks/results/final-full-v0121"}
 
 readonly required_threads="1 2 4 8 16 32"
@@ -38,6 +39,10 @@ readonly formats=(gzvcf vcf bcf)
 }
 [[ "$REPEATS" == 5 ]] || {
     printf 'Release matrix requires REPEATS=5\n' >&2
+    exit 2
+}
+[[ "$GATE_ONLY" == 0 || "$GATE_ONLY" == 1 ]] || {
+    printf 'GATE_ONLY must be 0 or 1\n' >&2
     exit 2
 }
 for executable in "$NG" "$ORIGINAL" "$BCFTOOLS"; do
@@ -333,6 +338,54 @@ if [[ ! -s "$manifest" ]]; then
     } >"$manifest"
 fi
 
+refresh_reports() {
+    local all_runs="$RESULT_ROOT/all-runs.tsv"
+    head -1 "$RESULT_ROOT/runs/original-gzvcf-r1.tsv" >"$all_runs"
+    find "$RESULT_ROOT/runs" -maxdepth 1 -type f -name '*.tsv' -print0 |
+        sort -z | xargs -0 -r -n1 tail -1 >>"$all_runs"
+
+    local summary="$RESULT_ROOT/summary.tsv"
+    awk -F '\t' '
+        BEGIN {
+            OFS = "\t"
+            print "scenario", "threads", "runs", "original_mean_wall_s", \
+                  "ng_mean_wall_s", "speedup", "mean_cpu_pct", \
+                  "max_rss_kb", "exact"
+        }
+        NR == 1 { next }
+        $3 == "original" {
+            original_wall[$2] += $6
+            original_n[$2]++
+            next
+        }
+        $3 == "vcftools-ng" {
+            key = $1 SUBSEP $4
+            format[key] = $2
+            n[key]++
+            wall[key] += $6
+            cpu[key] += $9
+            if (!(key in rss) || $10 > rss[key]) rss[key] = $10
+            if ($13 != "PASS") exact[key] = "FAIL"
+            else if (!(key in exact)) exact[key] = "PASS"
+        }
+        END {
+            for (key in n) {
+                split(key, fields, SUBSEP)
+                baseline = original_wall[format[key]] / original_n[format[key]]
+                mean = wall[key] / n[key]
+                printf "%s\t%s\t%d\t%.4f\t%.4f\t%.4f\t%.1f\t%d\t%s\n", \
+                       fields[1], fields[2], n[key], baseline, mean, \
+                       baseline / mean, cpu[key] / n[key], rss[key], \
+                       exact[key]
+            }
+        }
+    ' "$all_runs" | {
+        IFS= read -r header
+        printf '%s\n' "$header"
+        sort -t $'\t' -k1,1 -k2,2n
+    } >"$summary"
+}
+
 # Phase 1: establish one golden per actual format, then require every
 # scenario/thread first repeat to pass before any timing repeats begin.
 for format in "${formats[@]}"; do
@@ -350,6 +403,18 @@ for scenario in "${cases[@]}"; do
     fi
 done
 
+refresh_reports
+if ! grep -q '^first_repeat_gates_passed	' "$manifest"; then
+    printf 'first_repeat_gates_passed\t%s\n' \
+        "$(date --iso-8601=seconds)" >>"$manifest"
+fi
+if [[ "$GATE_ONLY" == 1 ]]; then
+    printf 'FIRST-REPEAT v0.12.1 RELEASE GATES PASS %s\n' "$RESULT_ROOT"
+    printf 'Repeats 2-%s remain pending; resume with GATE_ONLY=0.\n' \
+        "$REPEATS"
+    exit 0
+fi
+
 printf 'ALL FIRST-REPEAT GATES PASSED; STARTING REPEATS 2-%s\n' \
     "$REPEATS"
 for repeat in $(seq 2 "$REPEATS"); do
@@ -365,52 +430,7 @@ for scenario in "${cases[@]}"; do
     done
 done
 
-all_runs="$RESULT_ROOT/all-runs.tsv"
-head -1 "$RESULT_ROOT/runs/original-gzvcf-r1.tsv" >"$all_runs"
-find "$RESULT_ROOT/runs" -maxdepth 1 -type f -name '*.tsv' -print0 |
-    sort -z | xargs -0 -r -n1 tail -1 >>"$all_runs"
-
-summary="$RESULT_ROOT/summary.tsv"
-awk -F '\t' '
-    BEGIN {
-        OFS = "\t"
-        print "scenario", "threads", "runs", "original_mean_wall_s", \
-              "ng_mean_wall_s", "speedup", "mean_cpu_pct", \
-              "max_rss_kb", "exact"
-    }
-    NR == 1 { next }
-    $3 == "original" {
-        original_wall[$2] += $6
-        original_n[$2]++
-        next
-    }
-    $3 == "vcftools-ng" {
-        key = $1 SUBSEP $4
-        format[key] = $2
-        n[key]++
-        wall[key] += $6
-        cpu[key] += $9
-        if (!(key in rss) || $10 > rss[key]) rss[key] = $10
-        if ($13 != "PASS") exact[key] = "FAIL"
-        else if (!(key in exact)) exact[key] = "PASS"
-    }
-    END {
-        for (key in n) {
-            split(key, fields, SUBSEP)
-            baseline = original_wall[format[key]] /
-                       original_n[format[key]]
-            mean = wall[key] / n[key]
-            printf "%s\t%s\t%d\t%.4f\t%.4f\t%.4f\t%.1f\t%d\t%s\n", \
-                   fields[1], fields[2], n[key], baseline, mean, \
-                   baseline / mean, cpu[key] / n[key], rss[key], \
-                   exact[key]
-        }
-    }
-' "$all_runs" | {
-    IFS= read -r header
-    printf '%s\n' "$header"
-    sort -t $'\t' -k1,1 -k2,2n
-} >"$summary"
+refresh_reports
 
 {
     printf 'finished\t%s\n' "$(date --iso-8601=seconds)"

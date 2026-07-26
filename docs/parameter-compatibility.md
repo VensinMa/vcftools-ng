@@ -1,6 +1,6 @@
 # Parameter compatibility and optimization status
 
-This document describes the v0.12.1 release-candidate command-line
+This document describes the v0.12.1 command-line
 surface. VCFtools 0.1.17 source and output files are the compatibility oracle.
 
 The terms below are deliberately separate:
@@ -108,12 +108,12 @@ must not silently change `--compat exact` output.
 
 ## Current development caveats
 
-- The v0.11.4 direct text parser has real 2.3-million-record gates for its
+- The v0.12.1 direct text parser has real 2.3-million-record gates for its
   normal diploid GT/DP/QUAL workloads plus synthetic permutations for field
   order and missing values. Malformed records, extreme numeric overflow,
   zero-sample files, and unusual polyploid encodings are not claimed as
   compatible.
 - The retained differential suite proves documented workloads, not every
   option × input-format × option-interaction combination.
-- v0.12.1 release qualification requires the full 11,230,392-record,
-  seven-scenario matrix before publication.
+- The v0.12.1 full-data first-repeat gate passed 42/42 configurations. Its
+  deferred repeats 2–5 are not yet part of the performance claims.

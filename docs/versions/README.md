@@ -17,6 +17,10 @@ development version.
 - v0.11.2 completed a five-repeat, seven-scenario benchmark on all
   11,230,392 records. Later routine development returns to the 2.3-million
   subset until the next final-stage full-data gate.
+- v0.12.1 completed a new full-data first-repeat gate for its seven-filter
+  exact-recode workload: 42/42 candidate configurations passed. It was
+  published under the explicitly staged workflow; repeats 2–5 remain pending
+  and the recorded values are labeled `full_11.23m_r1`, not means.
 
 ## Required record for every future version
 
