@@ -3,6 +3,12 @@
 Experimental high-performance, output-compatible successor to VCFtools 0.1.17.
 
 **Latest release:** [v0.11.3](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.11.3)
+
+**Development:** v0.11.4-dev is being evaluated with the permanent
+[three-scenario development gate](docs/benchmark-workflow.md). It is not a
+release yet; the seven-scenario release matrix runs only after explicit
+release-candidate approval.
+
 · all 210 full-data adaptive-counts candidate runs byte-identical and faster
 than VCFtools 0.1.17
 

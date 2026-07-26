@@ -1,0 +1,27 @@
+key	value
+schema	1
+oracle	VCFtools 0.1.17
+records	2300000
+samples	412
+workload	--min-alleles 2 --max-alleles 2 --minGQ 10 --minQ 30 --min-meanDP 7 --max-missing 0.9 --maf 0.1 --recode --recode-INFO-all --stdout
+bgzf_bytes	3956690872
+bgzf_sha256	54195d702f34d25d26dca06c7857de6646dbcefb8c0a82c3a82e28ceae1b5dff
+bgzf_index_bytes	96222
+bgzf_index_sha256	2c5fba86e06398af2b9a43855cb006f6719920c4ce49f2b47719e8a3ea029f25
+plain_bytes	25173128179
+plain_sha256	666d4e3e20791f10efa9eaab1577b5d891fe7f7ae0eabfd109d13b88e954976a
+bcf_bytes	4514051703
+bcf_sha256	21088a00f48233d3d302948d59a103fa53e8902c1c43ad0df60170bfc40e2f50
+bcf_index_bytes	101462
+bcf_index_sha256	88d68dcc842450fd34b13999a90bc1605e439c9461e04f4f72ab718ebd6451e6
+golden_bgzf_bytes	12282602418
+golden_bgzf_sha256	10f287fb3c043b6e27ce570000587ed226fbafda8754023c8c75d2ff37b80c25
+golden_plain_bytes	12282602418
+golden_plain_sha256	10f287fb3c043b6e27ce570000587ed226fbafda8754023c8c75d2ff37b80c25
+golden_bcf_bytes	11823282204
+golden_bcf_sha256	29aff251548ec7a58bae4db7f766c27b7a0e32f7c396f428b63ea4d281c4d946
+original_bgzf_wall_s	392.73
+original_plain_wall_s	353.46
+original_bcf_wall_s	327.22
+baseline_statistic	single measured run
+cache_policy	operating-system cache not flushed

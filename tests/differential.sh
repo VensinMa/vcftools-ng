@@ -4,6 +4,7 @@ set -euo pipefail
 ng_binary=${1:?vcftools-ng binary required}
 project_root=${2:?project root required}
 fixture="$project_root/tests/fixtures/osmanthus412.23chr_100k.bcf"
+vcf_fixture="$project_root/tests/fixtures/osmanthus412.23chr_100k.vcf.gz"
 golden="$project_root/tests/golden"
 output_root="$project_root/tests/output"
 
@@ -79,7 +80,7 @@ cmp \
     "$golden/subset-filtered-site-mean-depth.ldepth.mean" \
     "$output/filtered.ldepth.mean"
 cmp \
-    "$golden/subset-filtered-recode-info-all.recode.vcf" \
+    "$golden/subset-filtered-bcf-recode-info-all.recode.vcf" \
     "$output/filtered.recode.vcf"
 rm -f -- "$output/filtered.recode.vcf"
 
@@ -91,7 +92,7 @@ rm -f -- "$output/filtered.recode.vcf"
     --out "$output/recode-no-info"
 
 cmp \
-    "$golden/subset-filtered-recode.recode.vcf" \
+    "$golden/subset-filtered-bcf-recode.recode.vcf" \
     "$output/recode-no-info.recode.vcf"
 rm -f -- "$output/recode-no-info.recode.vcf"
 
@@ -113,7 +114,7 @@ cmp "$output/filtered.ldepth" "$output/single-thread.ldepth"
 cmp "$output/filtered.ldepth.mean" "$output/single-thread.ldepth.mean"
 
 "$ng_binary" \
-    --bcf "$fixture" \
+    --gzvcf "$vcf_fixture" \
     --threads 8 \
     --positions "$project_root/tests/fixtures/positions.keep.txt" \
     --exclude-positions "$project_root/tests/fixtures/positions.exclude.txt" \
@@ -128,7 +129,7 @@ cmp \
 rm -f -- "$output/position-selection.recode.vcf"
 
 "$ng_binary" \
-    --bcf "$fixture" \
+    --gzvcf "$vcf_fixture" \
     --threads 16 \
     --chr chr7 \
     --from-bp 1 \
@@ -143,7 +144,7 @@ cmp \
 rm -f -- "$output/region.recode.vcf"
 
 "$ng_binary" \
-    --bcf "$fixture" \
+    --gzvcf "$vcf_fixture" \
     --threads 8 \
     --keep "$project_root/tests/fixtures/samples.keep.txt" \
     --indv W-DA-8 \
@@ -171,7 +172,7 @@ cmp \
     "$output/samples.recode.vcf"
 
 "$ng_binary" \
-    --bcf "$fixture" \
+    --gzvcf "$vcf_fixture" \
     --threads 16 \
     --keep "$project_root/tests/fixtures/samples.keep.txt" \
     --indv W-DA-8 \
@@ -258,9 +259,10 @@ cmp \
     "$output/non-ref-af-any-compat.frq.count"
 
 flag_fixture="$project_root/tests/fixtures/osmanthus412.flags.23chr_1k.bcf"
+flag_vcf_fixture="$project_root/tests/fixtures/osmanthus412.flags.23chr_1k.vcf.gz"
 
 "$ng_binary" \
-    --bcf "$flag_fixture" \
+    --gzvcf "$flag_vcf_fixture" \
     --threads 16 \
     --keep-filtered q10 \
     --keep-filtered PASS \
@@ -294,7 +296,7 @@ flag_sample_filters=(
 )
 
 "$ng_binary" \
-    --bcf "$flag_fixture" \
+    --gzvcf "$flag_vcf_fixture" \
     --threads 8 \
     "${flag_sample_filters[@]}" \
     --remove-filtered-geno-all \
@@ -309,7 +311,7 @@ cmp "$golden/flags-ft-all.lmiss" "$output/flags-ft-all.lmiss"
 cmp "$golden/flags-ft-all.recode.vcf" "$output/flags-ft-all.recode.vcf"
 
 "$ng_binary" \
-    --bcf "$flag_fixture" \
+    --gzvcf "$flag_vcf_fixture" \
     --threads 16 \
     "${flag_sample_filters[@]}" \
     --remove-filtered-geno LowDP \
@@ -493,7 +495,7 @@ done
 
 for threads in 8 16; do
     "$ng_binary" \
-        --bcf "$flag_fixture" \
+        --gzvcf "$flag_vcf_fixture" \
         --threads "$threads" \
         --keep-filtered q10 \
         --keep-filtered PASS \

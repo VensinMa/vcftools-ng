@@ -146,44 +146,51 @@ if grep -q 'Auto-index:' "$work/plain.log"; then
 fi
 grep -q 'Auto-index: no CSI/TBI sidecar found' "$work/auto-index.log"
 grep -q 'index --csi --threads 4' "$work/auto-index.log"
-grep -q 'Input backend: indexed-regions' "$work/auto-index.log"
+grep -q 'Input backend: fast-site-stats-indexed-bgzf' \
+    "$work/auto-index.log"
 test -s "$work/auto-index.vcf.gz.csi"
 
 grep -q 'index --csi --threads 4' "$work/auto-index-bcf.log"
 grep -q 'Input backend: indexed-regions' "$work/auto-index-bcf.log"
 test -s "$work/auto-index.bcf.csi"
 
-grep -q 'Input backend: stream' "$work/no-auto-index.log"
+grep -q 'Input backend: fast-site-stats-bgzf' \
+    "$work/no-auto-index.log"
 test ! -e "$work/no-auto-index.vcf.gz.csi"
 
 grep -q 'index --csi --threads 3' "$work/auto-threads.log"
 grep -q 'Threads: 3 (auto from SLURM_CPUS_PER_TASK)' \
     "$work/auto-threads.log"
-grep -q 'Input backend: indexed-regions' "$work/auto-threads.log"
+grep -q 'Input backend: fast-site-stats-indexed-bgzf' \
+    "$work/auto-threads.log"
 test -s "$work/auto-threads.vcf.gz.csi"
 
 test -s "$work/concurrent.vcf.gz.csi"
-grep -q 'Input backend: indexed-regions' "$work/concurrent-a.log"
-grep -q 'Input backend: indexed-regions' "$work/concurrent-b.log"
+grep -q 'Input backend: fast-site-stats-indexed-bgzf' \
+    "$work/concurrent-a.log"
+grep -q 'Input backend: fast-site-stats-indexed-bgzf' \
+    "$work/concurrent-b.log"
 test -z "$(find "$work" -name '*.vcftools-ng.tmp.*' -print -quit)"
 
 grep -q 'Auto-index warning: automatic CSI construction failed' \
     "$work/missing-bcftools.log"
-grep -q 'Input backend: stream' "$work/missing-bcftools.log"
+grep -q 'Input backend: fast-site-stats-bgzf' \
+    "$work/missing-bcftools.log"
 grep -q 'Error: automatic CSI construction failed' \
     "$work/missing-bcftools-explicit.log"
 test ! -e "$work/missing-bcftools.vcf.gz.csi"
 
 grep -q 'protected sidecar is unusable' "$work/corrupt-index.log"
 grep -q 'refusing to overwrite it' "$work/corrupt-index.log"
-grep -q 'Input backend: stream' "$work/corrupt-index.log"
+grep -q 'Input backend: fast-site-stats-bgzf' \
+    "$work/corrupt-index.log"
 test "$corrupt_index_sha256" = "$(
     sha256sum "$work/corrupt-index.vcf.gz.csi" | cut -d' ' -f1
 )"
 
 grep -q 'protected sidecar is unusable' \
     "$work/valid-tbi-corrupt-csi.log"
-grep -q 'Input backend: indexed-regions' \
+grep -q 'Input backend: fast-site-stats-indexed-bgzf' \
     "$work/valid-tbi-corrupt-csi.log"
 grep -q "via $work/valid-tbi-corrupt-csi.vcf.gz.tbi" \
     "$work/valid-tbi-corrupt-csi.log"
@@ -198,7 +205,8 @@ test "$fixture_tbi_sha256" = "$(
 
 grep -q 'index is older than the data file' "$work/stale-index.log"
 grep -q 'refusing to overwrite it' "$work/stale-index.log"
-grep -q 'Input backend: stream' "$work/stale-index.log"
+grep -q 'Input backend: fast-site-stats-bgzf' \
+    "$work/stale-index.log"
 test "$stale_index_sha256" = "$(
     sha256sum "$work/stale-index.vcf.gz.tbi" | cut -d' ' -f1
 )"

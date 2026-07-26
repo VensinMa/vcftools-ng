@@ -33,6 +33,9 @@ struct ResourcePlan {
     unsigned input_threads = 0;
     unsigned compute_threads = 1;
     unsigned hts_io_threads = 0;
+    bool storage_profile_known = false;
+    bool rotational_storage = false;
+    bool page_cache_prefetched = false;
 };
 
 struct SourceOptions {

@@ -19,6 +19,7 @@
 #include <limits>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <thread>
 #include <utility>
@@ -26,7 +27,11 @@
 #include <fcntl.h>
 #include <sched.h>
 #include <sys/file.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
+#if defined(__linux__)
+#include <sys/sysmacros.h>
+#endif
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -41,6 +46,39 @@ constexpr std::size_t kMaximumShards = 65536;
 
 [[noreturn]] void fail(const std::string& message) {
     throw std::runtime_error(message);
+}
+
+std::optional<bool> detect_rotational_storage(
+    const std::string& path) {
+#if defined(__linux__)
+    struct stat status {};
+    if (::stat(path.c_str(), &status) != 0) {
+        return std::nullopt;
+    }
+    const std::filesystem::path device_link =
+        std::filesystem::path("/sys/dev/block") /
+        (std::to_string(major(status.st_dev)) + ":" +
+         std::to_string(minor(status.st_dev)));
+    std::error_code error;
+    std::filesystem::path device =
+        std::filesystem::canonical(device_link, error);
+    if (error) {
+        return std::nullopt;
+    }
+    while (!device.empty() &&
+           device != device.root_path()) {
+        std::ifstream rotational(
+            device / "queue" / "rotational");
+        int value = -1;
+        if (rotational >> value) {
+            return value != 0;
+        }
+        device = device.parent_path();
+    }
+#else
+    (void)path;
+#endif
+    return std::nullopt;
 }
 
 struct HtsFileDeleter {
@@ -339,6 +377,82 @@ private:
     int descriptor_;
 };
 
+std::uint64_t available_memory_bytes() {
+    std::ifstream memory("/proc/meminfo");
+    std::string key;
+    std::uint64_t value_kib = 0;
+    std::string unit;
+    while (memory >> key >> value_kib >> unit) {
+        if (key == "MemAvailable:") {
+            return value_kib * 1024ULL;
+        }
+    }
+    return 0;
+}
+
+bool can_prefetch_to_page_cache(
+    const std::string& path, unsigned threads) {
+    if (threads < 4 ||
+        !std::filesystem::is_regular_file(path)) {
+        return false;
+    }
+    constexpr std::uint64_t maximum_prefetch =
+        64ULL * 1024ULL * 1024ULL * 1024ULL;
+    const std::uint64_t available = available_memory_bytes();
+    if (available == 0) {
+        return false;
+    }
+    const std::uint64_t bytes =
+        std::filesystem::file_size(path);
+    return bytes <= maximum_prefetch &&
+           bytes <= available / 2;
+}
+
+bool prefetch_to_page_cache(const std::string& path) {
+    FileDescriptor input(::open(path.c_str(), O_RDONLY));
+    if (input.get() < 0) {
+        std::cerr
+            << "Storage prefetch warning: could not open "
+            << path << ": " << std::strerror(errno) << "\n";
+        return false;
+    }
+#if defined(POSIX_FADV_SEQUENTIAL)
+    (void)::posix_fadvise(
+        input.get(), 0, 0, POSIX_FADV_SEQUENTIAL);
+#endif
+    constexpr std::size_t buffer_bytes =
+        16ULL * 1024ULL * 1024ULL;
+    std::vector<char> buffer(buffer_bytes);
+    const auto started = std::chrono::steady_clock::now();
+    std::uint64_t total = 0;
+    while (true) {
+        const ssize_t count =
+            ::read(input.get(), buffer.data(), buffer.size());
+        if (count == 0) {
+            break;
+        }
+        if (count < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            std::cerr
+                << "Storage prefetch warning: read failed: "
+                << std::strerror(errno) << "\n";
+            return false;
+        }
+        total += static_cast<std::uint64_t>(count);
+    }
+    const double seconds =
+        std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - started)
+            .count();
+    std::cerr
+        << "Storage prefetch: cached " << total
+        << " bytes from rotational storage in "
+        << seconds << " seconds\n";
+    return true;
+}
+
 struct IndexBuildResult {
     bool success = false;
     std::string detail;
@@ -526,28 +640,35 @@ IndexBuildResult build_csi_index(
         final_path};
 }
 
+unsigned descriptor_limited_input_threads(unsigned requested);
+
 ResourcePlan plan_resources(
     unsigned requested_threads, bool parallel_input,
-    bool compressed_stream, bool text_parsing = false) {
+    bool compressed_stream, bool text_parsing = false,
+    std::optional<bool> rotational = std::nullopt,
+    bool page_cache_prefetched = false) {
     ResourcePlan plan;
     plan.total_threads = std::max(1u, requested_threads);
+    plan.storage_profile_known = rotational.has_value();
+    plan.rotational_storage = rotational.value_or(false);
+    plan.page_cache_prefetched = page_cache_prefetched;
     if (parallel_input) {
-        plan.input_threads =
-            plan.total_threads == 1
-                ? 1
-                : std::min(
-                      std::max(
-                          1u,
-                          text_parsing
-                              ? (plan.total_threads * 3u) / 4u
-                              : (plan.total_threads + 2u) / 3u),
-                      plan.total_threads - 1u);
-        plan.compute_threads =
-            plan.total_threads == 1
-                ? 1
-                : std::max(
-                      1u,
-                      plan.total_threads - plan.input_threads);
+        if (plan.rotational_storage &&
+            !plan.page_cache_prefetched) {
+            plan.input_threads = 1;
+            plan.compute_threads = plan.total_threads;
+        } else {
+            plan.input_threads = std::min(
+                plan.total_threads,
+                descriptor_limited_input_threads(
+                    plan.total_threads));
+            plan.compute_threads =
+                text_parsing
+                    ? std::max(
+                          1u, (plan.total_threads + 1u) / 2u)
+                    : std::max(
+                          1u, (plan.total_threads + 2u) / 3u);
+        }
     } else {
         plan.compute_threads = plan.total_threads;
     }
@@ -561,6 +682,39 @@ ResourcePlan plan_resources(
     return plan;
 }
 
+std::string storage_note(const ResourcePlan& plan) {
+    if (!plan.storage_profile_known) {
+        return "storage profile unknown";
+    }
+    if (plan.rotational_storage) {
+        return plan.page_cache_prefetched
+                   ? "rotational storage prefetched into page cache"
+                   : "rotational storage, low-seek input";
+    }
+    return "non-rotational storage";
+}
+
+unsigned descriptor_limited_input_threads(unsigned requested) {
+    struct rlimit descriptor_limit {};
+    if (::getrlimit(RLIMIT_NOFILE, &descriptor_limit) != 0 ||
+        descriptor_limit.rlim_cur == RLIM_INFINITY) {
+        return requested;
+    }
+    constexpr rlim_t reserved_descriptors = 64;
+    constexpr rlim_t descriptors_per_input_worker = 2;
+    if (descriptor_limit.rlim_cur <= reserved_descriptors) {
+        return 1;
+    }
+    const rlim_t available_workers =
+        (descriptor_limit.rlim_cur - reserved_descriptors) /
+        descriptors_per_input_worker;
+    return std::max(
+        1u,
+        static_cast<unsigned>(std::min<rlim_t>(
+            available_workers,
+            std::numeric_limits<unsigned>::max())));
+}
+
 class StreamSource final : public OrderedShardSource {
 public:
     StreamSource(
@@ -572,7 +726,8 @@ public:
             format != nullptr &&
             format->compression != no_compression;
         resources_ = plan_resources(
-            options.total_threads, false, compressed, false);
+            options.total_threads, false, compressed, false,
+            detect_rotational_storage(path_));
         if (resources_.hts_io_threads > 0 &&
             hts_set_threads(
                 input_.get(),
@@ -617,7 +772,9 @@ public:
     }
 
     std::string description() const override {
-        std::string result = "HTSlib ordered stream";
+        std::string result =
+            "HTSlib ordered stream, " +
+            storage_note(resources_);
         if (!fallback_reason_.empty()) {
             result += " (fallback: " + fallback_reason_ + ")";
         }
@@ -940,7 +1097,8 @@ public:
     }
 
     std::string description() const override {
-        return "plain VCF aligned byte ranges";
+        return "plain VCF aligned byte ranges, " +
+               storage_note(resources());
     }
 
 private:
@@ -1314,7 +1472,8 @@ public:
             is_bcf_
                 ? "BCF CSI ordered regions"
                 : "BGZF VCF TBI/CSI ordered regions";
-        return adapter + " via " + options().index_path;
+        return adapter + " via " + options().index_path +
+               ", " + storage_note(resources());
     }
 
 private:
@@ -1596,12 +1755,16 @@ std::unique_ptr<OrderedShardSource> make_ordered_source(
     const bool is_bgzf_variant =
         (format.format == vcf || format.format == bcf) &&
         format.compression == bgzf;
-    const bool automatic_parallel_worthwhile =
+    const std::optional<bool> rotational =
+        detect_rotational_storage(options.path);
+    const bool automatic_plain_ranges_worthwhile =
         options.parallel_safe && options.total_threads >= 3;
+    const bool automatic_index_wanted =
+        options.parallel_safe;
     const bool index_backend_wanted =
         options.requested_backend == Backend::indexed_regions ||
         (options.requested_backend == Backend::automatic &&
-         automatic_parallel_worthwhile);
+         automatic_index_wanted);
     std::string auto_index_failure;
     SidecarInspection indexes;
     if (is_bgzf_variant) {
@@ -1644,12 +1807,25 @@ std::unique_ptr<OrderedShardSource> make_ordered_source(
     }
     const bool is_indexable =
         is_bgzf_variant && !prepared.index_path.empty();
+    bool page_cache_prefetched = false;
+    if (options.requested_backend == Backend::automatic &&
+        options.parallel_safe &&
+        rotational.value_or(false) &&
+        (is_plain_vcf || is_indexable) &&
+        can_prefetch_to_page_cache(
+            options.path, options.total_threads)) {
+        page_cache_prefetched =
+            prefetch_to_page_cache(options.path);
+    }
 
     Backend selected = options.requested_backend;
     if (selected == Backend::automatic) {
-        if (automatic_parallel_worthwhile && is_plain_vcf) {
+        if (automatic_plain_ranges_worthwhile && is_plain_vcf) {
             selected = Backend::plain_ranges;
-        } else if (automatic_parallel_worthwhile && is_indexable) {
+        } else if (
+            is_indexable &&
+            (!rotational.value_or(false) ||
+             page_cache_prefetched)) {
             selected = Backend::indexed_regions;
         } else {
             selected = Backend::stream;
@@ -1679,7 +1855,8 @@ std::unique_ptr<OrderedShardSource> make_ordered_source(
     if (selected == Backend::plain_ranges) {
         ResourcePlan resources =
             plan_resources(
-                options.total_threads, true, false, true);
+                options.total_threads, true, false, true,
+                rotational, page_cache_prefetched);
         return std::make_unique<PlainRangeSource>(
             prepared, std::move(header), resources);
     }
@@ -1687,7 +1864,8 @@ std::unique_ptr<OrderedShardSource> make_ordered_source(
         ResourcePlan resources =
             plan_resources(
                 options.total_threads, true, false,
-                format.format == vcf);
+                format.format == vcf, rotational,
+                page_cache_prefetched);
         try {
             return std::make_unique<IndexedRegionSource>(
                 prepared, std::move(header), format, resources);

@@ -39,10 +39,11 @@
 
 namespace {
 
-constexpr const char* kVersion = "0.11.3";
+constexpr const char* kVersion = "0.11.4-dev";
 
 struct Options {
     std::string input;
+    bool input_bcf = false;
     std::string output_prefix = "out";
     unsigned threads =
         vcftools_ng::input::detect_available_threads().count;
@@ -55,6 +56,7 @@ struct Options {
     std::string bcftools_path = "bcftools";
 
     bool output_freq = false;
+    bool output_freq2 = false;
     bool output_counts = false;
     bool output_missing_site = false;
     bool output_site_depth = false;
@@ -83,6 +85,7 @@ struct Options {
     bool output_recode_bcf = false;
     bool output_recode_vcf_gz = false;
     bool recode_info_all = false;
+    bool output_stdout = false;
     std::string diff_input;
     bool output_diff_sites_in_files = false;
     bool output_diff_individuals_in_files = false;
@@ -137,18 +140,21 @@ struct Options {
     int max_non_ref_ac_any = std::numeric_limits<int>::max();
 };
 
-bool can_use_fused_counts(const Options& options) {
-    const bool counts_only =
-        options.output_counts &&
-        !options.output_freq &&
-        !options.output_missing_site &&
-        !options.output_site_depth &&
-        !options.output_site_mean_depth &&
+bool can_use_fused_site_stats(const Options& options) {
+    const bool any_site_stat =
+        options.output_freq ||
+        options.output_freq2 ||
+        options.output_counts ||
+        options.output_missing_site ||
+        options.output_site_depth ||
+        options.output_site_mean_depth ||
+        options.output_site_quality;
+    const bool site_stats_only =
+        any_site_stat &&
         !options.output_individual_depth &&
         !options.output_individual_missingness &&
         !options.output_heterozygosity &&
         !options.output_hardy_weinberg &&
-        !options.output_site_quality &&
         !options.output_site_pi &&
         options.pi_window_size == 0 &&
         options.pi_window_step == 0 &&
@@ -227,7 +233,7 @@ bool can_use_fused_counts(const Options& options) {
         (options.threads <= 2 &&
          options.input_backend ==
              vcftools_ng::input::Backend::stream);
-    return counts_only &&
+    return site_stats_only &&
            no_selection &&
            no_numeric_filters &&
            backend_allows_fused_stream;
@@ -236,6 +242,8 @@ bool can_use_fused_counts(const Options& options) {
 [[noreturn]] void fail(const std::string& message) {
     throw std::runtime_error(message);
 }
+
+bool input_is_bcf(const std::string& path);
 
 std::string require_value(int argc, char** argv, int& i) {
     if (i + 1 >= argc) {
@@ -288,14 +296,15 @@ void print_help() {
         << "  --bcftools FILE\n"
         << "  --compat exact\n"
         << "Outputs (may be combined in one scan):\n"
-        << "  --freq --counts --missing-site --site-depth --site-mean-depth\n"
+        << "  --freq --freq2 --counts --missing-site --site-depth"
+        << " --site-mean-depth\n"
         << "  --depth --missing-indv --het --hardy --site-quality\n"
         << "  --site-pi --window-pi N [--window-pi-step N] --TajimaD N\n"
         << "  --weir-fst-pop FILE (repeat) [--fst-window-size N]\n"
         << "  --geno-r2 [--ld-window N] [--ld-window-bp N] [--min-r2 X]\n"
         << "  --pca | --pca-no-norm\n"
         << "  --recode | --recode-bcf | --recode-vcf-gz"
-        << " [--recode-INFO-all]\n"
+        << " [--recode-INFO-all] [--stdout]\n"
         << "  --diff FILE | --gzdiff FILE | --diff-bcf FILE\n"
         << "    --diff-site --diff-indv --diff-site-discordance\n"
         << "    --diff-indv-discordance\n"
@@ -340,6 +349,7 @@ Options parse_options(int argc, char** argv) {
                 fail("Only one input file may be specified");
             }
             options.input = require_value(argc, argv, i);
+            options.input_bcf = arg == "--bcf";
         } else if (arg == "--out") {
             options.output_prefix = require_value(argc, argv, i);
         } else if (arg == "--threads" || arg == "-t") {
@@ -366,6 +376,8 @@ Options parse_options(int argc, char** argv) {
                 require_value(argc, argv, i);
         } else if (arg == "--freq") {
             options.output_freq = true;
+        } else if (arg == "--freq2") {
+            options.output_freq2 = true;
         } else if (arg == "--counts") {
             options.output_counts = true;
         } else if (arg == "--missing-site") {
@@ -437,6 +449,8 @@ Options parse_options(int argc, char** argv) {
             options.output_recode_vcf_gz = true;
         } else if (arg == "--recode-INFO-all") {
             options.recode_info_all = true;
+        } else if (arg == "--stdout") {
+            options.output_stdout = true;
         } else if (
             arg == "--diff" || arg == "--gzdiff" ||
             arg == "--diff-bcf") {
@@ -594,7 +608,8 @@ Options parse_options(int argc, char** argv) {
             options.requested_threads,
             vcftools_ng::input::detect_available_threads().count);
     }
-    if (!(options.output_freq || options.output_counts ||
+    if (!(options.output_freq || options.output_freq2 ||
+          options.output_counts ||
           options.output_missing_site || options.output_site_depth ||
           options.output_site_mean_depth ||
           options.output_individual_depth ||
@@ -626,7 +641,8 @@ Options parse_options(int argc, char** argv) {
             "specified together");
     }
     const bool non_diff_output =
-        options.output_freq || options.output_counts ||
+        options.output_freq || options.output_freq2 ||
+        options.output_counts ||
         options.output_missing_site || options.output_site_depth ||
         options.output_site_mean_depth ||
         options.output_individual_depth ||
@@ -643,6 +659,9 @@ Options parse_options(int argc, char** argv) {
     if (diff_output && non_diff_output) {
         fail("Diff outputs cannot yet be combined with single-file outputs");
     }
+    if (options.output_freq && options.output_freq2) {
+        fail("--freq and --freq2 write the same artifact and cannot combine");
+    }
     if (options.output_recode_bcf &&
         (options.min_gq > 0.0 || options.min_dp > 0 ||
          options.max_dp != std::numeric_limits<int>::max() ||
@@ -651,6 +670,13 @@ Options parse_options(int argc, char** argv) {
         fail(
             "--recode-bcf exact mode does not support genotype masking: "
             "VCFtools 0.1.17 corrupts this BCF-input oracle path");
+    }
+    if (options.output_stdout &&
+        (!options.output_recode ||
+         options.output_recode_bcf ||
+         options.output_recode_vcf_gz)) {
+        fail(
+            "--stdout is supported with plain --recode output only");
     }
     if (options.keep_only_indels && options.remove_indels) {
         fail("Cannot use --keep-only-indels and --remove-indels together");
@@ -706,6 +732,7 @@ Options parse_options(int argc, char** argv) {
     if (options.min_call_rate < 0.0 || options.min_call_rate > 1.0) {
         fail("--max-missing must be between 0 and 1");
     }
+    options.input_bcf = input_is_bcf(options.input);
     return options;
 }
 
@@ -792,6 +819,170 @@ std::vector<uint8_t> read_raw_bcf_header(const std::string& path) {
         offset += static_cast<std::size_t>(count);
     }
     return header;
+}
+
+std::vector<std::string> split_original_header_field(
+    const std::string& value, char delimiter) {
+    std::vector<std::string> fields;
+    std::istringstream input(value);
+    std::string field;
+    while (std::getline(input, field, delimiter)) {
+        fields.push_back(field);
+    }
+    return fields;
+}
+
+std::optional<std::string> reprint_original_bcf_meta_line(
+    const std::string& line) {
+    if (line.starts_with("##fileformat=")) {
+        return std::nullopt;
+    }
+    std::string kind;
+    if (line.starts_with("##INFO=<")) {
+        kind = "INFO";
+    } else if (line.starts_with("##FILTER=<")) {
+        kind = "FILTER";
+    } else if (line.starts_with("##FORMAT=<")) {
+        kind = "FORMAT";
+    } else if (line.starts_with("##contig=<")) {
+        kind = "contig";
+    } else {
+        return line;
+    }
+
+    const std::size_t begin = line.find('<');
+    const std::size_t end = line.rfind('>');
+    const std::string details =
+        line.substr(
+            begin + 1,
+            end == std::string::npos
+                ? std::string::npos
+                : end - begin - 1);
+    std::string id;
+    std::string number;
+    std::string type;
+    std::string description;
+    std::string source;
+    std::string version;
+    std::string length;
+    std::string assembly;
+    std::string other;
+    for (const auto& token :
+         split_original_header_field(details, ',')) {
+        const auto pair =
+            split_original_header_field(token, '=');
+        if (pair.size() < 2) {
+            continue;
+        }
+        const auto& key = pair[0];
+        const auto& value = pair[1];
+        if (key == "ID") {
+            id = value;
+        } else if (key == "Number") {
+            number = value;
+        } else if (key == "Type") {
+            type = value;
+        } else if (key == "Description") {
+            description = value;
+        } else if (key == "Source" && kind == "INFO") {
+            source = value;
+        } else if (key == "Version" && kind == "INFO") {
+            version = value;
+        } else if (key == "length" && kind == "contig") {
+            length = value;
+        } else if (key == "assembly" && kind == "contig") {
+            assembly = value;
+        } else if (key != "IDX" || kind == "contig") {
+            if (!other.empty()) {
+                other += ',';
+            }
+            other += token;
+        }
+    }
+    if (kind == "FILTER" && id == "PASS") {
+        return std::nullopt;
+    }
+
+    std::ostringstream output;
+    output << "##" << kind << "=<";
+    if (!id.empty()) {
+        output << "ID=" << id;
+    }
+    if (!number.empty()) {
+        output << ",Number=" << number;
+    }
+    if (!type.empty()) {
+        output << ",Type=" << type;
+    }
+    if (!description.empty()) {
+        output << ",Description=" << description;
+    }
+    if (!source.empty()) {
+        output << ",Source=" << source;
+    }
+    if (!version.empty()) {
+        output << ",Version=" << version;
+    }
+    if (!length.empty()) {
+        output << ",Length=" << length;
+    }
+    if (!assembly.empty()) {
+        output << ",Assembly=" << assembly;
+    }
+    if (!other.empty()) {
+        output << ',' << other;
+    }
+    output << '>';
+    return output.str();
+}
+
+bool input_is_bcf(const std::string& path) {
+    HtsFilePtr input(hts_open(path.c_str(), "r"));
+    if (!input) {
+        fail("Could not inspect input format: " + path);
+    }
+    const htsFormat* format = hts_get_format(input.get());
+    return format != nullptr && format->format == bcf;
+}
+
+std::string original_compatible_bcf_vcf_header(
+    const std::string& path, bcf_hdr_t* output_header) {
+    const auto raw = read_raw_bcf_header(path);
+    std::string text(
+        reinterpret_cast<const char*>(raw.data() + 9),
+        raw.size() - 9);
+    const std::size_t terminator = text.find('\0');
+    if (terminator != std::string::npos) {
+        text.resize(terminator);
+    }
+    const bool has_idx = text.find("IDX=") != std::string::npos;
+    std::ostringstream output;
+    std::istringstream lines(text);
+    std::string line;
+    while (std::getline(lines, line)) {
+        if (!line.starts_with("##")) {
+            continue;
+        }
+        if (has_idx) {
+            const auto reprinted =
+                reprint_original_bcf_meta_line(line);
+            if (reprinted.has_value()) {
+                output << *reprinted << '\n';
+            }
+        } else {
+            output << line << '\n';
+        }
+    }
+    output << "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO";
+    const int samples = bcf_hdr_nsamples(output_header);
+    if (samples > 0) {
+        output << "\tFORMAT";
+        for (int sample = 0; sample < samples; ++sample) {
+            output << '\t' << output_header->samples[sample];
+        }
+    }
+    output << '\n';
+    return output.str();
 }
 
 class DeterministicBgzfWriter {
@@ -2114,8 +2305,163 @@ void sort_filter_column(std::string& line) {
     line.replace(field_start, field_end - field_start, sorted);
 }
 
+void apply_original_bcf_string_format_quirk(
+    bcf_hdr_t* header, bcf1_t* record, std::string& line) {
+    bcf_unpack(record, BCF_UN_FMT);
+    std::vector<bool> generic_string(record->n_fmt, false);
+    bool any = false;
+    for (int index = 0; index < record->n_fmt; ++index) {
+        const int id = record->d.fmt[index].id;
+        const char* name =
+            bcf_hdr_int2id(header, BCF_DT_ID, id);
+        if (name == nullptr ||
+            std::strcmp(name, "GT") == 0 ||
+            std::strcmp(name, "FT") == 0) {
+            continue;
+        }
+        if (bcf_hdr_id2type(header, BCF_HL_FMT, id) ==
+            BCF_HT_STR) {
+            generic_string[index] = true;
+            any = true;
+        }
+    }
+    if (!any) {
+        return;
+    }
+
+    std::size_t sample_start = 0;
+    for (int column = 0; column < 9; ++column) {
+        sample_start = line.find('\t', sample_start);
+        if (sample_start == std::string::npos) {
+            return;
+        }
+        ++sample_start;
+    }
+    struct Replacement {
+        std::size_t begin;
+        std::size_t length;
+        char value;
+    };
+    std::vector<Replacement> replacements;
+    replacements.reserve(
+        static_cast<std::size_t>(bcf_hdr_nsamples(header)));
+    std::size_t field_start = sample_start;
+    int sample = 0;
+    int format_index = 0;
+    while (field_start < line.size() &&
+           sample < bcf_hdr_nsamples(header)) {
+        const std::size_t field_end =
+            line.find_first_of(":\t\n", field_start);
+        const std::size_t end =
+            field_end == std::string::npos
+                ? line.size()
+                : field_end;
+        if (format_index < record->n_fmt &&
+            generic_string[format_index]) {
+            const bcf_fmt_t& format =
+                record->d.fmt[format_index];
+            char last = '\0';
+            if (format.p != nullptr && format.size > 0) {
+                last = reinterpret_cast<const char*>(
+                    format.p)[
+                    static_cast<std::size_t>(sample) *
+                        format.size +
+                    format.size - 1];
+            }
+            replacements.push_back(
+                {field_start, end - field_start, last});
+        }
+        if (field_end == std::string::npos ||
+            line[field_end] == '\n') {
+            break;
+        }
+        if (line[field_end] == ':') {
+            ++format_index;
+        } else {
+            ++sample;
+            format_index = 0;
+        }
+        field_start = field_end + 1;
+    }
+    for (auto replacement = replacements.rbegin();
+         replacement != replacements.rend(); ++replacement) {
+        line.replace(
+            replacement->begin, replacement->length,
+            1, replacement->value);
+    }
+}
+
+void apply_original_bcf_missing_gt_quirk(
+    bcf_hdr_t* header, bcf1_t* record,
+    const std::vector<uint8_t>& genotype_filtered,
+    const std::vector<int>& selected_samples,
+    std::string& line) {
+    bcf_unpack(record, BCF_UN_FMT);
+    int genotype_index = -1;
+    for (int index = 0; index < record->n_fmt; ++index) {
+        const char* name = bcf_hdr_int2id(
+            header, BCF_DT_ID, record->d.fmt[index].id);
+        if (name != nullptr && std::strcmp(name, "GT") == 0) {
+            genotype_index = index;
+            break;
+        }
+    }
+    if (genotype_index < 0) {
+        return;
+    }
+
+    std::size_t sample_start = 0;
+    for (int column = 0; column < 9; ++column) {
+        sample_start = line.find('\t', sample_start);
+        if (sample_start == std::string::npos) {
+            return;
+        }
+        ++sample_start;
+    }
+    std::vector<std::size_t> missing_alleles;
+    std::size_t field_start = sample_start;
+    int sample = 0;
+    int format_index = 0;
+    while (field_start < line.size() &&
+           sample < static_cast<int>(selected_samples.size())) {
+        const std::size_t field_end =
+            line.find_first_of(":\t\n", field_start);
+        const std::size_t end =
+            field_end == std::string::npos
+                ? line.size()
+                : field_end;
+        if (format_index == genotype_index &&
+            !genotype_filtered[selected_samples[sample]] &&
+            end - field_start > 1) {
+            for (std::size_t position = field_start;
+                 position < end; ++position) {
+                if (line[position] == '.') {
+                    missing_alleles.push_back(position);
+                }
+            }
+        }
+        if (field_end == std::string::npos ||
+            line[field_end] == '\n') {
+            break;
+        }
+        if (line[field_end] == ':') {
+            ++format_index;
+        } else {
+            ++sample;
+            format_index = 0;
+        }
+        field_start = field_end + 1;
+    }
+    for (auto position = missing_alleles.rbegin();
+         position != missing_alleles.rend(); ++position) {
+        line.replace(*position, 1, "-1");
+    }
+}
+
 std::string format_recode_line(const Options& options, bcf_hdr_t* header,
-                               bcf1_t* record, Scratch& scratch) {
+                               bcf1_t* record, Scratch& scratch,
+                               const std::vector<uint8_t>& genotype_filtered,
+                               const std::vector<int>& selected_samples) {
     scratch.recode_buffer.l = 0;
     if (vcf_format1(header, record, &scratch.recode_buffer) != 0) {
         fail("Could not format recoded VCF record");
@@ -2124,6 +2470,13 @@ std::string format_recode_line(const Options& options, bcf_hdr_t* header,
         scratch.recode_buffer.s, scratch.recode_buffer.l);
     if (record->d.n_flt > 1) {
         sort_filter_column(line);
+    }
+    if (options.input_bcf) {
+        apply_original_bcf_string_format_quirk(
+            header, record, line);
+        apply_original_bcf_missing_gt_quirk(
+            header, record, genotype_filtered,
+            selected_samples, line);
     }
     if (!options.recode_info_all) {
         remove_info_column(line);
@@ -2213,7 +2566,10 @@ SiteResult process_site(const Options& options,
         options.max_dp != std::numeric_limits<int>::max() ||
         options.remove_all_filtered_genotypes ||
         !options.genotype_filters_to_remove.empty();
-    const bool need_gt = options.output_freq || options.output_counts ||
+    const bool need_gt =
+                         options.output_freq ||
+                         options.output_freq2 ||
+                         options.output_counts ||
                          options.output_missing_site ||
                          options.output_individual_missingness ||
                          options.output_heterozygosity ||
@@ -2596,7 +2952,8 @@ SiteResult process_site(const Options& options,
             result.recode_line =
                 format_recode_line(
                     options, samples.output_header(header), record,
-                    scratch);
+                    scratch, genotype_filtered,
+                    samples.indices());
         }
         if (options.output_recode_bcf) {
             result.output_record = record;
@@ -2629,9 +2986,12 @@ public:
         observed_homozygotes_.assign(selected_samples, 0);
         expected_homozygotes_.assign(selected_samples, 0.0);
 
-        if (options.output_freq) {
+        if (options.output_freq || options.output_freq2) {
             freq_ = open(".frq");
-            freq_ << "CHROM\tPOS\tN_ALLELES\tN_CHR\t{ALLELE:FREQ}\n";
+            freq_
+                << (options.output_freq
+                        ? "CHROM\tPOS\tN_ALLELES\tN_CHR\t{ALLELE:FREQ}\n"
+                        : "CHROM\tPOS\tN_ALLELES\tN_CHR\t{FREQ}\n");
         }
         if (options.output_counts) {
             counts_ = open(".frq.count");
@@ -2722,26 +3082,45 @@ public:
         }
         if (options.output_recode ||
             options.output_recode_vcf_gz) {
-            kstring_t header_text{0, 0, nullptr};
-            if (bcf_hdr_format(header, 0, &header_text) != 0) {
-                std::free(header_text.s);
-                fail("Could not format VCF header");
+            std::string bcf_header_text;
+            kstring_t formatted_header{0, 0, nullptr};
+            const char* header_data = nullptr;
+            std::size_t header_size = 0;
+            if (input_is_bcf(options.input)) {
+                bcf_header_text =
+                    original_compatible_bcf_vcf_header(
+                        options.input, header);
+                header_data = bcf_header_text.data();
+                header_size = bcf_header_text.size();
+            } else {
+                if (bcf_hdr_format(
+                        header, 0, &formatted_header) != 0) {
+                    std::free(formatted_header.s);
+                    fail("Could not format VCF header");
+                }
+                header_data = formatted_header.s;
+                header_size = formatted_header.l;
             }
             if (options.output_recode) {
-                recode_ = open(".recode.vcf");
-                recode_.write(
-                    header_text.s,
-                    static_cast<std::streamsize>(header_text.l));
+                if (options.output_stdout) {
+                    recode_stream_ = &std::cout;
+                } else {
+                    recode_ = open(".recode.vcf");
+                    recode_stream_ = &recode_;
+                }
+                recode_stream_->write(
+                    header_data,
+                    static_cast<std::streamsize>(header_size));
             }
             if (options.output_recode_vcf_gz) {
                 recode_vcf_gz_ =
                     std::make_unique<DeterministicBgzfWriter>(
                         options.output_prefix + ".recode.vcf.gz",
                         options.threads);
-                recode_vcf_gz_->append(header_text.s, header_text.l);
+                recode_vcf_gz_->append(header_data, header_size);
             }
-            std::free(header_text.s);
-            if (options.output_recode && !recode_) {
+            std::free(formatted_header.s);
+            if (options.output_recode && !*recode_stream_) {
                 fail("Could not write recoded VCF header");
             }
         }
@@ -2765,7 +3144,7 @@ public:
         if (!result.kept) {
             return;
         }
-        if (options_.output_freq) {
+        if (options_.output_freq || options_.output_freq2) {
             freq_ << result.chrom << '\t' << result.pos << '\t'
                   << result.alleles.size() << '\t'
                   << result.non_missing_chromosomes;
@@ -2773,7 +3152,11 @@ public:
                 const double frequency =
                     result.allele_counts[i] /
                     static_cast<double>(result.non_missing_chromosomes);
-                freq_ << '\t' << result.alleles[i] << ':' << frequency;
+                freq_ << '\t';
+                if (options_.output_freq) {
+                    freq_ << result.alleles[i] << ':';
+                }
+                freq_ << frequency;
             }
             freq_ << '\n';
         }
@@ -2965,7 +3348,7 @@ public:
             }
         }
         if (options_.output_recode) {
-            recode_.write(
+            recode_stream_->write(
                 result.recode_line.data(),
                 static_cast<std::streamsize>(result.recode_line.size()));
         }
@@ -3033,6 +3416,12 @@ public:
         }
         if (recode_vcf_gz_) {
             recode_vcf_gz_->finish();
+        }
+        if (recode_stream_ != nullptr) {
+            recode_stream_->flush();
+            if (!*recode_stream_) {
+                fail("Could not finish recoded VCF output");
+            }
         }
     }
 
@@ -3512,6 +3901,7 @@ private:
     std::ofstream genotype_ld_;
     std::ofstream pca_;
     std::ofstream recode_;
+    std::ostream* recode_stream_ = nullptr;
     std::unique_ptr<ExactBcfOutput> recode_bcf_;
     std::unique_ptr<DeterministicBgzfWriter> recode_vcf_gz_;
     std::vector<std::string> sample_names_;
@@ -4368,7 +4758,7 @@ int run(const Options& options) {
     if (!options.diff_input.empty()) {
         return run_diff(options);
     }
-    if (can_use_fused_counts(options)) {
+    if (can_use_fused_site_stats(options)) {
         vcftools_ng::input::SourceOptions fast_options{
             .path = options.input,
             .requested_backend = options.input_backend,
@@ -4382,8 +4772,17 @@ int run(const Options& options) {
             .start_position = -1,
             .end_position = std::numeric_limits<int>::max(),
         };
-        const auto fast = vcftools_ng::run_fast_text_counts(
-            options.output_prefix, fast_options);
+        const vcftools_ng::FastSiteStatPlan fast_plan{
+            .freq = options.output_freq,
+            .freq2 = options.output_freq2,
+            .counts = options.output_counts,
+            .missing_site = options.output_missing_site,
+            .site_depth = options.output_site_depth,
+            .site_mean_depth = options.output_site_mean_depth,
+            .site_quality = options.output_site_quality,
+        };
+        const auto fast = vcftools_ng::run_fast_text_site_stats(
+            options.output_prefix, fast_options, fast_plan);
         if (fast.has_value()) {
             const auto detected_threads =
                 vcftools_ng::input::detect_available_threads();
@@ -4412,7 +4811,7 @@ int run(const Options& options) {
                 << "Planned input shards: "
                 << fast->planned_shards << "\n"
                 << "Selected samples: " << fast->samples << "\n"
-                << "Scheduler: adaptive fused text counts\n"
+                << "Scheduler: adaptive fused text site statistics\n"
                 << "After filtering, kept " << fast->kept
                 << " out of " << fast->total << " sites\n";
             return 0;

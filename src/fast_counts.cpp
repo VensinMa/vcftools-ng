@@ -43,8 +43,34 @@ constexpr std::uint64_t kTargetActiveInputBytes = 256ULL * kMib;
 constexpr std::size_t kMaximumShards = 65536;
 constexpr std::size_t kOutputFlushBytes = 8ULL * 1024ULL * 1024ULL;
 constexpr std::size_t kInlineAlleles = 16;
+constexpr std::size_t kArtifactCount = 6;
+constexpr std::string_view kFreqHeader =
+    "CHROM\tPOS\tN_ALLELES\tN_CHR\t{ALLELE:FREQ}\n";
+constexpr std::string_view kFreq2Header =
+    "CHROM\tPOS\tN_ALLELES\tN_CHR\t{FREQ}\n";
 constexpr std::string_view kCountsHeader =
     "CHROM\tPOS\tN_ALLELES\tN_CHR\t{ALLELE:COUNT}\n";
+constexpr std::string_view kMissingHeader =
+    "CHR\tPOS\tN_DATA\tN_GENOTYPE_FILTERED\tN_MISS\tF_MISS\n";
+constexpr std::string_view kDepthHeader =
+    "CHROM\tPOS\tSUM_DEPTH\tSUMSQ_DEPTH\n";
+constexpr std::string_view kMeanDepthHeader =
+    "CHROM\tPOS\tMEAN_DEPTH\tVAR_DEPTH\n";
+constexpr std::string_view kQualityHeader =
+    "CHROM\tPOS\tQUAL\n";
+
+enum class Artifact : std::size_t {
+    freq = 0,
+    counts = 1,
+    missing = 2,
+    depth = 3,
+    mean_depth = 4,
+    quality = 5,
+};
+
+constexpr std::size_t artifact_index(Artifact artifact) {
+    return static_cast<std::size_t>(artifact);
+}
 
 [[noreturn]] void fail(const std::string& message) {
     throw std::runtime_error(message);
@@ -125,8 +151,85 @@ struct IndexedShard {
 };
 
 struct ShardOutput {
-    std::string text;
+    std::array<std::string, kArtifactCount> text;
     std::uint64_t records = 0;
+};
+
+class OrderedArtifactSet {
+public:
+    OrderedArtifactSet(
+        const std::string& prefix,
+        const FastSiteStatPlan& plan) {
+        if (plan.freq || plan.freq2) {
+            open(
+                Artifact::freq, prefix + ".frq",
+                plan.freq ? kFreqHeader : kFreq2Header);
+        }
+        if (plan.counts) {
+            open(
+                Artifact::counts, prefix + ".frq.count",
+                kCountsHeader);
+        }
+        if (plan.missing_site) {
+            open(
+                Artifact::missing, prefix + ".lmiss",
+                kMissingHeader);
+        }
+        if (plan.site_depth) {
+            open(
+                Artifact::depth, prefix + ".ldepth",
+                kDepthHeader);
+        }
+        if (plan.site_mean_depth) {
+            open(
+                Artifact::mean_depth, prefix + ".ldepth.mean",
+                kMeanDepthHeader);
+        }
+        if (plan.site_quality) {
+            open(
+                Artifact::quality, prefix + ".lqual",
+                kQualityHeader);
+        }
+    }
+
+    void append(const ShardOutput& shard) {
+        for (std::size_t index = 0; index < outputs_.size(); ++index) {
+            if (!enabled_[index]) {
+                continue;
+            }
+            outputs_[index].write(
+                shard.text[index].data(),
+                static_cast<std::streamsize>(
+                    shard.text[index].size()));
+        }
+    }
+
+    void validate() const {
+        for (std::size_t index = 0; index < outputs_.size(); ++index) {
+            if (enabled_[index] && !outputs_[index]) {
+                fail("Could not write fused site-stat artifact");
+            }
+        }
+    }
+
+private:
+    void open(
+        Artifact artifact, const std::string& path,
+        std::string_view header) {
+        const std::size_t index = artifact_index(artifact);
+        outputs_[index].open(
+            path, std::ios::binary | std::ios::trunc);
+        if (!outputs_[index]) {
+            fail("Could not open fused site-stat output: " + path);
+        }
+        enabled_[index] = true;
+        outputs_[index].write(
+            header.data(),
+            static_cast<std::streamsize>(header.size()));
+    }
+
+    std::array<std::ofstream, kArtifactCount> outputs_;
+    std::array<bool, kArtifactCount> enabled_{};
 };
 
 unsigned descriptor_limited_workers(
@@ -240,26 +343,24 @@ void append_unsigned(std::string& output, std::uint64_t value) {
     output.append(buffer.data(), converted.ptr);
 }
 
-std::string_view subfield(
-    std::string_view sample, std::size_t index) {
-    std::size_t begin = 0;
-    for (std::size_t current = 0; current < index; ++current) {
-        const std::size_t separator = sample.find(':', begin);
-        if (separator == std::string_view::npos) {
-            return {};
-        }
-        begin = separator + 1;
+void append_floating(std::string& output, double value) {
+    std::array<char, 64> buffer{};
+    const auto converted = std::to_chars(
+        buffer.data(), buffer.data() + buffer.size(), value,
+        std::chars_format::general, 6);
+    if (converted.ec != std::errc{}) {
+        fail("Could not format floating site statistic");
     }
-    const std::size_t end = sample.find(':', begin);
-    return sample.substr(
-        begin,
-        end == std::string_view::npos
-            ? std::string_view::npos
-            : end - begin);
+    output.append(buffer.data(), converted.ptr);
 }
 
-std::optional<std::size_t> genotype_index(
-    std::string_view format) {
+struct FormatIndices {
+    std::optional<std::size_t> gt;
+    std::optional<std::size_t> dp;
+};
+
+FormatIndices format_indices(std::string_view format) {
+    FormatIndices result;
     std::size_t index = 0;
     std::size_t begin = 0;
     while (begin <= format.size()) {
@@ -270,7 +371,9 @@ std::optional<std::size_t> genotype_index(
                 ? std::string_view::npos
                 : end - begin);
         if (key == "GT") {
-            return index;
+            result.gt = index;
+        } else if (key == "DP") {
+            result.dp = index;
         }
         if (end == std::string_view::npos) {
             break;
@@ -278,14 +381,84 @@ std::optional<std::size_t> genotype_index(
         begin = end + 1;
         ++index;
     }
-    return std::nullopt;
+    return result;
+}
+
+struct SampleFields {
+    std::string_view gt;
+    std::string_view dp;
+};
+
+SampleFields select_sample_fields(
+    std::string_view sample,
+    const FormatIndices& indices) {
+    SampleFields result;
+    std::size_t index = 0;
+    std::size_t begin = 0;
+    while (begin <= sample.size()) {
+        const std::size_t end = sample.find(':', begin);
+        const std::string_view value = sample.substr(
+            begin,
+            end == std::string_view::npos
+                ? std::string_view::npos
+                : end - begin);
+        if (indices.gt.has_value() && index == *indices.gt) {
+            result.gt = value;
+        }
+        if (indices.dp.has_value() && index == *indices.dp) {
+            result.dp = value;
+        }
+        if (end == std::string_view::npos) {
+            break;
+        }
+        begin = end + 1;
+        ++index;
+    }
+    return result;
+}
+
+struct GenotypeSummary {
+    std::uint64_t called = 0;
+    std::uint32_t ploidy = 0;
+    std::uint32_t missing = 0;
+};
+
+int parse_depth(std::string_view value) {
+    if (value.empty() || value == ".") {
+        return -1;
+    }
+    std::int64_t depth = 0;
+    const auto parsed = std::from_chars(
+        value.data(), value.data() + value.size(), depth);
+    if (parsed.ec != std::errc{} ||
+        parsed.ptr != value.data() + value.size() ||
+        depth < std::numeric_limits<std::int32_t>::min() ||
+        depth > std::numeric_limits<std::int32_t>::max()) {
+        fail("Invalid DP value in VCF record");
+    }
+    return depth < 0 ? -1 : static_cast<int>(depth);
+}
+
+double parse_quality(std::string_view value) {
+    if (value.empty() || value == ".") {
+        return -1.0;
+    }
+    float quality = 0.0F;
+    const auto parsed = std::from_chars(
+        value.data(), value.data() + value.size(), quality,
+        std::chars_format::general);
+    if (parsed.ec != std::errc{} ||
+        parsed.ptr != value.data() + value.size()) {
+        fail("Invalid QUAL value in VCF record");
+    }
+    return static_cast<double>(quality);
 }
 
 template <typename Counts>
-std::uint64_t count_genotype(
-    std::string_view genotype, Counts& counts) {
-    std::uint64_t called = 0;
-    std::size_t ploidy = 0;
+GenotypeSummary count_genotype(
+    std::string_view genotype, Counts& counts,
+    std::size_t valid_alleles) {
+    GenotypeSummary result;
     std::size_t begin = 0;
     while (begin < genotype.size()) {
         std::size_t end = begin;
@@ -295,31 +468,34 @@ std::uint64_t count_genotype(
         }
         const std::string_view allele =
             genotype.substr(begin, end - begin);
-        ++ploidy;
-        if (ploidy > 2) {
+        ++result.ploidy;
+        if (result.ploidy > 2) {
             fail(
                 "Polyploid genotype is not supported by "
                 "VCFtools compatibility mode");
         }
-        if (!allele.empty() && allele != ".") {
+        if (allele.empty() || allele == ".") {
+            ++result.missing;
+        } else {
             std::uint64_t index = 0;
             const auto parsed = std::from_chars(
                 allele.data(), allele.data() + allele.size(), index);
             if (parsed.ec != std::errc{} ||
                 parsed.ptr != allele.data() + allele.size() ||
-                index >= counts.size()) {
+                index >= valid_alleles) {
                 fail("Invalid GT allele in VCF record");
             }
             ++counts[static_cast<std::size_t>(index)];
-            ++called;
+            ++result.called;
         }
         begin = end + 1;
     }
-    return called;
+    return result;
 }
 
-void append_count_record(
-    std::string_view line, std::string& output) {
+void append_site_stat_record(
+    std::string_view line, std::size_t sample_count,
+    const FastSiteStatPlan& plan, ShardOutput& output) {
     if (line.empty() || line.front() == '#') {
         return;
     }
@@ -376,52 +552,180 @@ void append_count_record(
     if (allele_count > inline_counts.size()) {
         heap_counts.assign(allele_count, 0);
     }
-    const auto gt_index = genotype_index(columns[8]);
+    const FormatIndices indices = format_indices(columns[8]);
     std::uint64_t called = 0;
-    while (begin < line.size() && gt_index.has_value()) {
-        const std::size_t end = line.find('\t', begin);
-        const std::string_view sample = line.substr(
-            begin,
-            end == std::string_view::npos
-                ? std::string_view::npos
-                : end - begin);
-        const std::string_view genotype =
-            subfield(sample, *gt_index);
-        called += heap_counts.empty()
-                      ? count_genotype(genotype, inline_counts)
-                      : count_genotype(genotype, heap_counts);
-        if (end == std::string_view::npos) {
-            break;
+    std::uint32_t n_data = 0;
+    std::uint32_t n_missing = 0;
+    std::uint32_t sum_depth = 0;
+    std::uint32_t sumsq_depth = 0;
+    std::uint32_t depth_count = 0;
+    const bool need_gt =
+        plan.freq || plan.freq2 ||
+        plan.counts || plan.missing_site;
+    for (std::size_t sample_index = 0;
+         sample_index < sample_count; ++sample_index) {
+        std::string_view sample;
+        if (begin < line.size()) {
+            const std::size_t end = line.find('\t', begin);
+            sample = line.substr(
+                begin,
+                end == std::string_view::npos
+                    ? std::string_view::npos
+                    : end - begin);
+            begin =
+                end == std::string_view::npos
+                    ? line.size()
+                    : end + 1;
         }
-        begin = end + 1;
+        const SampleFields fields =
+            select_sample_fields(sample, indices);
+        if (need_gt && indices.gt.has_value()) {
+            const GenotypeSummary genotype =
+                heap_counts.empty()
+                    ? count_genotype(
+                          fields.gt, inline_counts, allele_count)
+                    : count_genotype(
+                          fields.gt, heap_counts, allele_count);
+            called += genotype.called;
+            n_data += genotype.ploidy;
+            n_missing += genotype.missing;
+        }
+        if ((plan.site_depth || plan.site_mean_depth) &&
+            indices.dp.has_value()) {
+            const int depth = parse_depth(fields.dp);
+            if (depth >= 0) {
+                const auto unsigned_depth =
+                    static_cast<std::uint32_t>(depth);
+                sum_depth += unsigned_depth;
+                sumsq_depth += unsigned_depth * unsigned_depth;
+                ++depth_count;
+            }
+        }
+    }
+    if (!indices.gt.has_value() && plan.missing_site) {
+        const std::uint64_t absent =
+            static_cast<std::uint64_t>(sample_count) * 2;
+        if (absent > std::numeric_limits<std::uint32_t>::max()) {
+            fail("Too many samples for site missingness output");
+        }
+        n_data = static_cast<std::uint32_t>(absent);
+        n_missing = n_data;
     }
 
-    output.append(columns[0]);
-    output.push_back('\t');
-    output.append(columns[1]);
-    output.push_back('\t');
-    append_unsigned(output, allele_count);
-    output.push_back('\t');
-    append_unsigned(output, called);
-    for (std::size_t allele = 0; allele < allele_count; ++allele) {
-        output.push_back('\t');
-        output.append(
-            heap_alleles.empty()
-                ? inline_alleles[allele]
-                : heap_alleles[allele]);
-        output.push_back(':');
-        append_unsigned(
-            output,
-            heap_counts.empty()
-                ? inline_counts[allele]
-                : heap_counts[allele]);
+    const auto allele_at =
+        [&](std::size_t index) -> std::string_view {
+        return heap_alleles.empty()
+                   ? inline_alleles[index]
+                   : heap_alleles[index];
+    };
+    const auto allele_count_at =
+        [&](std::size_t index) -> std::uint64_t {
+        return heap_counts.empty()
+                   ? inline_counts[index]
+                   : heap_counts[index];
+    };
+    const auto append_position =
+        [&](std::string& text) {
+        text.append(columns[0]);
+        text.push_back('\t');
+        text.append(columns[1]);
+    };
+
+    if (plan.freq || plan.freq2) {
+        std::string& text =
+            output.text[artifact_index(Artifact::freq)];
+        append_position(text);
+        text.push_back('\t');
+        append_unsigned(text, allele_count);
+        text.push_back('\t');
+        append_unsigned(text, called);
+        for (std::size_t allele = 0;
+             allele < allele_count; ++allele) {
+            text.push_back('\t');
+            if (plan.freq) {
+                text.append(allele_at(allele));
+                text.push_back(':');
+            }
+            append_floating(
+                text,
+                allele_count_at(allele) /
+                    static_cast<double>(called));
+        }
+        text.push_back('\n');
     }
-    output.push_back('\n');
+    if (plan.counts) {
+        std::string& text =
+            output.text[artifact_index(Artifact::counts)];
+        append_position(text);
+        text.push_back('\t');
+        append_unsigned(text, allele_count);
+        text.push_back('\t');
+        append_unsigned(text, called);
+        for (std::size_t allele = 0;
+             allele < allele_count; ++allele) {
+            text.push_back('\t');
+            text.append(allele_at(allele));
+            text.push_back(':');
+            append_unsigned(text, allele_count_at(allele));
+        }
+        text.push_back('\n');
+    }
+    if (plan.missing_site) {
+        std::string& text =
+            output.text[artifact_index(Artifact::missing)];
+        append_position(text);
+        text.push_back('\t');
+        append_unsigned(text, n_data);
+        text.append("\t0\t");
+        append_unsigned(text, n_missing);
+        text.push_back('\t');
+        append_floating(
+            text,
+            n_missing / static_cast<double>(n_data));
+        text.push_back('\n');
+    }
+    if (plan.site_depth) {
+        std::string& text =
+            output.text[artifact_index(Artifact::depth)];
+        append_position(text);
+        text.push_back('\t');
+        append_unsigned(text, sum_depth);
+        text.push_back('\t');
+        append_unsigned(text, sumsq_depth);
+        text.push_back('\n');
+    }
+    if (plan.site_mean_depth) {
+        std::string& text =
+            output.text[artifact_index(Artifact::mean_depth)];
+        const double mean =
+            sum_depth / static_cast<double>(depth_count);
+        const double variance =
+            ((sumsq_depth /
+                  static_cast<double>(depth_count)) -
+             (mean * mean)) *
+            depth_count /
+            static_cast<double>(depth_count - 1);
+        append_position(text);
+        text.push_back('\t');
+        append_floating(text, mean);
+        text.push_back('\t');
+        append_floating(text, variance);
+        text.push_back('\n');
+    }
+    if (plan.site_quality) {
+        std::string& text =
+            output.text[artifact_index(Artifact::quality)];
+        append_position(text);
+        text.push_back('\t');
+        append_floating(text, parse_quality(columns[5]));
+        text.push_back('\n');
+    }
 }
 
 ShardOutput process_plain_shard(
     int descriptor, const PlainShard& shard,
-    std::string& input_bytes) {
+    std::string& input_bytes, std::size_t samples,
+    const FastSiteStatPlan& plan) {
     const std::uint64_t length = shard.end - shard.begin;
     if (length >
         static_cast<std::uint64_t>(
@@ -449,7 +753,25 @@ ShardOutput process_plain_shard(
     }
 
     ShardOutput result;
-    result.text.reserve(input_bytes.size() / 32);
+    const std::size_t reserve = input_bytes.size() / 48;
+    if (plan.freq || plan.freq2) {
+        result.text[artifact_index(Artifact::freq)].reserve(reserve);
+    }
+    if (plan.counts) {
+        result.text[artifact_index(Artifact::counts)].reserve(reserve);
+    }
+    if (plan.missing_site) {
+        result.text[artifact_index(Artifact::missing)].reserve(reserve);
+    }
+    if (plan.site_depth) {
+        result.text[artifact_index(Artifact::depth)].reserve(reserve / 2);
+    }
+    if (plan.site_mean_depth) {
+        result.text[artifact_index(Artifact::mean_depth)].reserve(reserve);
+    }
+    if (plan.site_quality) {
+        result.text[artifact_index(Artifact::quality)].reserve(reserve / 2);
+    }
     std::size_t begin = 0;
     while (begin < input_bytes.size()) {
         std::size_t end = input_bytes.find('\n', begin);
@@ -457,10 +779,10 @@ ShardOutput process_plain_shard(
             end = input_bytes.size();
         }
         if (end > begin) {
-            append_count_record(
+            append_site_stat_record(
                 std::string_view(
                     input_bytes.data() + begin, end - begin),
-                result.text);
+                samples, plan, result);
             ++result.records;
         }
         begin = end == input_bytes.size() ? end : end + 1;
@@ -468,10 +790,11 @@ ShardOutput process_plain_shard(
     return result;
 }
 
-FastCountsSummary run_plain_counts(
+FastSiteStatsSummary run_plain_site_stats(
     const std::string& input_path,
     const std::string& output_prefix,
-    unsigned requested_threads) {
+    unsigned requested_threads,
+    const FastSiteStatPlan& plan) {
     const std::uint64_t file_size =
         std::filesystem::file_size(input_path);
     const HeaderLayout header =
@@ -482,13 +805,7 @@ FastCountsSummary run_plain_counts(
     const unsigned worker_count = descriptor_limited_workers(
         requested_threads, shards.size());
 
-    std::ofstream output(
-        output_prefix + ".frq.count",
-        std::ios::binary | std::ios::trunc);
-    if (!output) {
-        fail("Could not open counts output");
-    }
-    output.write(kCountsHeader.data(), kCountsHeader.size());
+    OrderedArtifactSet outputs(output_prefix, plan);
 
     std::vector<std::optional<ShardOutput>> completed(shards.size());
     std::mutex mutex;
@@ -516,7 +833,7 @@ FastCountsSummary run_plain_counts(
                     }
                     auto result = process_plain_shard(
                         descriptor.value, shards[index],
-                        input_bytes);
+                        input_bytes, header.samples, plan);
                     {
                         std::lock_guard lock(mutex);
                         completed[index] = std::move(result);
@@ -551,7 +868,7 @@ FastCountsSummary run_plain_counts(
             result = std::move(completed[index]);
             completed[index].reset();
         }
-        output.write(result->text.data(), result->text.size());
+        outputs.append(*result);
         records += result->records;
     }
     cancelled.store(true, std::memory_order_relaxed);
@@ -561,26 +878,27 @@ FastCountsSummary run_plain_counts(
     if (error) {
         std::rethrow_exception(error);
     }
-    if (!output) {
-        fail("Could not write counts output");
-    }
-    return FastCountsSummary{
+    outputs.validate();
+    return FastSiteStatsSummary{
         .total = records,
         .kept = records,
         .samples = header.samples,
         .input_threads = worker_count,
         .hts_io_threads = 0,
         .planned_shards = shards.size(),
-        .backend = "fast-counts-plain",
+        .backend =
+            plan.counts_only()
+                ? "fast-counts-plain"
+                : "fast-site-stats-plain",
         .description =
-            "fused aligned byte ranges with direct GT counting",
+            "fused aligned byte ranges with direct site statistics",
     };
 }
 
-FastCountsSummary run_compressed_counts(
+FastSiteStatsSummary run_compressed_site_stats(
     HtsFilePtr input, const std::string& input_path,
     const std::string& output_prefix, unsigned requested_threads,
-    bool bgzf) {
+    bool bgzf, const FastSiteStatPlan& plan) {
     const unsigned io_threads =
         bgzf && requested_threads > 1
             ? std::min(3u, requested_threads - 1)
@@ -589,20 +907,14 @@ FastCountsSummary run_compressed_counts(
         hts_set_threads(input.get(), static_cast<int>(io_threads)) != 0) {
         fail("Could not enable BGZF decompression threads: " + input_path);
     }
-    std::ofstream output(
-        output_prefix + ".frq.count",
-        std::ios::binary | std::ios::trunc);
-    if (!output) {
-        fail("Could not open counts output");
-    }
-    output.write(kCountsHeader.data(), kCountsHeader.size());
+    OrderedArtifactSet outputs(output_prefix, plan);
 
     KStringBuffer line;
     std::size_t samples = 0;
     bool saw_header = false;
     std::uint64_t records = 0;
-    std::string buffer;
-    buffer.reserve(kOutputFlushBytes + 4096);
+    ShardOutput buffer;
+    std::size_t buffered_bytes = 0;
     while (hts_getline(
                input.get(), '\n', &line.value) >= 0) {
         const std::string_view text(line.value.s, line.value.l);
@@ -618,34 +930,44 @@ FastCountsSummary run_compressed_counts(
             }
             continue;
         }
-        append_count_record(text, buffer);
+        append_site_stat_record(
+            text, samples, plan, buffer);
         ++records;
-        if (buffer.size() >= kOutputFlushBytes) {
-            output.write(buffer.data(), buffer.size());
-            buffer.clear();
+        buffered_bytes = 0;
+        for (const auto& artifact : buffer.text) {
+            buffered_bytes += artifact.size();
+        }
+        if (buffered_bytes >= kOutputFlushBytes) {
+            outputs.append(buffer);
+            for (auto& artifact : buffer.text) {
+                artifact.clear();
+            }
         }
     }
     if (!saw_header) {
         fail("Could not find #CHROM header: " + input_path);
     }
-    output.write(buffer.data(), buffer.size());
-    if (!output) {
-        fail("Could not write counts output");
-    }
-    return FastCountsSummary{
+    outputs.append(buffer);
+    outputs.validate();
+    return FastSiteStatsSummary{
         .total = records,
         .kept = records,
         .samples = samples,
         .input_threads = 1,
         .hts_io_threads = io_threads,
         .planned_shards = 1,
-        .backend = bgzf
+        .backend =
+            plan.counts_only()
+                ? (bgzf
                        ? "fast-counts-bgzf"
-                       : "fast-counts-gzip",
+                       : "fast-counts-gzip")
+                : (bgzf
+                       ? "fast-site-stats-bgzf"
+                       : "fast-site-stats-gzip"),
         .description =
             bgzf
-                ? "direct GT counting with BGZF decompression overlap"
-                : "direct GT counting from compressed VCF",
+                ? "direct site statistics with BGZF decompression overlap"
+                : "direct site statistics from compressed VCF",
     };
 }
 
@@ -791,11 +1113,12 @@ unsigned descriptor_limited_workers(
         std::max<std::size_t>(1, shards));
 }
 
-FastCountsSummary run_indexed_counts(
+FastSiteStatsSummary run_indexed_site_stats(
     const std::string& input_path,
     const std::string& index_path,
     const std::string& output_prefix,
-    unsigned requested_threads) {
+    unsigned requested_threads,
+    const FastSiteStatPlan& plan) {
     HtsFilePtr probe(hts_open(input_path.c_str(), "r"));
     if (!probe) {
         fail("Could not open indexed VCF: " + input_path);
@@ -818,13 +1141,7 @@ FastCountsSummary run_indexed_counts(
     const unsigned worker_count = descriptor_limited_workers(
         requested_threads, shards.size());
 
-    std::ofstream output(
-        output_prefix + ".frq.count",
-        std::ios::binary | std::ios::trunc);
-    if (!output) {
-        fail("Could not open counts output");
-    }
-    output.write(kCountsHeader.data(), kCountsHeader.size());
+    OrderedArtifactSet outputs(output_prefix, plan);
 
     std::vector<std::optional<ShardOutput>> completed(shards.size());
     std::mutex mutex;
@@ -869,7 +1186,8 @@ FastCountsSummary run_indexed_counts(
                              position >= shard.end)) {
                             continue;
                         }
-                        append_count_record(text, result.text);
+                        append_site_stat_record(
+                            text, samples, plan, result);
                         ++result.records;
                     }
                     {
@@ -907,7 +1225,7 @@ FastCountsSummary run_indexed_counts(
             result = std::move(completed[ordinal]);
             completed[ordinal].reset();
         }
-        output.write(result->text.data(), result->text.size());
+        outputs.append(*result);
         records += result->records;
     }
     cancelled.store(true, std::memory_order_relaxed);
@@ -917,28 +1235,30 @@ FastCountsSummary run_indexed_counts(
     if (error) {
         std::rethrow_exception(error);
     }
-    if (!output) {
-        fail("Could not write counts output");
-    }
-    return FastCountsSummary{
+    outputs.validate();
+    return FastSiteStatsSummary{
         .total = records,
         .kept = records,
         .samples = samples,
         .input_threads = worker_count,
         .hts_io_threads = 0,
         .planned_shards = shards.size(),
-        .backend = "fast-counts-indexed-bgzf",
+        .backend =
+            plan.counts_only()
+                ? "fast-counts-indexed-bgzf"
+                : "fast-site-stats-indexed-bgzf",
         .description =
-            "ordered tabix regions with direct GT counting via " +
+            "ordered tabix regions with direct site statistics via " +
             index_path,
     };
 }
 
 }  // namespace
 
-std::optional<FastCountsSummary> run_fast_text_counts(
+std::optional<FastSiteStatsSummary> run_fast_text_site_stats(
     const std::string& output_prefix,
-    const input::SourceOptions& options) {
+    const input::SourceOptions& options,
+    const FastSiteStatPlan& plan) {
     const std::string& input_path = options.path;
     const unsigned threads = std::min(
         std::max(1u, options.total_threads),
@@ -953,31 +1273,29 @@ std::optional<FastCountsSummary> run_fast_text_counts(
     }
     if (format->compression == no_compression) {
         probe.reset();
-        return run_plain_counts(
-            input_path, output_prefix, threads);
+        return run_plain_site_stats(
+            input_path, output_prefix, threads, plan);
     }
     const bool is_bgzf = format->compression == bgzf;
-    if (is_bgzf && threads >= 3) {
+    if (is_bgzf) {
         probe.reset();
         input::SourceOptions effective_options = options;
         effective_options.total_threads = threads;
-        if (threads <= 4) {
-            effective_options.auto_index = false;
-        }
         const std::string index_path =
             input::prepare_variant_index(effective_options);
         if (!index_path.empty()) {
-            return run_indexed_counts(
-                input_path, index_path, output_prefix, threads);
+            return run_indexed_site_stats(
+                input_path, index_path, output_prefix,
+                threads, plan);
         }
         probe.reset(hts_open(input_path.c_str(), "r"));
         if (!probe) {
             fail("Could not reopen compressed VCF: " + input_path);
         }
     }
-    return run_compressed_counts(
+    return run_compressed_site_stats(
         std::move(probe), input_path, output_prefix,
-        threads, is_bgzf);
+        threads, is_bgzf, plan);
 }
 
 }  // namespace vcftools_ng

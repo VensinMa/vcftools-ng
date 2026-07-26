@@ -1,0 +1,13 @@
+key	value
+date	2026-07-26T12:27:02+08:00
+revision_label	v0114-workflow-check
+git_commit	aaae993eb02d261a355121b4a24d5be848379ad1
+ng_version	vcftools-ng 0.11.3
+baseline_root	/home/vensin/workspace/vcftools-ng/benchmarks/results/v0114-real-filter-subset
+baseline_lock_sha256	2758de9f4de8eeea72b8a4c2d9f549f16a7e9da6115ccff66841abb17ab14adc
+scenarios	BGZF VCF + TBI;Plain VCF;BCF + CSI
+threads	32
+workload	--min-alleles 2 --max-alleles 2 --minGQ 10 --minQ 30 --min-meanDP 7 --max-missing 0.9 --maf 0.1 --recode --recode-INFO-all --stdout
+oracle_policy	locked; Original was not rerun
+comparison	cmp plus SHA-256
+cache	operating-system cache not flushed

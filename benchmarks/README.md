@@ -1,5 +1,12 @@
 # Subset benchmark
 
+The permanent optimization workflow is documented in
+[`docs/benchmark-workflow.md`](../docs/benchmark-workflow.md). Daily
+development uses only BGZF+TBI, Plain VCF, and BCF+CSI through
+`run-development-gate.sh`, reusing hash-locked Original outputs and timings.
+The complete seven-scenario matrix is reserved for an explicitly authorized
+release candidate.
+
 ## Policy
 
 Until the implementation reaches a mature compatibility milestone, benchmarks
