@@ -83,3 +83,4 @@ a6a43f5dad14f97f636eb4e89d018ea5f7eab8b08239948d3f1b7e6de06f92ee  tests/golden/v
 4b8b3869983928f676aa6d979e17e24f186f1c3dbeffe220b0f2e6957956a8ee  tests/golden/v010-window-pi.windowed.pi
 0e8a10ff58e8b0812fab2a83b1e47aa392832095e0927344c8455aa95c64b03c  tests/golden/subset-filtered-bcf-recode-info-all.recode.vcf
 c2a918a89d7150c4d8a7009aeb5226cdce9f49b4c695d8da0a146192d885227e  tests/golden/subset-filtered-bcf-recode.recode.vcf
+34fb6cc9522a46504bd600c8f5ed7657745117df2f0f20a66139d50b875ad179  tests/golden/subset-freq2.frq

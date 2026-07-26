@@ -39,7 +39,7 @@
 
 namespace {
 
-constexpr const char* kVersion = "0.11.4-dev";
+constexpr const char* kVersion = "0.12.1";
 
 struct Options {
     std::string input;
@@ -286,8 +286,9 @@ void print_help() {
         << "vcftools-ng " << kVersion << "\n\n"
         << "Batched exact-compatibility statistics and recode engine.\n\n"
         << "Input:\n"
-        << "  --vcf FILE | --gzvcf FILE | --bcf FILE | --input FILE\n"
-        << "Execution:\n"
+        << "  --vcf FILE | --gzvcf FILE | --bcf FILE\n"
+        << "vcftools-ng input/execution extensions:\n"
+        << "  --input FILE\n"
         << "  --out PREFIX\n"
         << "  -t, --threads N\n"
         << "  --batch-size N\n"
@@ -300,14 +301,18 @@ void print_help() {
         << " --site-mean-depth\n"
         << "  --depth --missing-indv --het --hardy --site-quality\n"
         << "  --site-pi --window-pi N [--window-pi-step N] --TajimaD N\n"
-        << "  --weir-fst-pop FILE (repeat) [--fst-window-size N]\n"
-        << "  --geno-r2 [--ld-window N] [--ld-window-bp N] [--min-r2 X]\n"
+        << "  --weir-fst-pop FILE (repeat) [--fst-window-size N]"
+        << " [--fst-window-step N]\n"
+        << "  --geno-r2 [--ld-window N] [--ld-window-min N]\n"
+        << "    [--ld-window-bp N] [--ld-window-bp-min N] [--min-r2 X]\n"
         << "  --pca | --pca-no-norm\n"
-        << "  --recode | --recode-bcf | --recode-vcf-gz"
-        << " [--recode-INFO-all] [--stdout]\n"
+        << "  --recode [--recode-INFO-all] [--stdout]\n"
+        << "  --recode-bcf [--recode-INFO-all]\n"
         << "  --diff FILE | --gzdiff FILE | --diff-bcf FILE\n"
         << "    --diff-site --diff-indv --diff-site-discordance\n"
         << "    --diff-indv-discordance\n"
+        << "vcftools-ng output extension:\n"
+        << "  --recode-vcf-gz [--recode-INFO-all]\n"
         << "Filters:\n"
         << "  --chr CHROM --not-chr CHROM\n"
         << "  --from-bp POS --to-bp POS\n"
@@ -1443,12 +1448,13 @@ public:
         return active_ ? output_header_.get() : input_header;
     }
 
-    void subset_record(bcf1_t* record) const {
+    void subset_record(
+        bcf1_t* record, bcf_hdr_t* worker_output_header) const {
         if (!active_) {
             return;
         }
         if (bcf_subset(
-                output_header_.get(), record,
+                worker_output_header, record,
                 static_cast<int>(imap_.size()),
                 const_cast<int*>(imap_.data())) != 0) {
             fail("Could not subset VCF record samples");
@@ -2511,7 +2517,9 @@ void clear_info_fields(bcf_hdr_t* header, bcf1_t* record) {
 SiteResult process_site(const Options& options,
                         const SiteSelector& selector,
                         const SampleSelection& samples,
-                        bcf_hdr_t* header, bcf1_t* record,
+                        bcf_hdr_t* header,
+                        bcf_hdr_t* worker_output_header,
+                        bcf1_t* record,
                         Scratch& scratch,
                         uint8_t* individual_state,
                         int32_t* individual_depth,
@@ -2940,18 +2948,18 @@ SiteResult process_site(const Options& options,
                 header, record, genotype_filtered, scratch.gt, gt_count,
                 sample_count, max_ploidy);
         }
-        samples.subset_record(record);
+        samples.subset_record(record, worker_output_header);
         if (!options.recode_info_all &&
             (options.output_recode_bcf ||
              options.output_recode_vcf_gz)) {
             clear_info_fields(
-                samples.output_header(header), record);
+                worker_output_header, record);
         }
         if (options.output_recode ||
             options.output_recode_vcf_gz) {
             result.recode_line =
                 format_recode_line(
-                    options, samples.output_header(header), record,
+                    options, worker_output_header, record,
                     scratch, genotype_filtered,
                     samples.indices());
         }
@@ -4025,6 +4033,16 @@ PipelineSummary run_ordered_pipeline(
     const std::size_t slice_size =
         std::clamp<std::size_t>(target_slice, 64, 256);
     PipelineState state;
+    std::vector<HeaderPtr> worker_output_headers;
+    worker_output_headers.reserve(compute_threads);
+    for (unsigned worker = 0; worker < compute_threads; ++worker) {
+        HeaderPtr duplicate(
+            bcf_hdr_dup(samples.output_header(header)));
+        if (!duplicate) {
+            fail("Could not duplicate worker output header");
+        }
+        worker_output_headers.push_back(std::move(duplicate));
+    }
 
     const auto record_failure = [&](std::exception_ptr error) {
         {
@@ -4109,8 +4127,10 @@ PipelineSummary run_ordered_pipeline(
     workers.reserve(compute_threads);
     for (unsigned worker_index = 0; worker_index < compute_threads;
          ++worker_index) {
-        workers.emplace_back([&] {
+        workers.emplace_back([&, worker_index] {
             Scratch scratch;
+            bcf_hdr_t* worker_output_header =
+                worker_output_headers[worker_index].get();
             try {
                 while (true) {
                     PipelineSlice slice;
@@ -4138,6 +4158,7 @@ PipelineSummary run_ordered_pipeline(
                          index < slice.end; ++index) {
                         slice.batch->results[index] = process_site(
                             options, selector, samples, header,
+                            worker_output_header,
                             slice.batch->records[index].get(), scratch,
                             slice.batch->analysis.state_row(index),
                             slice.batch->analysis.depth_row(index),

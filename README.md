@@ -1,13 +1,15 @@
 # vcftools-ng
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 Experimental high-performance, output-compatible successor to VCFtools 0.1.17.
 
 **Latest release:** [v0.11.3](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.11.3)
 
-**Development:** v0.11.4-dev is being evaluated with the permanent
-[three-scenario development gate](docs/benchmark-workflow.md). It is not a
-release yet; the seven-scenario release matrix runs only after explicit
-release-candidate approval.
+**Release candidate:** v0.12.1 — Fused Site Statistics and Scalable Exact
+Recode. Its permanent
+[three-scenario development gate](docs/benchmark-workflow.md) has passed; the
+full seven-scenario release matrix is in progress.
 
 · all 210 full-data adaptive-counts candidate runs byte-identical and faster
 than VCFtools 0.1.17
@@ -16,13 +18,14 @@ The current implementation uses adaptive ordered input shards and a bounded,
 order-preserving pipeline. Plain VCF uses aligned byte ranges; BGZF VCF plus
 TBI/CSI and BCF plus CSI use independent indexed regions; inputs without a
 sidecar are automatically indexed with bcftools when possible, and inputs
-without a usable direct backend fall back to an HTSlib stream. Persistent compute
-workers and the ordered committer overlap work on up to three batches. For
-unfiltered `--counts`, an adaptive fused path avoids `bcf1_t` construction:
-Plain VCF workers parse aligned byte ranges directly, and indexed BGZF
-workers query ordered tabix regions and count GT alleles from the original
-text. Each worker reuses its scratch space and outputs are committed in exact
-input order.
+without a usable direct backend fall back to an HTSlib stream. Persistent
+compute workers and the ordered committer overlap work on up to three batches.
+For eligible unfiltered site statistics, an adaptive fused path avoids
+`bcf1_t` construction. It currently covers `--freq`, `--freq2`, `--counts`,
+`--missing-site`, `--site-depth`, `--site-mean-depth`, and `--site-quality`.
+Plain VCF workers parse aligned byte ranges directly, while indexed BGZF
+workers query ordered tabix regions. Worker output is bounded and committed
+in exact input order.
 
 ## Install (recommended)
 
@@ -73,93 +76,43 @@ every candidate was faster than its scenario's original run. The final
 oracles from v0.11.2 and ran v0.11.3 five times at every thread count:
 210/210 new outputs were byte-identical and faster than Original.
 
-### Supported parameters
+### Supported parameter status
 
-The compatibility gate currently covers VCF, BGZF VCF, and BCF input.
-Expand a group to view its output-compatible command-line surface.
+The command-line surface is divided into three evidence classes:
 
-<details>
-<summary><strong>Statistics and outputs</strong> — 21 options</summary>
+1. Original 0.1.17 parameters with byte-identical real-data gates and measured
+   optimization;
+2. Original parameters with exact output gates but limited standalone
+   performance evidence (three of the four two-file diff outputs);
+3. vcftools-ng-only execution/output extensions.
 
-```text
---freq              --counts            --missing-site       --site-depth
---site-mean-depth   --depth             --missing-indv       --het
---hardy             --site-quality      --site-pi            --window-pi
---TajimaD           --weir-fst-pop      --geno-r2            --pca
---pca-no-norm       --recode            --recode-bcf         --recode-vcf-gz
---recode-INFO-all
-```
+`--recode-vcf-gz` belongs to the third group: Original VCFtools 0.1.17 does
+**not** provide this option. Conversely, `--freq2` and `--stdout` are Original
+parameters and are included in the compatibility surface.
 
-</details>
+The complete parameter-by-parameter matrix, performance evidence, input
+coverage, compatibility boundaries, and intentionally inherited Original bugs
+are documented in
+[Parameter compatibility and optimization status](docs/parameter-compatibility.md).
 
-<details>
-<summary><strong>Two-file comparison</strong> — 4 options</summary>
+This is not yet a complete replacement for every VCFtools option. A parameter
+or interaction must not be treated as compatible until it has a differential
+test. Existing gates validate documented real workloads, not the full
+Cartesian product of every parameter and every input encoding.
 
-```text
---diff-site                  --diff-indv
---diff-site-discordance      --diff-indv-discordance
-```
+Known Original defects are not hidden by the compatibility claim:
 
-</details>
+- exact BCF-to-VCF mode reproduces Original's malformed structured-header,
+  missing-GT, and Character/String FORMAT bytes;
+- Original corrupts BCF output when BCF input is combined with genotype
+  masking, so vcftools-ng rejects that `--recode-bcf` combination;
+- Original PCA is undefined/misaligned with missing genotypes, so exact PCA
+  requires complete genotypes (`--max-missing 1`).
 
-<details>
-<summary><strong>Site and interval filters</strong> — 31 options</summary>
-
-```text
---min-alleles          --max-alleles          --remove-indels
---keep-only-indels     --minQ                 --min-meanDP
---max-meanDP           --max-missing          --max-missing-count
---maf                  --max-maf              --mac
---max-mac              --hwe                  --non-ref-af
---max-non-ref-af       --non-ref-af-any       --max-non-ref-af-any
---non-ref-ac           --max-non-ref-ac       --non-ref-ac-any
---max-non-ref-ac-any   --chr                  --not-chr
---from-bp              --to-bp                --positions
---exclude-positions    --bed                  --exclude-bed
---thin
-```
-
-</details>
-
-<details>
-<summary><strong>FILTER and INFO flag filters</strong> — 5 options</summary>
-
-```text
---keep-filtered        --remove-filtered      --remove-filtered-all
---keep-INFO            --remove-INFO
-```
-
-</details>
-
-<details>
-<summary><strong>Genotype filters</strong> — 5 options</summary>
-
-```text
---minGQ                     --minDP
---maxDP                     --remove-filtered-geno
---remove-filtered-geno-all
-```
-
-</details>
-
-<details>
-<summary><strong>Sample filters</strong> — 4 options</summary>
-
-```text
---keep              --remove              --indv              --remove-indv
-```
-
-</details>
-
-This is not yet a complete replacement for every VCFtools option. Unsupported
-options must not be treated as compatible until they have their own
-differential tests.
-
-Exact raw `--recode-bcf` currently requires BCF input and does not accept
-sample subsetting or genotype masking; those cases lack a valid VCFtools
-0.1.17 BCF oracle. `--recode-vcf-gz` is validated by byte-comparing its
-decompressed stream with original `--recode`. Current diff filtering is
-limited to chromosome/position/BED and sample selection.
+These behaviors and the intentionally preserved `--non-ref-af-any` and
+partially missing diff quirks are detailed in the parameter matrix. A future
+standards-correct mode must be explicit and must not silently alter
+`--compat exact`.
 
 ## Build from source
 

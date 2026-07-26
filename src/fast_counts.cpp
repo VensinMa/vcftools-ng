@@ -810,6 +810,10 @@ FastSiteStatsSummary run_plain_site_stats(
     std::vector<std::optional<ShardOutput>> completed(shards.size());
     std::mutex mutex;
     std::condition_variable available;
+    std::condition_variable capacity_available;
+    std::size_t next_commit = 0;
+    const std::size_t maximum_ahead =
+        std::max<std::size_t>(1, worker_count);
     std::atomic<bool> cancelled{false};
     std::exception_ptr error;
     std::vector<std::thread> workers;
@@ -835,7 +839,17 @@ FastSiteStatsSummary run_plain_site_stats(
                         descriptor.value, shards[index],
                         input_bytes, header.samples, plan);
                     {
-                        std::lock_guard lock(mutex);
+                        std::unique_lock lock(mutex);
+                        capacity_available.wait(lock, [&] {
+                            return cancelled.load(
+                                       std::memory_order_relaxed) ||
+                                   index <
+                                       next_commit + maximum_ahead;
+                        });
+                        if (cancelled.load(
+                                std::memory_order_relaxed)) {
+                            return;
+                        }
                         completed[index] = std::move(result);
                     }
                     available.notify_all();
@@ -849,29 +863,41 @@ FastSiteStatsSummary run_plain_site_stats(
                     cancelled.store(true, std::memory_order_relaxed);
                 }
                 available.notify_all();
+                capacity_available.notify_all();
             }
         });
     }
 
     std::uint64_t records = 0;
-    for (std::size_t index = 0; index < shards.size(); ++index) {
-        std::optional<ShardOutput> result;
-        {
-            std::unique_lock lock(mutex);
-            available.wait(lock, [&] {
-                return completed[index].has_value() ||
-                       cancelled.load(std::memory_order_relaxed);
-            });
-            if (cancelled.load(std::memory_order_relaxed)) {
-                break;
+    try {
+        for (std::size_t index = 0; index < shards.size(); ++index) {
+            std::optional<ShardOutput> result;
+            {
+                std::unique_lock lock(mutex);
+                available.wait(lock, [&] {
+                    return completed[index].has_value() ||
+                           cancelled.load(std::memory_order_relaxed);
+                });
+                if (cancelled.load(std::memory_order_relaxed)) {
+                    break;
+                }
+                result = std::move(completed[index]);
+                completed[index].reset();
+                next_commit = index + 1;
             }
-            result = std::move(completed[index]);
-            completed[index].reset();
+            capacity_available.notify_all();
+            outputs.append(*result);
+            records += result->records;
         }
-        outputs.append(*result);
-        records += result->records;
+    } catch (...) {
+        std::lock_guard lock(mutex);
+        if (!error) {
+            error = std::current_exception();
+        }
     }
     cancelled.store(true, std::memory_order_relaxed);
+    available.notify_all();
+    capacity_available.notify_all();
     for (auto& worker : workers) {
         worker.join();
     }
@@ -1146,6 +1172,10 @@ FastSiteStatsSummary run_indexed_site_stats(
     std::vector<std::optional<ShardOutput>> completed(shards.size());
     std::mutex mutex;
     std::condition_variable available;
+    std::condition_variable capacity_available;
+    std::size_t next_commit = 0;
+    const std::size_t maximum_ahead =
+        std::max<std::size_t>(1, worker_count);
     std::atomic<std::size_t> next_shard{0};
     std::atomic<bool> cancelled{false};
     std::exception_ptr error;
@@ -1191,7 +1221,17 @@ FastSiteStatsSummary run_indexed_site_stats(
                         ++result.records;
                     }
                     {
-                        std::lock_guard lock(mutex);
+                        std::unique_lock lock(mutex);
+                        capacity_available.wait(lock, [&] {
+                            return cancelled.load(
+                                       std::memory_order_relaxed) ||
+                                   ordinal <
+                                       next_commit + maximum_ahead;
+                        });
+                        if (cancelled.load(
+                                std::memory_order_relaxed)) {
+                            return;
+                        }
                         completed[ordinal] = std::move(result);
                     }
                     available.notify_all();
@@ -1205,30 +1245,42 @@ FastSiteStatsSummary run_indexed_site_stats(
                     cancelled.store(true, std::memory_order_relaxed);
                 }
                 available.notify_all();
+                capacity_available.notify_all();
             }
         });
     }
 
     std::uint64_t records = 0;
-    for (std::size_t ordinal = 0;
-         ordinal < shards.size(); ++ordinal) {
-        std::optional<ShardOutput> result;
-        {
-            std::unique_lock lock(mutex);
-            available.wait(lock, [&] {
-                return completed[ordinal].has_value() ||
-                       cancelled.load(std::memory_order_relaxed);
-            });
-            if (cancelled.load(std::memory_order_relaxed)) {
-                break;
+    try {
+        for (std::size_t ordinal = 0;
+             ordinal < shards.size(); ++ordinal) {
+            std::optional<ShardOutput> result;
+            {
+                std::unique_lock lock(mutex);
+                available.wait(lock, [&] {
+                    return completed[ordinal].has_value() ||
+                           cancelled.load(std::memory_order_relaxed);
+                });
+                if (cancelled.load(std::memory_order_relaxed)) {
+                    break;
+                }
+                result = std::move(completed[ordinal]);
+                completed[ordinal].reset();
+                next_commit = ordinal + 1;
             }
-            result = std::move(completed[ordinal]);
-            completed[ordinal].reset();
+            capacity_available.notify_all();
+            outputs.append(*result);
+            records += result->records;
         }
-        outputs.append(*result);
-        records += result->records;
+    } catch (...) {
+        std::lock_guard lock(mutex);
+        if (!error) {
+            error = std::current_exception();
+        }
     }
     cancelled.store(true, std::memory_order_relaxed);
+    available.notify_all();
+    capacity_available.notify_all();
     for (auto& worker : workers) {
         worker.join();
     }

@@ -1,0 +1,9 @@
+workload	input	threads	original_wall_s	ng_wall_s	speedup	cpu_pct	max_rss_kb	exact
+combined_six	bgzf_tbi	8	393.74	10.18	38.6778	458	153016	PASS
+freq2	bgzf_tbi	8	68.16	9.47	7.1975	459	65368	PASS
+combined_six	bgzf_tbi	16	393.74	8.54	46.1054	557	166052	PASS
+freq2	bgzf_tbi	16	68.16	7.97	8.5521	560	95536	PASS
+combined_six	plain_vcf	8	NA	3.89	NA	782	333784	PASS
+freq2	plain_vcf	8	NA	3.31	NA	787	330576	PASS
+combined_six	plain_vcf	16	NA	3.86	NA	1266	338876	PASS
+freq2	plain_vcf	16	NA	3.82	NA	1250	320272	PASS

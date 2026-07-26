@@ -22,6 +22,7 @@ tests/output/
 
 # Large golden reference files (>100K lines, keep SHA256SUMS for verification)
 tests/golden/subset-freq.frq
+tests/golden/subset-freq2.frq
 tests/golden/subset-counts.frq.count
 tests/golden/subset-missing-site.lmiss
 tests/golden/subset-site-depth.ldepth
@@ -76,6 +77,11 @@ benchmarks/results/v0114-real-filter-subset/scratch/
 benchmarks/results/development-*/logs/
 benchmarks/results/development-*/runs/
 benchmarks/results/development-*/scratch/
+benchmarks/results/final-full-v0121/gates/
+benchmarks/results/final-full-v0121/golden/
+benchmarks/results/final-full-v0121/logs/
+benchmarks/results/final-full-v0121/runs/
+benchmarks/results/final-full-v0121/scratch/
 
 # Reproducible index-construction products are local benchmark artifacts.
 benchmarks/results/csi-index-build/*.csi
