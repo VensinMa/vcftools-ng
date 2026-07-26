@@ -36,6 +36,18 @@ Seconds from the 32-CPU release host:
 | BCF + automatic CSI | 1943.47 | 459.21 | 387.58 | 198.52 | 126.74 | 68.56 | 52.86 | 36.77× |
 | BCF, no automatic index | 1943.47 | 319.97 | 161.73 | 109.67 | 56.70 | 41.24 | 40.41 | 48.09× |
 
+Complete speedup matrix:
+
+| Scenario | ng1 | ng2 | ng4 | ng8 | ng16 | ng32 |
+|---|---:|---:|---:|---:|---:|---:|
+| BGZF + TBI | 5.86× | 11.10× | 19.21× | 29.14× | 42.78× | 48.24× |
+| BGZF + automatic CSI | 4.11× | 7.81× | 13.32× | 17.51× | 21.21× | 22.48× |
+| BGZF, no automatic index | 7.45× | 7.45× | 8.86× | 8.89× | 8.82× | 8.65× |
+| Plain VCF | 7.27× | 7.10× | 20.61× | 29.24× | 42.04× | 39.58× |
+| BCF + CSI | 6.05× | 6.02× | 11.99× | 17.81× | 33.18× | 46.19× |
+| BCF + automatic CSI | 4.23× | 5.01× | 9.79× | 15.33× | 28.35× | 36.77× |
+| BCF, no automatic index | 6.07× | 12.02× | 17.72× | 34.28× | 47.13× | 48.09× |
+
 Every candidate configuration was faster than Original in this first repeat.
 The observed speedup range was 4.11×–48.24×. Plain VCF and indexed BCF show
 small single-repeat reversals between adjacent thread counts; no monotonic
