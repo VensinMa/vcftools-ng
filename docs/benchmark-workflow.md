@@ -17,9 +17,9 @@ The development workload is fixed to:
 The fixture is the real 2,300,000-record, 23-chromosome, 412-sample subset.
 VCFtools 0.1.17 is run once for each distinct source format: BGZF VCF, Plain
 VCF, and BCF. Its actual VCF outputs, not only checksums, are retained as
-goldens. The lock records input bytes and SHA-256, TBI/CSI bytes and SHA-256,
-golden bytes and SHA-256, Original wall time, workload, record count, and cache
-policy.
+goldens. The lock records input bytes and SHA-256, relevant sidecar bytes and
+SHA-256, golden bytes and SHA-256, Original wall time, workload, record count,
+and cache policy.
 
 An oracle may be regenerated only when the fixture, workload, Original
 version, or compatibility contract intentionally changes. Regeneration is a
@@ -45,15 +45,22 @@ This gate has exactly three scenarios:
 
 1. BGZF VCF + valid TBI;
 2. Plain VCF;
-3. BCF + valid CSI.
+3. BCF adaptive streaming full-scan path.
+
+The BCF row is a speed-oriented full-file scenario, not an indexed-region
+scenario. The driver uses the default `auto` policy and asserts
+`Input backend: stream` in the diagnostic log, so a neighbouring CSI cannot
+silently change the measurement. BCF + CSI stays in targeted region-query
+tests and the release-only four-scenario matrix uses one adaptive BCF row.
 
 It uses 1/2/4/8/16/32 threads by default. Before any candidate starts, it
-checks every input, index, and retained golden against the lock. Original is
-not executed. Every candidate output must pass `cmp`; SHA-256, bytes, wall
-time, user/system CPU, CPU utilization, and RSS are then recorded. Candidate
-VCFs are deleted after the exact comparison, because retaining every
-12 GB duplicate would make iterative optimization impractical. The three
-actual Original VCF goldens are never deleted.
+checks every input, the required BGZF index, and every retained golden against
+the lock. The unused neighbouring BCF CSI is neither required nor measured in
+the daily gate. Original is not executed. Every candidate output must pass
+`cmp`; SHA-256, bytes, wall time, user/system CPU, CPU utilization, and RSS are
+then recorded. Candidate VCFs are deleted after the exact comparison, because
+retaining every 12 GB duplicate would make iterative optimization impractical.
+The three actual Original VCF goldens are never deleted.
 
 For a focused experiment, `THREAD_LIST` may temporarily reduce the candidate
 thread set. A change cannot be declared development-gate complete until all
@@ -73,26 +80,27 @@ reported rather than inferred from thread count.
 
 ## 4. Release qualification
 
-The seven scenarios are not part of daily development:
+The four scenarios are not part of daily development:
 
 - BGZF VCF + TBI;
 - BGZF VCF + automatic CSI;
-- BGZF VCF + `--no-auto-index`;
 - Plain VCF;
-- BCF + CSI;
-- BCF + automatic CSI;
-- BCF + `--no-auto-index`.
+- BCF with the default adaptive policy.
 
 They run only after the user explicitly decides that a performance change is
-large enough to prepare a release. Release qualification may rerun Original,
-uses independent no-sidecar paths for every automatic-index run, validates the
-first candidate repeat byte for byte, and then performs the agreed repeats.
-It updates README, version history, environment report, portable Linux x86_64
-archive, master, and GitHub Release together.
+large enough to prepare a release. Release qualification reuses a retained
+Original oracle without rerunning it when the Original version, input hashes,
+workload, and compatibility contract are unchanged. A changed identity
+requires one new Original run per input format. The driver uses independent
+no-sidecar paths for every automatic-index run, validates the first candidate
+repeat byte for byte, and then performs the agreed repeats. It updates README,
+version history, environment report, portable Linux x86_64 archive, master,
+and GitHub Release together.
 
-Automatic-index timing includes inspection, CSI construction, filtering, and
-output. `--no-auto-index` rows measure the genuine sequential compressed
-fallback. Existing valid or invalid user sidecars are never overwritten.
+Automatic-index timing includes inspection, any CSI construction selected by
+the adaptive policy, filtering, and output. Existing valid or invalid user
+sidecars are never overwritten. The BCF row records the automatically selected
+backend rather than splitting the same format into index-policy scenarios.
 
 ## 5. Storage and evidence rules
 

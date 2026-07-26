@@ -76,8 +76,6 @@ else
     printf 'BGZF development input has no TBI/CSI\n' >&2
     exit 2
 fi
-bcf_index="$INPUT_BCF.csi"
-
 validate_artifact \
     bgzf-input "$INPUT_BGZF" \
     "$(lock_value bgzf_bytes)" "$(lock_value bgzf_sha256)"
@@ -91,10 +89,6 @@ validate_artifact \
 validate_artifact \
     bcf-input "$INPUT_BCF" \
     "$(lock_value bcf_bytes)" "$(lock_value bcf_sha256)"
-validate_artifact \
-    bcf-index "$bcf_index" \
-    "$(lock_value bcf_index_bytes)" \
-    "$(lock_value bcf_index_sha256)"
 validate_artifact \
     bgzf-golden "$BASELINE_ROOT/golden/gzvcf.vcf" \
     "$(lock_value golden_bgzf_bytes)" \
@@ -112,6 +106,7 @@ mkdir -p "$RESULT_ROOT"/{logs,runs,scratch}
 RESULT_ROOT=$(realpath "$RESULT_ROOT")
 
 case_parameters() {
+    backend_args=()
     case "$1" in
         bgzf_tbi)
             kind=gzvcf
@@ -125,7 +120,7 @@ case_parameters() {
             golden="$BASELINE_ROOT/golden/vcf.vcf"
             original_wall=$(lock_value original_plain_wall_s)
             ;;
-        bcf_csi)
+        bcf_adaptive_stream)
             kind=bcf
             input=$INPUT_BCF
             golden="$BASELINE_ROOT/golden/bcf.vcf"
@@ -138,7 +133,7 @@ case_parameters() {
     esac
 }
 
-for case_name in bgzf_tbi plain_vcf bcf_csi; do
+for case_name in bgzf_tbi plain_vcf bcf_adaptive_stream; do
     case_parameters "$case_name"
     for threads in $THREAD_LIST; do
         [[ "$threads" =~ ^[1-9][0-9]*$ ]] || {
@@ -162,9 +157,17 @@ for case_name in bgzf_tbi plain_vcf bcf_csi; do
         printf 'START %s %s\n' "$run_id" "$(date --iso-8601=seconds)"
         /usr/bin/time -f '%e\t%U\t%S\t%P\t%M' -o "$timing" \
             "$NG" "--$kind" "$input" --threads "$threads" \
+            "${backend_args[@]}" \
             "${filter_args[@]}" \
             --recode --recode-INFO-all --stdout \
             >"$output" 2>"$stderr"
+        if [[ "$case_name" == bcf_adaptive_stream ]]; then
+            grep -q '^Input backend: stream ' "$stderr" || {
+                printf 'BCF adaptive-stream gate selected the wrong backend: %s\n' \
+                    "$run_id" >&2
+                exit 2
+            }
+        fi
         cmp "$golden" "$output"
         output_hash=$(sha256sum "$output" | cut -d' ' -f1)
         IFS=$'\t' read -r wall user system cpu rss <"$timing"
@@ -216,7 +219,8 @@ awk -F '\t' '
     printf 'baseline_root\t%s\n' "$BASELINE_ROOT"
     printf 'baseline_lock_sha256\t%s\n' \
         "$(sha256sum "$lock" | cut -d' ' -f1)"
-    printf 'scenarios\tBGZF VCF + TBI;Plain VCF;BCF + CSI\n'
+    printf 'scenarios\tBGZF VCF + TBI;Plain VCF;BCF adaptive streaming full-scan path\n'
+    printf 'bcf_development_policy\tdefault auto policy must select stream for full-file recode; existing CSI is ignored\n'
     printf 'threads\t%s\n' "$THREAD_LIST"
     printf 'workload\t%s\n' "$(lock_value workload)"
     printf 'oracle_policy\tlocked; Original was not rerun\n'

@@ -1617,6 +1617,82 @@ private:
     std::vector<WorkerContext> contexts_;
 };
 
+struct AdaptiveIndexPolicy {
+    bool inspect_sidecars = false;
+    bool build_missing = false;
+    std::string reason;
+};
+
+bool has_selective_region(const SourceOptions& options) {
+    return !options.selected_contigs.empty() ||
+           options.start_position >= 1 ||
+           options.end_position != 0x7fffffff;
+}
+
+AdaptiveIndexPolicy choose_index_policy(
+    const SourceOptions& options, bool is_bcf) {
+    if (options.requested_backend == Backend::indexed_regions) {
+        return {
+            true, true,
+            "forced indexed backend"};
+    }
+    if (options.requested_backend != Backend::automatic) {
+        return {
+            false, false,
+            options.requested_backend == Backend::stream
+                ? "forced stream backend"
+                : "non-indexed backend requested"};
+    }
+    if (!options.parallel_safe) {
+        return {
+            false, false,
+            "adaptive policy: output requires ordered streaming"};
+    }
+    if (has_selective_region(options)) {
+        return {
+            true, true,
+            "adaptive policy: selective region query favors indexed access"};
+    }
+
+    if (is_bcf) {
+        if (options.workload == WorkloadProfile::full_recode) {
+            return {
+                false, false,
+                "adaptive policy: BCF full-file recode favors streaming"};
+        }
+        if (options.total_threads >= 4) {
+            return {
+                true, false,
+                "adaptive policy: BCF full-scan statistics reuse an "
+                "existing index from four threads"};
+        }
+        return {
+            false, false,
+            "adaptive policy: low-thread BCF full scan favors streaming"};
+    }
+
+    if (options.workload == WorkloadProfile::full_recode) {
+        if (options.total_threads >= 2) {
+            return {
+                true, true,
+                "adaptive policy: multi-thread BGZF recode favors indexed "
+                "access"};
+        }
+        return {
+            false, false,
+            "adaptive policy: one-thread BGZF recode avoids index overhead"};
+    }
+    if (options.total_threads >= 4) {
+        return {
+            true, false,
+            "adaptive policy: BGZF full-scan statistics reuse an existing "
+            "index from four threads"};
+    }
+    return {
+        false, false,
+        "adaptive policy: low-thread BGZF full scan favors streaming"};
+}
+
 }  // namespace
 
 void RecordDeleter::operator()(bcf1_t* record) const noexcept {
@@ -1701,6 +1777,13 @@ std::string prepare_variant_index(const SourceOptions& options) {
         return {};
     }
 
+    const AdaptiveIndexPolicy policy =
+        choose_index_policy(options, format.format == bcf);
+    if (!policy.inspect_sidecars) {
+        std::cerr << "Adaptive index: " << policy.reason << "\n";
+        return {};
+    }
+
     SidecarInspection indexes = inspect_sidecars(
         options.path, format.format == bcf, header.get());
     for (const auto& diagnostic : indexes.invalid) {
@@ -1712,22 +1795,33 @@ std::string prepare_variant_index(const SourceOptions& options) {
         return indexes.selected_path;
     }
     if (indexes.any_present) {
-        std::cerr
-            << "Auto-index warning: existing CSI/TBI sidecar is "
-               "unusable; refusing to overwrite it: "
-            << invalid_sidecar_summary(indexes) << "\n";
+        const std::string message =
+            "existing CSI/TBI sidecar is unusable; refusing to "
+            "overwrite it: " +
+            invalid_sidecar_summary(indexes);
+        if (options.requested_backend == Backend::indexed_regions) {
+            fail(message);
+        }
+        std::cerr << "Adaptive-index warning: " << message << "\n";
         return {};
     }
-    if (!options.auto_index ||
+    if (!policy.build_missing ||
         !std::filesystem::is_regular_file(options.path)) {
+        std::cerr << "Adaptive index: " << policy.reason
+                  << "; no valid index available, using stream\n";
         return {};
     }
 
     const IndexBuildResult build = build_csi_index(
         options, format.format == bcf, header.get());
     if (!build.success) {
+        if (options.requested_backend == Backend::indexed_regions) {
+            fail(
+                "automatic CSI construction failed: " +
+                build.detail);
+        }
         std::cerr
-            << "Auto-index warning: automatic CSI construction "
+            << "Adaptive-index warning: automatic CSI construction "
                "failed: "
             << build.detail << "\n";
         return {};
@@ -1759,15 +1853,11 @@ std::unique_ptr<OrderedShardSource> make_ordered_source(
         detect_rotational_storage(options.path);
     const bool automatic_plain_ranges_worthwhile =
         options.parallel_safe && options.total_threads >= 3;
-    const bool automatic_index_wanted =
-        options.parallel_safe;
-    const bool index_backend_wanted =
-        options.requested_backend == Backend::indexed_regions ||
-        (options.requested_backend == Backend::automatic &&
-         automatic_index_wanted);
+    const AdaptiveIndexPolicy index_policy =
+        choose_index_policy(options, format.format == bcf);
     std::string auto_index_failure;
     SidecarInspection indexes;
-    if (is_bgzf_variant) {
+    if (is_bgzf_variant && index_policy.inspect_sidecars) {
         indexes = inspect_sidecars(
             options.path, format.format == bcf, header.get());
         prepared.index_path = indexes.selected_path;
@@ -1784,8 +1874,7 @@ std::unique_ptr<OrderedShardSource> make_ordered_source(
                 invalid_sidecar_summary(indexes);
         } else if (
             prepared.index_path.empty() &&
-            options.auto_index &&
-            index_backend_wanted &&
+            index_policy.build_missing &&
             std::filesystem::is_regular_file(options.path)) {
             const IndexBuildResult build =
                 build_csi_index(
@@ -1801,9 +1890,14 @@ std::unique_ptr<OrderedShardSource> make_ordered_source(
         }
         if (!auto_index_failure.empty()) {
             std::cerr
-                << "Auto-index warning: "
+                << "Adaptive-index warning: "
                 << auto_index_failure << "\n";
         }
+    } else if (
+        is_bgzf_variant &&
+        options.requested_backend == Backend::automatic) {
+        std::cerr << "Adaptive index: "
+                  << index_policy.reason << "\n";
     }
     const bool is_indexable =
         is_bgzf_variant && !prepared.index_path.empty();
@@ -1823,6 +1917,7 @@ std::unique_ptr<OrderedShardSource> make_ordered_source(
         if (automatic_plain_ranges_worthwhile && is_plain_vcf) {
             selected = Backend::plain_ranges;
         } else if (
+            index_policy.inspect_sidecars &&
             is_indexable &&
             (!rotational.value_or(false) ||
              page_cache_prefetched)) {
@@ -1840,9 +1935,8 @@ std::unique_ptr<OrderedShardSource> make_ordered_source(
         }
         fail(
             "--input-backend indexed requires BGZF VCF/BCF "
-            "with a TBI/CSI sidecar; automatic indexing is " +
-            std::string(
-                options.auto_index ? "unavailable" : "disabled"));
+            "with a usable TBI/CSI sidecar; adaptive index "
+            "construction was unavailable");
     }
     if ((selected == Backend::plain_ranges ||
          selected == Backend::indexed_regions) &&
@@ -1877,8 +1971,22 @@ std::unique_ptr<OrderedShardSource> make_ordered_source(
                 prepared, error.what());
         }
     }
+    std::string stream_reason = auto_index_failure;
+    if (stream_reason.empty() &&
+        options.requested_backend == Backend::automatic) {
+        stream_reason = index_policy.reason;
+        if (index_policy.inspect_sidecars && !is_indexable) {
+            stream_reason += "; no valid index available";
+        } else if (
+            index_policy.inspect_sidecars && is_indexable &&
+            rotational.value_or(false) &&
+            !page_cache_prefetched) {
+            stream_reason =
+                "adaptive policy: rotational storage favors streaming";
+        }
+    }
     return std::make_unique<StreamSource>(
-        prepared, auto_index_failure);
+        prepared, std::move(stream_reason));
 }
 
 }  // namespace vcftools_ng::input

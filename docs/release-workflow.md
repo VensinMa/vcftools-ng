@@ -23,23 +23,27 @@ is separate from the permanent three-scenario development gate.
 - Document intentionally inherited Original defects and combinations rejected
   because Original output is corrupt or undefined.
 
-## 3. Full seven-scenario qualification
+## 3. Full four-scenario qualification
 
 Run only after explicit release authorization:
 
-1. BGZF VCF + valid TBI/CSI;
+1. BGZF VCF + valid TBI;
 2. BGZF VCF + automatic CSI;
-3. BGZF VCF + `--no-auto-index`;
-4. Plain VCF;
-5. BCF + valid CSI;
-6. BCF + automatic CSI;
-7. BCF + `--no-auto-index`.
+3. Plain VCF;
+4. BCF using the default adaptive policy.
 
 The standard host matrix uses 1/2/4/8/16/32 threads, strict serial execution,
-and five repeats. Original is measured per distinct input format; scenarios
-that differ only in vcftools-ng index policy share that format's Original
-baseline. Automatic-index rows start from an independent path without a
-sidecar on every run, so their time includes CSI construction.
+and five vcftools-ng repeats. A retained Original oracle and timing are reused
+without rerunning Original when its version, input hashes, workload, and
+compatibility contract are unchanged. The driver must validate every locked
+artifact first and stop rather than regenerate or overwrite it. If any of
+those identities intentionally changes, Original is measured once per
+distinct input format. The two BGZF scenarios share the same Original oracle
+and timing. The automatic-CSI row starts from an independent path without a
+sidecar on every run, so its time includes CSI construction only when the
+adaptive policy selects construction. The BCF row does not encode index state
+in its scenario name: the default policy chooses the fastest known backend
+for the workload and the log records that choice.
 
 The first candidate repeat for every scenario/thread must pass byte comparison
 before repeats 2–5 begin. The release driver may additionally compare every
@@ -48,7 +52,7 @@ remain available after the run. Large artifacts stay local; compact TSV,
 manifest, environment, and reproduction scripts are committed.
 
 When the release owner explicitly chooses staged qualification, run the driver
-with `GATE_ONLY=1`. Publication may proceed only after all 42 first-repeat
+with `GATE_ONLY=1`. Publication may proceed only after all 24 first-repeat
 candidate gates pass. Documentation and Release notes must then label every
 value as single-run, state that repeats 2–5 are pending, and avoid five-run
 mean or monotonic-scaling claims. Resume later with `GATE_ONLY=0`; completed

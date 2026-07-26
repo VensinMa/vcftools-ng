@@ -2,10 +2,12 @@
 
 The permanent optimization workflow is documented in
 [`docs/benchmark-workflow.md`](../docs/benchmark-workflow.md). Daily
-development uses only BGZF+TBI, Plain VCF, and BCF+CSI through
-`run-development-gate.sh`, reusing hash-locked Original outputs and timings.
-The complete seven-scenario matrix is reserved for an explicitly authorized
-release candidate.
+development uses only BGZF+TBI, Plain VCF, and the BCF adaptive streaming
+full-scan path through `run-development-gate.sh`, reusing hash-locked Original
+outputs and timings. The BCF row uses the default `auto` policy and verifies
+that it selects the streaming backend.
+The complete four-scenario matrix is reserved for an explicitly authorized
+release candidate: BGZF+TBI, BGZF+automatic-CSI, Plain VCF, and adaptive BCF.
 
 ## Policy
 

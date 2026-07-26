@@ -23,6 +23,12 @@ enum class Backend {
     indexed_regions,
 };
 
+enum class WorkloadProfile {
+    general,
+    compact_site_statistics,
+    full_recode,
+};
+
 struct AvailableThreads {
     unsigned count = 1;
     std::string source;
@@ -44,7 +50,7 @@ struct SourceOptions {
     unsigned total_threads = 1;
     std::size_t target_batch_records = 2048;
     bool parallel_safe = true;
-    bool auto_index = true;
+    WorkloadProfile workload = WorkloadProfile::general;
     std::string bcftools_path = "bcftools";
     std::string index_path;
     std::set<std::string> selected_contigs;

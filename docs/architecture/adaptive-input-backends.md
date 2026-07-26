@@ -142,30 +142,45 @@ For full-file exact mode, indexed parallelism is enabled only after a
 validation pass establishes that region concatenation reproduces physical
 file order. Otherwise the ordered BGZF backend is used.
 
-### Automatic CSI construction
+### Adaptive CSI/TBI policy
 
-For local BGZF VCF/BCF inputs without `.csi` or `.tbi`, automatic mode calls
-bcftools once before backend selection. It passes the effective vcftools-ng
+Index construction and index use are speed decisions rather than unconditional
+input preparation. The default `auto` policy classifies format, selection,
+workload, and effective thread count before inspecting or building a sidecar:
+
+| Input/workload | Default decision |
+|---|---|
+| Plain VCF | aligned ranges; never build CSI/TBI |
+| BGZF VCF full-file recode, 1 thread | ordered stream |
+| BGZF VCF full-file recode, 2+ threads | reuse TBI/CSI or build CSI |
+| BCF full-file recode | ordered stream, even if CSI exists |
+| BGZF VCF/BCF selective `--chr`/coordinate query | reuse or build an index |
+| compact full-scan statistics, 1–3 threads | stream |
+| compact full-scan statistics, 4+ threads | reuse a valid index, but do not build a one-use index |
+
+When construction is selected, bcftools receives the effective vcftools-ng
 thread count, whether explicitly requested or discovered from the scheduler,
 CPU affinity, or hardware concurrency. The index is written to a
 process-unique temporary sidecar and atomically published without replacing
 an existing `INPUT.csi`.
 
-An advisory input-file lock serializes vcftools-ng builders. Automatic mode
+An advisory input-file lock serializes vcftools-ng builders. Adaptive mode
 falls back to the stream if bcftools or the target directory is unavailable;
-forced indexed mode fails. `--no-auto-index` preserves a true no-index
-benchmark or read-only workflow.
+forced indexed mode fails. `--input-backend stream` and
+`--input-backend indexed` remain explicit diagnostic overrides.
 
 CSI/TBI cannot index Plain VCF because their chunks use BGZF virtual offsets.
 Plain VCF therefore remains on aligned byte ranges and does not enter the
 automatic-index stage.
 
-Before backend selection, every conventional sidecar is explicitly loaded
-and checked for format, age, header compatibility, index statistics, and a
-random-access probe on each non-empty contig. CSI is preferred, but every
-reader receives the exact selected path, so an invalid CSI cannot hide a
-valid TBI. Existing invalid or stale sidecars are protected: automatic mode
-falls back and never overwrites them.
+When the adaptive decision could use an index, every conventional sidecar is
+explicitly loaded and checked for format, age, header compatibility, index
+statistics, and a random-access probe on each non-empty contig. CSI is
+preferred, but every reader receives the exact selected path, so an invalid
+CSI cannot hide a valid TBI. Existing invalid or stale sidecars are protected:
+adaptive mode falls back and never overwrites them. If the selected fast path
+is streaming, unrelated sidecars are left untouched and are not part of the
+critical path.
 
 ### BGZF without an index
 

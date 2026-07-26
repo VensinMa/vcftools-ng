@@ -51,12 +51,6 @@ cp "$bcf_fixture" "$work/auto-index.bcf"
     --freq --counts --out "$work/auto-index-bcf" \
     >/dev/null 2>"$work/auto-index-bcf.log"
 
-cp "$fixture" "$work/no-auto-index.vcf.gz"
-"$ng" --gzvcf "$work/no-auto-index.vcf.gz" --threads 4 \
-    --no-auto-index --bcftools "$bcftools_bin" \
-    --freq --counts --out "$work/no-auto-index" \
-    >/dev/null 2>"$work/no-auto-index.log"
-
 cp "$fixture" "$work/auto-threads.vcf.gz"
 SLURM_CPUS_PER_TASK=3 \
     "$ng" --gzvcf "$work/auto-threads.vcf.gz" \
@@ -66,11 +60,13 @@ SLURM_CPUS_PER_TASK=3 \
 
 cp "$fixture" "$work/concurrent.vcf.gz"
 "$ng" --gzvcf "$work/concurrent.vcf.gz" --threads 4 \
+    --input-backend indexed \
     --bcftools "$bcftools_bin" \
     --freq --counts --out "$work/concurrent-a" \
     >/dev/null 2>"$work/concurrent-a.log" &
 first_pid=$!
 "$ng" --gzvcf "$work/concurrent.vcf.gz" --threads 4 \
+    --input-backend indexed \
     --bcftools "$bcftools_bin" \
     --freq --counts --out "$work/concurrent-b" \
     >/dev/null 2>"$work/concurrent-b.log" &
@@ -128,7 +124,7 @@ stale_index_sha256=$(
 for candidate in indexed-vcf indexed-bcf plain; do
     cmp "$work/stream.frq.count" "$work/$candidate.frq.count"
 done
-for candidate in auto-index auto-index-bcf no-auto-index auto-threads \
+for candidate in auto-index auto-index-bcf auto-threads \
                  concurrent-a concurrent-b missing-bcftools \
                  corrupt-index valid-tbi-corrupt-csi stale-index; do
     cmp "$work/stream.frq.count" "$work/$candidate.frq.count"
@@ -144,36 +140,27 @@ if grep -q 'Auto-index:' "$work/plain.log"; then
     printf 'Plain VCF unexpectedly invoked automatic indexing\n' >&2
     exit 1
 fi
-grep -q 'Auto-index: no CSI/TBI sidecar found' "$work/auto-index.log"
-grep -q 'index --csi --threads 4' "$work/auto-index.log"
-grep -q 'Input backend: fast-site-stats-indexed-bgzf' \
-    "$work/auto-index.log"
-test -s "$work/auto-index.vcf.gz.csi"
-
-grep -q 'index --csi --threads 4' "$work/auto-index-bcf.log"
-grep -q 'Input backend: indexed-regions' "$work/auto-index-bcf.log"
-test -s "$work/auto-index.bcf.csi"
-
+grep -q 'no valid index available, using stream' "$work/auto-index.log"
 grep -q 'Input backend: fast-site-stats-bgzf' \
-    "$work/no-auto-index.log"
-test ! -e "$work/no-auto-index.vcf.gz.csi"
+    "$work/auto-index.log"
+test ! -e "$work/auto-index.vcf.gz.csi"
 
-grep -q 'index --csi --threads 3' "$work/auto-threads.log"
+grep -q 'Input backend: stream' "$work/auto-index-bcf.log"
+test ! -e "$work/auto-index.bcf.csi"
+
 grep -q 'Threads: 3 (auto from SLURM_CPUS_PER_TASK)' \
     "$work/auto-threads.log"
-grep -q 'Input backend: fast-site-stats-indexed-bgzf' \
+grep -q 'Input backend: fast-site-stats-bgzf' \
     "$work/auto-threads.log"
-test -s "$work/auto-threads.vcf.gz.csi"
+test ! -e "$work/auto-threads.vcf.gz.csi"
 
 test -s "$work/concurrent.vcf.gz.csi"
-grep -q 'Input backend: fast-site-stats-indexed-bgzf' \
+grep -q 'Input backend: indexed-regions' \
     "$work/concurrent-a.log"
-grep -q 'Input backend: fast-site-stats-indexed-bgzf' \
+grep -q 'Input backend: indexed-regions' \
     "$work/concurrent-b.log"
 test -z "$(find "$work" -name '*.vcftools-ng.tmp.*' -print -quit)"
 
-grep -q 'Auto-index warning: automatic CSI construction failed' \
-    "$work/missing-bcftools.log"
 grep -q 'Input backend: fast-site-stats-bgzf' \
     "$work/missing-bcftools.log"
 grep -q 'Error: automatic CSI construction failed' \

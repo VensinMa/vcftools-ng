@@ -44,7 +44,7 @@ for threads in 1 2; do
         --counts --out "$work/bgzf-t$threads" \
         >/dev/null 2>"$work/bgzf-t$threads.log"
     cmp "$work/reference.frq.count" "$work/bgzf-t$threads.frq.count"
-    grep -q 'Input backend: fast-counts-indexed-bgzf' \
+    grep -q 'Input backend: fast-counts-bgzf' \
         "$work/bgzf-t$threads.log"
 done
 
@@ -110,7 +110,7 @@ grep -q 'Polyploid genotype is not supported' "$work/polyploid.log"
 
 ln -s "$fixture" "$work/no-index.vcf.gz"
 "$ng" --gzvcf "$work/no-index.vcf.gz" --threads 2 \
-    --no-auto-index --counts --out "$work/no-index-vcf" \
+    --counts --out "$work/no-index-vcf" \
     >/dev/null 2>"$work/no-index-vcf.log"
 cmp "$work/reference.frq.count" "$work/no-index-vcf.frq.count"
 test ! -e "$work/no-index.vcf.gz.csi"
@@ -122,8 +122,8 @@ ln -s "$fixture" "$work/auto-index.vcf.gz"
     --counts --out "$work/auto-index-vcf" \
     >/dev/null 2>"$work/auto-index-vcf.log"
 cmp "$work/reference.frq.count" "$work/auto-index-vcf.frq.count"
-test -f "$work/auto-index.vcf.gz.csi"
-grep -q 'Input backend: fast-counts-indexed-bgzf' \
+test ! -e "$work/auto-index.vcf.gz.csi"
+grep -q 'Input backend: fast-counts-bgzf' \
     "$work/auto-index-vcf.log"
 
 ln -s "$bcf_fixture" "$work/auto-index.bcf"
@@ -132,13 +132,13 @@ ln -s "$bcf_fixture" "$work/auto-index.bcf"
     >/dev/null 2>"$work/auto-index-bcf.log"
 cmp "$work/reference.frq.count" \
     "$work/auto-index-bcf.frq.count"
-test -f "$work/auto-index.bcf.csi"
-grep -q 'Input backend: indexed-regions' \
+test ! -e "$work/auto-index.bcf.csi"
+grep -q 'Input backend: stream' \
     "$work/auto-index-bcf.log"
 
 ln -s "$bcf_fixture" "$work/no-index.bcf"
 "$ng" --bcf "$work/no-index.bcf" --threads 2 \
-    --no-auto-index --counts --out "$work/no-index-bcf" \
+    --counts --out "$work/no-index-bcf" \
     >/dev/null 2>"$work/no-index-bcf.log"
 cmp "$work/reference.frq.count" "$work/no-index-bcf.frq.count"
 test ! -e "$work/no-index.bcf.csi"

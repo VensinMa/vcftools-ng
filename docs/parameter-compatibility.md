@@ -68,10 +68,14 @@ These options are additions, not Original-compatible parameter names:
 | `--batch-size N` | Tunes the bounded generic pipeline batch size. |
 | `--input FILE` | Auto-detected input alias for `--vcf`/`--gzvcf`/`--bcf`. |
 | `--compat exact` | Explicitly selects the only currently implemented compatibility mode. |
-| `--input-backend auto\|stream\|plain\|indexed` | Selects or forces an input adapter. |
-| `--no-auto-index` | Disables automatic CSI construction. |
-| `--bcftools FILE` | Selects the bcftools executable used for automatic CSI construction. |
+| `--input-backend auto\|stream\|plain\|indexed` | Selects or forces an input adapter. `auto` is the default adaptive speed policy. |
+| `--bcftools FILE` | Selects the bcftools executable used when the adaptive policy decides CSI construction is profitable. |
 | `--recode-vcf-gz` | Writes deterministic, parallel BGZF-compressed VCF. Original 0.1.17 has no compressed-VCF recode option. Validation compares the decompressed bytes with Original `--recode`; compressed bytes are deterministic across tested thread counts, but cannot be compared with a nonexistent Original artifact. |
+
+`--no-auto-index` was removed in v0.12.2. Index construction and index use are
+now independent adaptive decisions. `--input-backend stream` and
+`--input-backend indexed` remain advanced diagnostic/override controls, but
+normal use should leave the default `auto` mode enabled.
 
 Producing several supported statistics in one scan is also a vcftools-ng
 extension. Original normally requires separate invocations.

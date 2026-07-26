@@ -52,7 +52,6 @@ struct Options {
     std::size_t batch_size = 2048;
     vcftools_ng::input::Backend input_backend =
         vcftools_ng::input::Backend::automatic;
-    bool auto_index = true;
     std::string bcftools_path = "bcftools";
 
     bool output_freq = false;
@@ -292,10 +291,17 @@ void print_help() {
         << "  --out PREFIX\n"
         << "  -t, --threads N\n"
         << "  --batch-size N\n"
-        << "  --input-backend auto|stream|plain|indexed\n"
-        << "  --no-auto-index\n"
-        << "  --bcftools FILE\n"
+        << "  --input-backend auto|stream|plain|indexed [default: auto]\n"
+        << "  --bcftools FILE  bcftools used when adaptive CSI is profitable\n"
         << "  --compat exact\n"
+        << "Adaptive input/index defaults:\n"
+        << "  Plain VCF: aligned ranges; CSI/TBI is never built.\n"
+        << "  BGZF recode: stream at 1 thread; use/build an index at 2+.\n"
+        << "  BCF full recode: stream even when CSI exists.\n"
+        << "  BGZF/BCF region query: use/build an index.\n"
+        << "  Compact full-scan stats: reuse an existing index at 4+;\n"
+        << "    do not build a one-use index. Existing sidecars are never"
+        << " overwritten.\n"
         << "Outputs (may be combined in one scan):\n"
         << "  --freq --freq2 --counts --missing-site --site-depth"
         << " --site-mean-depth\n"
@@ -374,8 +380,6 @@ Options parse_options(int argc, char** argv) {
             options.input_backend =
                 vcftools_ng::input::parse_backend(
                     require_value(argc, argv, i));
-        } else if (arg == "--no-auto-index") {
-            options.auto_index = false;
         } else if (arg == "--bcftools") {
             options.bcftools_path =
                 require_value(argc, argv, i);
@@ -4786,7 +4790,9 @@ int run(const Options& options) {
             .total_threads = options.threads,
             .target_batch_records = options.batch_size,
             .parallel_safe = true,
-            .auto_index = options.auto_index,
+            .workload =
+                vcftools_ng::input::WorkloadProfile::
+                    compact_site_statistics,
             .bcftools_path = options.bcftools_path,
             .index_path = {},
             .selected_contigs = {},
@@ -4844,7 +4850,12 @@ int run(const Options& options) {
         .total_threads = options.threads,
         .target_batch_records = options.batch_size,
         .parallel_safe = true,
-        .auto_index = options.auto_index,
+        .workload =
+            options.output_recode ||
+                    options.output_recode_bcf ||
+                    options.output_recode_vcf_gz
+                ? vcftools_ng::input::WorkloadProfile::full_recode
+                : vcftools_ng::input::WorkloadProfile::general,
         .bcftools_path = options.bcftools_path,
         .index_path = {},
         .selected_contigs = options.chromosomes_to_keep,

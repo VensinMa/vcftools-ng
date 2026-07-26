@@ -85,8 +85,7 @@ VCFtools 0.1.17 是兼容性 oracle。只有通过完整文件 `cmp` 的工作�
 | `--input FILE` | 自动识别 VCF/BGZF VCF/BCF 的输入别名 |
 | `--compat exact` | 显式选择当前唯一的精确兼容模式 |
 | `--input-backend auto\|stream\|plain\|indexed` | 自动选择或强制输入后端 |
-| `--no-auto-index` | 禁止自动构建 CSI |
-| `--bcftools FILE` | 指定自动索引使用的 bcftools |
+| `--bcftools FILE` | 指定自适应策略判定值得构建 CSI 时使用的 bcftools |
 | `--recode-vcf-gz` | 并行生成确定性的 BGZF 压缩 VCF |
 
 特别说明：Original 0.1.17 **没有** `--recode-vcf-gz`。该扩展通过将
@@ -129,7 +128,11 @@ README 不会把 Original 的错误隐藏在“兼容”表述中：
 
 Plain VCF 不能建立 CSI/TBI，因为索引使用 BGZF 虚拟偏移。已有有效
 `.csi`/`.tbi` 会被独立验证并保留；vcftools-ng 不覆盖用户已有索引。
-使用 `--no-auto-index` 可保留无索引流式路径。
+v0.12.2 只把索引作为自适应加速手段：BGZF完整重编码在1线程时流式读取，
+2线程及以上复用或构建索引；BCF完整重编码即使存在CSI也选择流式路径；
+BGZF/BCF区域查询才优先复用或构建索引；紧凑型全文件统计从4线程起复用
+已有索引，但不为单次扫描临时构建索引。`--no-auto-index` 已移除。
+`--input-backend stream|indexed` 仍可用于高级诊断和显式覆盖。
 
 ## v0.12.1 完整数据第一轮发布门禁
 
@@ -163,9 +166,10 @@ VCF。32 CPU 主机上的 wall time（秒）如下：
 时间包含一次完整索引构建；正常使用时，成功生成的索引会保留并在后续
 命令中复用。低线程只运行一次时构建索引可能不划算，高线程 BGZF 则可
 明显受益。本次负载中，BGZF 从 2 线程开始自动 CSI 快于无索引，
-BCF 则在所有测试线程数下均为无索引更快。默认策略保持不变，
-`--no-auto-index` 仍是用户显式覆盖方式。这些是单轮门禁数据，第 2–5
-轮完成前不声明最终均值或严格的相邻线程单调扩展。
+BCF 则在所有测试线程数下均为无索引更快。这些 v0.12.1 数据促成了
+v0.12.2 自适应策略：BCF完整文件重编码会自动选择流式路径，
+`--no-auto-index` 不再接受。这些是单轮门禁数据，第 2–5 轮完成前不声明
+最终均值或严格的相邻线程单调扩展。
 
 ## 从源码构建
 
@@ -188,6 +192,7 @@ ctest --test-dir build --output-on-failure
   [docs/release-workflow.md](docs/release-workflow.md)
 - 三场景开发门禁：
   [benchmarks/run-development-gate.sh](benchmarks/run-development-gate.sh)
+  （BGZF VCF + TBI、Plain VCF、BCF 自适应流式全扫描路径）
 - v0.12.1 完整七场景发布驱动：
   [benchmarks/run-v0121-full-release-matrix.sh](benchmarks/run-v0121-full-release-matrix.sh)
 - 参数兼容矩阵：

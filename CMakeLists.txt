@@ -76,4 +76,11 @@ if(BUILD_TESTING)
       "$<TARGET_FILE:vcftools-ng>"
       "${CMAKE_CURRENT_SOURCE_DIR}"
   )
+  add_test(
+    NAME adaptive_index_policy
+    COMMAND
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/adaptive_index_policy.sh"
+      "$<TARGET_FILE:vcftools-ng>"
+      "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
 endif()

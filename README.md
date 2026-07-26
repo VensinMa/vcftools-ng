@@ -144,16 +144,17 @@ cmake --build build -j
   --out results/subset
 ```
 
-BCF plus CSI is currently the fastest input. BGZF VCF plus TBI/CSI and plain
-VCF also use parallel input adapters and continue scaling from 8 to 16
-threads. A local BGZF VCF or BCF without an index now runs
-`bcftools index --csi --threads N` automatically and then selects the indexed
-adapter. `N` is the explicit vcftools-ng thread count or the automatically
-detected scheduler/affinity count. Use `--no-auto-index` to retain the
-streaming behavior, `--input-backend stream` to force it, or
-`--bcftools FILE` to select the executable. Optional `--chr`, `--from-bp`,
-and `--to-bp` selections are pushed into indexed shards and rechecked by the
-compatibility filter.
+BCF backend performance is workload-dependent: indexed regions are valuable
+for selective queries, while streaming is faster for a full-file
+filter/recode. v0.12.2 therefore treats indexing only as an adaptive
+acceleration technique. Plain VCF is never indexed; one-thread BGZF recode
+streams; multi-thread BGZF recode reuses or builds an index; full-file BCF
+recode streams even when CSI exists; and selective BGZF/BCF queries reuse or
+build an index. Compact full-scan statistics reuse an existing index from
+four threads but do not build a one-use index. Existing sidecars are never
+overwritten. `--input-backend stream|indexed` remains an advanced override,
+and `--bcftools FILE` selects the executable used when adaptive CSI
+construction is profitable.
 
 ## v0.12.1 full-data first-repeat performance
 
@@ -190,8 +191,9 @@ fluctuations must not be interpreted as final scaling means.
 
 In this workload, automatic CSI was faster than no-index BGZF from two
 threads upward; no-index BCF was faster than automatic CSI at every tested
-thread count. The default policy is unchanged, and `--no-auto-index` remains
-the explicit override.
+thread count. These v0.12.1 rows motivated the v0.12.2 adaptive policy:
+full-file BCF recode now selects streaming automatically, and
+`--no-auto-index` is no longer accepted.
 
 Plain VCF cannot use CSI/TBI because those formats store BGZF virtual
 offsets. It remains on the parallel aligned-byte-range adapter and never
