@@ -82,6 +82,11 @@ benchmarks/results/final-full-v0121/golden/
 benchmarks/results/final-full-v0121/logs/
 benchmarks/results/final-full-v0121/runs/
 benchmarks/results/final-full-v0121/scratch/
+benchmarks/results/final-full-v0122/gates/
+benchmarks/results/final-full-v0122/golden/
+benchmarks/results/final-full-v0122/logs/
+benchmarks/results/final-full-v0122/runs/
+benchmarks/results/final-full-v0122/scratch/
 
 # Reproducible index-construction products are local benchmark artifacts.
 benchmarks/results/csi-index-build/*.csi

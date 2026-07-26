@@ -19,8 +19,11 @@ development version.
   subset until the next final-stage full-data gate.
 - v0.12.1 completed a new full-data first-repeat gate for its seven-filter
   exact-recode workload: 42/42 candidate configurations passed. It was
-  published under the explicitly staged workflow; repeats 2–5 remain pending
-  and the recorded values are labeled `full_11.23m_r1`, not means.
+  published under the explicitly staged workflow and its recorded values
+  remain labeled `full_11.23m_r1`, not means.
+- v0.12.2 reused the hash-locked v0.12.1 Original baselines and completed a
+  four-scenario, five-repeat full-data matrix: 120/120 vcftools-ng outputs
+  passed. Original was not rerun.
 
 ## Required record for every future version
 

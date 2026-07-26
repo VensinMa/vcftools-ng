@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repository_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
-archive=${1:-"$repository_root/dist/vcftools-ng-v0.12.1-linux-x86_64.tar.gz"}
+archive=${1:-"$repository_root/dist/vcftools-ng-v0.12.2-linux-x86_64.tar.gz"}
 checksum="${archive}.sha256"
 archive_name=$(basename "$archive")
 archive_directory=$(cd -- "$(dirname -- "$archive")" && pwd)

@@ -21,13 +21,14 @@ otherwise, validation uses the real 2,300,000-record, 23-chromosome,
 | [v0.11.2](versions/v0.11.2.md) | Protected CSI/TBI validation, including first-run cost | 68.22 | 27.82 | 23.17 | PASS |
 | [v0.11.3](versions/v0.11.3.md) | Adaptive direct text-to-count fusion | 296.69 | 21.46 | 12.69 | PASS |
 | [v0.12.1](versions/v0.12.1.md) | Fused site statistics and scalable exact recode | 2267.88 | 77.83 | 53.01 | PASS |
+| [v0.12.2](versions/v0.12.2.md) | Workload-adaptive indexing and exact recode scaling | 2267.88 | 73.93 | 52.05 | PASS |
 
 The workload in each row is the version's representative compatibility
 benchmark; workloads differ between rows. Consult the per-version page before
 comparing versions directly. v0.9.0 also reran the six-output sample workload
 at 3.11/3.13 seconds for 8/16 threads.
 
-## Cumulative supported surface in v0.12.1
+## Cumulative supported surface in v0.12.2
 
 - Inputs: VCF, BGZF VCF, BCF.
 - Outputs: `--freq`, `--freq2`, `--counts`, `--missing-site`, `--site-depth`,
@@ -46,8 +47,9 @@ at 3.11/3.13 seconds for 8/16 threads.
 - Execution: adaptive Plain-range, indexed TBI/CSI, and streaming input
   adapters feeding the bounded compute → ordered-commit pipeline; 8/16
   thread compatibility gates and deterministic parallel BGZF compression.
-  Local BGZF VCF/BCF inputs without an index automatically acquire a CSI
-  using the effective vcftools-ng thread count.
+  Index use is workload-adaptive: one-thread BGZF and full-file BCF recode
+  stream, multi-thread BGZF recode can reuse/build an index, and selective
+  BGZF/BCF queries retain indexed acceleration.
 - Fast path: eligible `--freq`, `--freq2`, `--counts`, `--missing-site`,
   `--site-depth`, `--site-mean-depth`, and `--site-quality` workloads on
   Plain/BGZF VCF directly parse text and can share one ordered scan. Indexed
@@ -55,19 +57,18 @@ at 3.11/3.13 seconds for 8/16 threads.
   affinity and the file-descriptor budget. Worker output has bounded
   backpressure and recode workers use independent HTSlib output headers.
 
-v0.12.1 also passed a new full-data, seven-filter exact-recode gate:
+v0.12.2 passed a full-data, seven-filter exact-recode matrix:
 
 - 11,230,392 input records; 5,425,725 retained records;
-- seven input/index scenarios at 1/2/4/8/16/32 threads;
-- 42/42 first-repeat candidate outputs byte-identical;
-- observed single-run speedup range 4.11×–48.24×;
-- repeats 2–5 pending and therefore not presented as means.
+- four input scenarios at 1/2/4/8/16/32 threads, five repeats each;
+- 120/120 candidate outputs byte-identical;
+- observed mean speedup range 5.97×–53.59×;
+- v0.12.1 Original timings and goldens reused after hash validation; zero
+  Original reruns in v0.12.2.
 
-Automatic CSI was beneficial for multi-thread BGZF, but not for full-file BCF
-recode in this first repeat. BCF no-index streaming measured 40.41 seconds at
-32 threads versus 52.86 seconds including automatic CSI construction. The
-default automatic-index policy is unchanged; `--no-auto-index` remains the
-explicit user override.
+The adaptive BCF stream averaged 40.20 seconds at 32 threads and used at most
+168,952 KiB RSS. `--no-auto-index` has been removed because automatic mode now
+selects indexing only when the workload is expected to benefit.
 
 v0.11.0 also measured exact counts at:
 

@@ -5,18 +5,21 @@
 vcftools-ng 是 VCFtools 0.1.17 的实验性高性能、输出兼容后继实现。
 
 **最新正式版：**
-[v0.12.1 — 融合位点统计与可扩展精确重编码](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.12.1)
+[v0.12.2 — 工作负载自适应索引与精确重编码扩展](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.12.2)
 
-完整 11,230,392 位点的七场景第一轮发布门禁已经通过：
-1/2/4/8/16/32 线程的 42/42 个候选输出均与 VCFtools 0.1.17 逐字节
-一致且更快。第 2–5 轮暂缓，下面的全量结果均明确为单次结果。
+完整 11,230,392 位点的四场景发布矩阵已经通过：
+1/2/4/8/16/32 线程、每个配置五次重复，共 120/120 个 vcftools-ng
+输出均与保留的 VCFtools 0.1.17 golden 逐字节一致。v0.12.2 复用了
+v0.12.1 已锁定并重新校验哈希的 Original 时间与 golden，本轮没有重跑
+Original。
 
 vcftools-ng 使用自适应、有序的输入分片和有界流水线：
 
-- Plain VCF 使用按完整记录边界对齐的并行字节范围；
-- BGZF VCF + TBI/CSI 和 BCF + CSI 使用独立有序索引区域；
-- 缺少索引的本地 BGZF VCF/BCF 默认使用有效线程预算调用 bcftools
-  自动构建 CSI；
+- Plain VCF 在 1–2 线程时流式读取，4 线程及以上使用按完整记录边界
+  对齐的并行字节范围；
+- BGZF 完整重编码在 1 线程时流式读取，2 线程及以上复用或构建索引；
+- BCF 完整重编码即使存在 CSI 也使用流式路径，选择性区域查询才复用或
+  构建索引；
 - 输入、计算和有序输出可以重叠，结果顺序保持确定；
 - `--freq`、`--freq2`、`--counts`、`--missing-site`、
   `--site-depth`、`--site-mean-depth` 和 `--site-quality` 可以进入
@@ -29,11 +32,11 @@ Linux x86_64 便携包解压后即可运行，包内包含 vcftools-ng、用于�
 构建 CSI 的 bcftools、HTSlib 以及所需的非 glibc 运行库：
 
 ```bash
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.1/vcftools-ng-v0.12.1-linux-x86_64.tar.gz
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.1/vcftools-ng-v0.12.1-linux-x86_64.tar.gz.sha256
-sha256sum -c vcftools-ng-v0.12.1-linux-x86_64.tar.gz.sha256
-tar -xzf vcftools-ng-v0.12.1-linux-x86_64.tar.gz
-./vcftools-ng-v0.12.1-linux-x86_64/bin/vcftools-ng --version
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.2/vcftools-ng-v0.12.2-linux-x86_64.tar.gz
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.2/vcftools-ng-v0.12.2-linux-x86_64.tar.gz.sha256
+sha256sum -c vcftools-ng-v0.12.2-linux-x86_64.tar.gz.sha256
+tar -xzf vcftools-ng-v0.12.2-linux-x86_64.tar.gz
+./vcftools-ng-v0.12.2-linux-x86_64/bin/vcftools-ng --version
 ```
 
 便携包面向 glibc 2.17 或更高版本，在 CentOS 7 兼容的
@@ -134,42 +137,31 @@ BGZF/BCF区域查询才优先复用或构建索引；紧凑型全文件统计从
 已有索引，但不为单次扫描临时构建索引。`--no-auto-index` 已移除。
 `--input-backend stream|indexed` 仍可用于高级诊断和显式覆盖。
 
-## v0.12.1 完整数据第一轮发布门禁
+## v0.12.2 完整数据五轮发布矩阵
 
 全量发布工作负载使用七个真实项目过滤参数，并输出保留全部 INFO 的完整
-VCF。32 CPU 主机上的 wall time（秒）如下：
+VCF。下表为 vcftools-ng 在 32 CPU 主机上严格串行运行五次的 wall time
+均值（秒）。Original 为 v0.12.1 已锁定的单次基线，本轮没有重跑。
 
 | 场景 | Original | 1 线程 | 2 线程 | 4 线程 | 8 线程 | 16 线程 | 32 线程 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| BGZF + TBI | 2267.88 | 387.00 | 204.35 | 118.08 | 77.83 | 53.01 | 47.01 |
-| BGZF + 自动 CSI | 2267.88 | 552.17 | 290.43 | 170.28 | 129.52 | 106.91 | 100.88 |
-| BGZF + 禁止自动索引 | 2267.88 | 304.39 | 304.35 | 255.95 | 255.01 | 257.05 | 262.18 |
-| Plain VCF | 2092.91 | 287.87 | 294.76 | 101.53 | 71.58 | 49.78 | 52.88 |
-| BCF + CSI | 1943.47 | 321.28 | 323.02 | 162.08 | 109.14 | 58.58 | 42.08 |
-| BCF + 自动 CSI | 1943.47 | 459.21 | 387.58 | 198.52 | 126.74 | 68.56 | 52.86 |
-| BCF + 禁止自动索引 | 1943.47 | 319.97 | 161.73 | 109.67 | 56.70 | 41.24 | 40.41 |
+| BGZF + TBI | 2267.88 | 309.28 | 204.91 | 112.35 | 73.93 | 52.05 | 42.32 |
+| BGZF + 自动 CSI | 2267.88 | 308.21 | 281.03 | 167.50 | 128.60 | 107.16 | 99.59 |
+| Plain VCF | 2092.91 | 285.45 | 285.22 | 89.31 | 63.71 | 47.84 | 50.61 |
+| BCF 自适应流式 | 1943.47 | 325.66 | 164.14 | 110.57 | 57.26 | 41.30 | 40.20 |
 
 相对 VCFtools 0.1.17 的加速倍率：
 
 | 场景 | 1 线程 | 2 线程 | 4 线程 | 8 线程 | 16 线程 | 32 线程 |
 |---|---:|---:|---:|---:|---:|---:|
-| BGZF + TBI | 5.86× | 11.10× | 19.21× | 29.14× | 42.78× | 48.24× |
-| BGZF + 自动 CSI | 4.11× | 7.81× | 13.32× | 17.51× | 21.21× | 22.48× |
-| BGZF + 禁止自动索引 | 7.45× | 7.45× | 8.86× | 8.89× | 8.82× | 8.65× |
-| Plain VCF | 7.27× | 7.10× | 20.61× | 29.24× | 42.04× | 39.58× |
-| BCF + CSI | 6.05× | 6.02× | 11.99× | 17.81× | 33.18× | 46.19× |
-| BCF + 自动 CSI | 4.23× | 5.01× | 9.79× | 15.33× | 28.35× | 36.77× |
-| BCF + 禁止自动索引 | 6.07× | 12.02× | 17.72× | 34.28× | 47.13× | 48.09× |
+| BGZF + TBI | 7.33× | 11.07× | 20.19× | 30.68× | 43.57× | 53.59× |
+| BGZF + 自动 CSI | 7.36× | 8.07× | 13.54× | 17.63× | 21.16× | 22.77× |
+| Plain VCF | 7.33× | 7.34× | 23.44× | 32.85× | 43.75× | 41.35× |
+| BCF 自适应流式 | 5.97× | 11.84× | 17.58× | 33.94× | 47.05× | 48.35× |
 
-42/42 个候选输出全部通过完整文件 `cmp`，单次实测加速范围为
-4.11×–48.24×。自动 CSI 场景每次都从无 sidecar 的独立路径开始，因此
-时间包含一次完整索引构建；正常使用时，成功生成的索引会保留并在后续
-命令中复用。低线程只运行一次时构建索引可能不划算，高线程 BGZF 则可
-明显受益。本次负载中，BGZF 从 2 线程开始自动 CSI 快于无索引，
-BCF 则在所有测试线程数下均为无索引更快。这些 v0.12.1 数据促成了
-v0.12.2 自适应策略：BCF完整文件重编码会自动选择流式路径，
-`--no-auto-index` 不再接受。这些是单轮门禁数据，第 2–5 轮完成前不声明
-最终均值或严格的相邻线程单调扩展。
+120/120 个输出全部通过完整文件 `cmp` 和 SHA 校验，五次均值加速范围为
+5.97×–53.59×。自动 CSI 场景每轮都包含一次新建索引的成本；BCF
+完整重编码在所有线程档位均自动选择流式路径，区域查询仍会使用 CSI。
 
 ## 从源码构建
 
@@ -193,8 +185,8 @@ ctest --test-dir build --output-on-failure
 - 三场景开发门禁：
   [benchmarks/run-development-gate.sh](benchmarks/run-development-gate.sh)
   （BGZF VCF + TBI、Plain VCF、BCF 自适应流式全扫描路径）
-- v0.12.1 完整七场景发布驱动：
-  [benchmarks/run-v0121-full-release-matrix.sh](benchmarks/run-v0121-full-release-matrix.sh)
+- v0.12.2 完整四场景发布驱动：
+  [benchmarks/run-v0122-full-release-matrix.sh](benchmarks/run-v0122-full-release-matrix.sh)
 - 参数兼容矩阵：
   [docs/parameter-compatibility.md](docs/parameter-compatibility.md)
 - 版本历史：

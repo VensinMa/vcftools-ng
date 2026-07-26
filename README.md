@@ -4,19 +4,21 @@
 
 Experimental high-performance, output-compatible successor to VCFtools 0.1.17.
 
-**Latest release:** [v0.12.1 — Fused Site Statistics and Scalable Exact
-Recode](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.12.1)
+**Latest release:** [v0.12.2 — Workload-Adaptive Indexing and Exact Recode
+Scaling](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.12.2)
 
-The full 11,230,392-record first-repeat release gate passed in all seven
-input/index scenarios at 1/2/4/8/16/32 threads: 42/42 candidate outputs were
-byte-identical and faster than VCFtools 0.1.17. Repeats 2–5 are deferred and
-are not included in the single-run values below.
+The full 11,230,392-record release matrix passed in four representative input
+scenarios at 1/2/4/8/16/32 threads. All 120 vcftools-ng outputs (five repeats
+per configuration) were byte-identical to the retained VCFtools 0.1.17
+goldens. The hash-locked Original timings and goldens from v0.12.1 were reused;
+Original was not rerun for v0.12.2.
 
 The current implementation uses adaptive ordered input shards and a bounded,
-order-preserving pipeline. Plain VCF uses aligned byte ranges; BGZF VCF plus
-TBI/CSI and BCF plus CSI use independent indexed regions; inputs without a
-sidecar are automatically indexed with bcftools when possible, and inputs
-without a usable direct backend fall back to an HTSlib stream. Persistent
+order-preserving pipeline. Plain VCF streams at 1–2 threads and uses aligned
+byte ranges at 4+ threads. Full-file BGZF recode streams at one thread, then
+reuses or builds an index at 2+ threads. Full-file BCF recode streams even
+when CSI exists; selective BGZF/BCF queries still reuse or build an index.
+Persistent
 compute workers and the ordered committer overlap work on up to three batches.
 For eligible unfiltered site statistics, an adaptive fused path avoids
 `bcf1_t` construction. It currently covers `--freq`, `--freq2`, `--counts`,
@@ -32,11 +34,11 @@ includes vcftools-ng, bcftools for automatic CSI construction, HTSlib, and
 the required non-glibc runtime libraries.
 
 ```bash
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.1/vcftools-ng-v0.12.1-linux-x86_64.tar.gz
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.1/vcftools-ng-v0.12.1-linux-x86_64.tar.gz.sha256
-sha256sum -c vcftools-ng-v0.12.1-linux-x86_64.tar.gz.sha256
-tar -xzf vcftools-ng-v0.12.1-linux-x86_64.tar.gz
-./vcftools-ng-v0.12.1-linux-x86_64/bin/vcftools-ng --version
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.2/vcftools-ng-v0.12.2-linux-x86_64.tar.gz
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.2/vcftools-ng-v0.12.2-linux-x86_64.tar.gz.sha256
+sha256sum -c vcftools-ng-v0.12.2-linux-x86_64.tar.gz.sha256
+tar -xzf vcftools-ng-v0.12.2-linux-x86_64.tar.gz
+./vcftools-ng-v0.12.2-linux-x86_64/bin/vcftools-ng --version
 ```
 
 The archive requires Linux x86_64 with glibc 2.17 or newer. It is built on a
@@ -74,11 +76,11 @@ every candidate was faster than its scenario's original run. The final
 oracles from v0.11.2 and ran v0.11.3 five times at every thread count:
 210/210 new outputs were byte-identical and faster than Original.
 
-v0.12.1 generated new Original oracles for BGZF VCF, Plain VCF, and BCF,
-then ran its seven-filter exact-recode workload on the complete dataset in
-seven scenarios at 1/2/4/8/16/32 threads. All 42 first-repeat candidate
-outputs passed complete-file `cmp`. This release was published after that
-gate; repeats 2–5 remain pending and no five-run mean is claimed yet.
+v0.12.1 generated the retained Original oracles for BGZF VCF, Plain VCF, and
+BCF. v0.12.2 hash-validated and reused those oracles and locked timings, then
+ran the same seven-filter exact-recode workload in four representative
+scenarios. All 120 outputs across five repeats and 1/2/4/8/16/32 threads
+passed complete-file `cmp` and SHA validation.
 
 ### Supported parameter status
 
@@ -156,44 +158,33 @@ overwritten. `--input-backend stream|indexed` remains an advanced override,
 and `--bcftools FILE` selects the executable used when adaptive CSI
 construction is profitable.
 
-## v0.12.1 full-data first-repeat performance
+## v0.12.2 full-data five-repeat performance
 
 The release workload applies seven real-project filters and writes a complete
-VCF with all INFO fields. Wall-clock seconds on the 32-CPU host:
+VCF with all INFO fields. Values are mean wall-clock seconds from five
+strictly serial vcftools-ng repeats on the 32-CPU host. Original values are
+the hash-locked single-run v0.12.1 baselines and were not rerun.
 
 | Input path | Original | 1 thread | 2 threads | 4 threads | 8 threads | 16 threads | 32 threads |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| BGZF VCF + TBI | 2267.88 | 387.00 | 204.35 | 118.08 | 77.83 | 53.01 | 47.01 |
-| BGZF VCF + automatic CSI | 2267.88 | 552.17 | 290.43 | 170.28 | 129.52 | 106.91 | 100.88 |
-| BGZF VCF, no automatic index | 2267.88 | 304.39 | 304.35 | 255.95 | 255.01 | 257.05 | 262.18 |
-| Plain VCF | 2092.91 | 287.87 | 294.76 | 101.53 | 71.58 | 49.78 | 52.88 |
-| BCF + CSI | 1943.47 | 321.28 | 323.02 | 162.08 | 109.14 | 58.58 | 42.08 |
-| BCF + automatic CSI | 1943.47 | 459.21 | 387.58 | 198.52 | 126.74 | 68.56 | 52.86 |
-| BCF, no automatic index | 1943.47 | 319.97 | 161.73 | 109.67 | 56.70 | 41.24 | 40.41 |
+| BGZF VCF + TBI | 2267.88 | 309.28 | 204.91 | 112.35 | 73.93 | 52.05 | 42.32 |
+| BGZF VCF + automatic CSI | 2267.88 | 308.21 | 281.03 | 167.50 | 128.60 | 107.16 | 99.59 |
+| Plain VCF | 2092.91 | 285.45 | 285.22 | 89.31 | 63.71 | 47.84 | 50.61 |
+| BCF adaptive stream | 1943.47 | 325.66 | 164.14 | 110.57 | 57.26 | 41.30 | 40.20 |
 
 Speedup over VCFtools 0.1.17:
 
 | Input path | 1 thread | 2 threads | 4 threads | 8 threads | 16 threads | 32 threads |
 |---|---:|---:|---:|---:|---:|---:|
-| BGZF VCF + TBI | 5.86× | 11.10× | 19.21× | 29.14× | 42.78× | 48.24× |
-| BGZF VCF + automatic CSI | 4.11× | 7.81× | 13.32× | 17.51× | 21.21× | 22.48× |
-| BGZF VCF, no automatic index | 7.45× | 7.45× | 8.86× | 8.89× | 8.82× | 8.65× |
-| Plain VCF | 7.27× | 7.10× | 20.61× | 29.24× | 42.04× | 39.58× |
-| BCF + CSI | 6.05× | 6.02× | 11.99× | 17.81× | 33.18× | 46.19× |
-| BCF + automatic CSI | 4.23× | 5.01× | 9.79× | 15.33× | 28.35× | 36.77× |
-| BCF, no automatic index | 6.07× | 12.02× | 17.72× | 34.28× | 47.13× | 48.09× |
+| BGZF VCF + TBI | 7.33× | 11.07× | 20.19× | 30.68× | 43.57× | 53.59× |
+| BGZF VCF + automatic CSI | 7.36× | 8.07× | 13.54× | 17.63× | 21.16× | 22.77× |
+| Plain VCF | 7.33× | 7.34× | 23.44× | 32.85× | 43.75× | 41.35× |
+| BCF adaptive stream | 5.97× | 11.84× | 17.58× | 33.94× | 47.05× | 48.35× |
 
-All 42 outputs were byte-identical and every candidate configuration was
-faster than Original in this repeat. The observed speedup range was
-4.11×–48.24×. Automatic-CSI rows include fresh CSI construction. These are
-single-run gate values; repeats 2–5 are pending, so adjacent-thread
-fluctuations must not be interpreted as final scaling means.
-
-In this workload, automatic CSI was faster than no-index BGZF from two
-threads upward; no-index BCF was faster than automatic CSI at every tested
-thread count. These v0.12.1 rows motivated the v0.12.2 adaptive policy:
-full-file BCF recode now selects streaming automatically, and
-`--no-auto-index` is no longer accepted.
+All 120 outputs were byte-identical. Automatic-CSI rows include fresh CSI
+construction in every repeat. The observed mean speedup range was
+5.97×–53.59×. The BCF adaptive path avoids indexed full-file traversal at
+every tested thread count; selective region queries still use CSI.
 
 Plain VCF cannot use CSI/TBI because those formats store BGZF virtual
 offsets. It remains on the parallel aligned-byte-range adapter and never
@@ -211,8 +202,8 @@ development gate are documented here:
 - [Final full-dataset summary](benchmarks/results/final-full-v0112/summary.tsv)
 - [v0.11.3 subset summary](benchmarks/results/adaptive-v0113-subset-final/summary.tsv)
 - [v0.11.3 full-data summary](benchmarks/results/final-full-v0113/summary.tsv)
-- [v0.12.1 full-data gate](benchmarks/results/final-full-v0121/README.md)
-- [v0.12.1 technical record](docs/versions/v0.12.1.md)
+- [v0.12.2 full-data matrix](benchmarks/results/final-full-v0122/README.md)
+- [v0.12.2 technical record](docs/versions/v0.12.2.md)
 
 ## Verify
 

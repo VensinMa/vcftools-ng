@@ -39,7 +39,7 @@
 
 namespace {
 
-constexpr const char* kVersion = "0.12.1";
+constexpr const char* kVersion = "0.12.2";
 
 struct Options {
     std::string input;

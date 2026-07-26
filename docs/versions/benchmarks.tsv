@@ -62,3 +62,7 @@ version	workload	fixture	original_seconds	ng8_seconds	ng16_seconds	speedup8	spee
 0.12.1	seven_filter_recode_bcf_csi	full_11.23m_r1	1943.47	109.14	58.58	17.81	33.18	PASS	5425725	benchmarks/results/final-full-v0121/summary.tsv
 0.12.1	seven_filter_recode_bcf_auto_csi	full_11.23m_r1	1943.47	126.74	68.56	15.33	28.35	PASS	5425725	benchmarks/results/final-full-v0121/summary.tsv
 0.12.1	seven_filter_recode_bcf_no_auto_index	full_11.23m_r1	1943.47	56.70	41.24	34.28	47.13	PASS	5425725	benchmarks/results/final-full-v0121/summary.tsv
+0.12.2	seven_filter_recode_bgzf_tbi	full_11.23m_mean5	2267.88	73.93	52.05	30.68	43.57	PASS	5425725	benchmarks/results/final-full-v0122/summary.tsv
+0.12.2	seven_filter_recode_bgzf_auto_csi	full_11.23m_mean5	2267.88	128.60	107.16	17.63	21.16	PASS	5425725	benchmarks/results/final-full-v0122/summary.tsv
+0.12.2	seven_filter_recode_plain_vcf	full_11.23m_mean5	2092.91	63.71	47.84	32.85	43.75	PASS	5425725	benchmarks/results/final-full-v0122/summary.tsv
+0.12.2	seven_filter_recode_bcf_adaptive_stream	full_11.23m_mean5	1943.47	57.26	41.30	33.94	47.05	PASS	5425725	benchmarks/results/final-full-v0122/summary.tsv
