@@ -4,25 +4,28 @@
 
 Experimental high-performance, output-compatible successor to VCFtools 0.1.17.
 
-**Latest release:** [v0.12.3 — Comprehensive Colored Terminal
-Help](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.12.3)
+**Latest release:** [v0.12.4 — Standard Reproducible Run
+Logging](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.12.4)
 
-**Current master development:** v0.12.4 adds a standard, reproducible run log
-with explicit adaptive-index decisions. It is not yet a published Release.
+v0.12.4 generates `PREFIX.log` by default and records the complete command,
+inputs, outputs, filters, thread allocation, resources, CSI/TBI validation,
+adaptive index decision and reason, timing, warnings, and final status.
+`--log-file FILE` selects a custom path and `--no-log-file` disables only the
+file. Scientific stdout remains byte-clean.
 
-v0.12.3 adds a complete, structured terminal manual covering every supported
-option, practical examples, output suffixes, combination rules, and adaptive
-backend behavior. Color is enabled automatically only on interactive
-terminals, with `NO_COLOR` and `CLICOLOR_FORCE` controls. The filtering,
-statistics, input, and output execution paths are unchanged from v0.12.2.
+The comprehensive colored terminal manual introduced in v0.12.3 remains
+available through `vcftools-ng --help`, including every supported option,
+examples, output suffixes, combination rules, and adaptive backend behavior.
 
 The full 11,230,392-record release matrix passed in four representative input
 scenarios at 1/2/4/8/16/32 threads. All 120 vcftools-ng outputs (five repeats
 per configuration) were byte-identical to the retained VCFtools 0.1.17
 goldens. The hash-locked Original timings and goldens from v0.12.1 were reused;
-Original was not rerun for v0.12.2. Because v0.12.3 changes only help,
-documentation, and packaging validation, it inherits this hash-locked
-performance and exactness evidence without relabeling it as a new benchmark.
+Original was not rerun for v0.12.2. v0.12.4 does not change scientific
+filtering, statistics, input scheduling, or output bytes, so it inherits this
+hash-locked release matrix without relabeling it as a new benchmark. Its
+logging-enabled 2.3-million-record development gate separately passed all 18
+three-scenario/thread combinations byte-for-byte.
 
 The current implementation uses adaptive ordered input shards and a bounded,
 order-preserving pipeline. Plain VCF streams at 1–2 threads and uses aligned
@@ -45,11 +48,11 @@ includes vcftools-ng, bcftools for automatic CSI construction, HTSlib, and
 the required non-glibc runtime libraries.
 
 ```bash
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.3/vcftools-ng-v0.12.3-linux-x86_64.tar.gz
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.3/vcftools-ng-v0.12.3-linux-x86_64.tar.gz.sha256
-sha256sum -c vcftools-ng-v0.12.3-linux-x86_64.tar.gz.sha256
-tar -xzf vcftools-ng-v0.12.3-linux-x86_64.tar.gz
-./vcftools-ng-v0.12.3-linux-x86_64/bin/vcftools-ng --version
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.4/vcftools-ng-v0.12.4-linux-x86_64.tar.gz
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.4/vcftools-ng-v0.12.4-linux-x86_64.tar.gz.sha256
+sha256sum -c vcftools-ng-v0.12.4-linux-x86_64.tar.gz.sha256
+tar -xzf vcftools-ng-v0.12.4-linux-x86_64.tar.gz
+./vcftools-ng-v0.12.4-linux-x86_64/bin/vcftools-ng --version
 ```
 
 The archive requires Linux x86_64 with glibc 2.17 or newer. It is built on a
@@ -225,7 +228,7 @@ and does not require `--recode`.
 | Output name | `PREFIX.recode.vcf.gz`, where `PREFIX` comes from `--out` |
 | INFO fields | Add `--recode-INFO-all` to retain all input INFO fields |
 | Compression | Deterministic BGZF using the effective `--threads` budget |
-| Output index | Not created automatically in v0.12.3 |
+| Output index | Not created automatically in v0.12.4 |
 | Compatibility | Decompressed bytes are compared with Original `--recode` |
 
 ```bash
@@ -296,8 +299,9 @@ construction is profitable.
 The release workload applies seven real-project filters and writes a complete
 VCF with all INFO fields. Values are mean wall-clock seconds from five
 strictly serial vcftools-ng repeats on the 32-CPU host. Original values are
-the hash-locked single-run v0.12.1 baselines and were not rerun. v0.12.3 did
-not rerun this matrix because it does not modify any measured execution path.
+the hash-locked single-run v0.12.1 baselines and were not rerun. v0.12.4
+inherits this matrix because its standard logging work does not change the
+scientific execution paths or output bytes.
 
 | Input path | Original | 1 thread | 2 threads | 4 threads | 8 threads | 16 threads | 32 threads |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -339,6 +343,8 @@ development gate are documented here:
 - [v0.12.2 full-data matrix](benchmarks/results/final-full-v0122/README.md)
 - [v0.12.2 technical record](docs/versions/v0.12.2.md)
 - [v0.12.3 technical record](docs/versions/v0.12.3.md)
+- [v0.12.4 technical record](docs/versions/v0.12.4.md)
+- [v0.12.4 logging-enabled development gate](benchmarks/results/development-v0124-logging-final/README.md)
 
 ## Verify
 

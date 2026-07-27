@@ -5,22 +5,23 @@
 vcftools-ng 是 VCFtools 0.1.17 的实验性高性能、输出兼容后继实现。
 
 **最新正式版：**
-[v0.12.3 — 完整彩色终端帮助](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.12.3)
+[v0.12.4 — 标准可复现运行日志](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.12.4)
 
-**master 当前开发版：**v0.12.4 新增标准可复现运行日志和明确的自适应索引
-决策记录，目前尚未发布为正式 Release。
+v0.12.4 默认生成 `PREFIX.log`，记录完整命令、输入输出、过滤参数、线程
+分配、资源使用、CSI/TBI 验证、自适应索引决定及原因、耗时、警告和最终
+状态。`--log-file FILE` 可自定义路径，`--no-log-file` 只关闭日志文件；
+科学数据 stdout 始终保持纯净。
 
-v0.12.3 新增结构完整的终端手册，覆盖全部已支持参数、常用示例、输出后缀、
-组合限制和自适应后端策略。颜色只在交互式终端自动启用，并支持
-`NO_COLOR` 和 `CLICOLOR_FORCE`。过滤、统计、输入和输出执行路径与
-v0.12.2 完全相同。
+v0.12.3 引入的完整彩色终端手册继续保留，可通过 `vcftools-ng --help`
+查看全部支持参数、示例、输出后缀、组合限制和自适应后端策略。
 
 完整 11,230,392 位点的四场景发布矩阵已经通过：
 1/2/4/8/16/32 线程、每个配置五次重复，共 120/120 个 vcftools-ng
 输出均与保留的 VCFtools 0.1.17 golden 逐字节一致。v0.12.2 复用了
 v0.12.1 已锁定并重新校验哈希的 Original 时间与 golden，本轮没有重跑
-Original。v0.12.3 仅修改帮助、文档和便携包验证，因此直接继承这组已锁定
-哈希的性能与一致性证据，不会把旧数据重新标成 v0.12.3 新跑基准。
+Original。v0.12.4 不改变科学过滤、统计、输入调度或输出字节，因此继承
+这组已锁定的正式发布矩阵，不将旧数据重新标成新跑基准。启用标准日志后
+另外完成了 230 万位点三场景门禁，18 个场景/线程组合全部逐字节通过。
 
 vcftools-ng 使用自适应、有序的输入分片和有界流水线：
 
@@ -41,11 +42,11 @@ Linux x86_64 便携包解压后即可运行，包内包含 vcftools-ng、用于�
 构建 CSI 的 bcftools、HTSlib 以及所需的非 glibc 运行库：
 
 ```bash
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.3/vcftools-ng-v0.12.3-linux-x86_64.tar.gz
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.3/vcftools-ng-v0.12.3-linux-x86_64.tar.gz.sha256
-sha256sum -c vcftools-ng-v0.12.3-linux-x86_64.tar.gz.sha256
-tar -xzf vcftools-ng-v0.12.3-linux-x86_64.tar.gz
-./vcftools-ng-v0.12.3-linux-x86_64/bin/vcftools-ng --version
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.4/vcftools-ng-v0.12.4-linux-x86_64.tar.gz
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.4/vcftools-ng-v0.12.4-linux-x86_64.tar.gz.sha256
+sha256sum -c vcftools-ng-v0.12.4-linux-x86_64.tar.gz.sha256
+tar -xzf vcftools-ng-v0.12.4-linux-x86_64.tar.gz
+./vcftools-ng-v0.12.4-linux-x86_64/bin/vcftools-ng --version
 ```
 
 便携包面向 glibc 2.17 或更高版本，在 CentOS 7 兼容的
@@ -202,7 +203,7 @@ vcftools-ng --gzvcf input.vcf.gz --counts \
 | 输出文件名 | `PREFIX.recode.vcf.gz`，`PREFIX` 来自 `--out` |
 | INFO 字段 | 添加 `--recode-INFO-all` 以保留输入中的全部 INFO |
 | 压缩方式 | 使用有效 `--threads` 预算的确定性 BGZF 压缩 |
-| 输出索引 | v0.12.3 不会自动创建 |
+| 输出索引 | v0.12.4 不会自动创建 |
 | 兼容性 | 解压内容与 Original `--recode` 做逐字节比较 |
 
 ```bash
@@ -267,7 +268,7 @@ BGZF/BCF区域查询才优先复用或构建索引；紧凑型全文件统计从
 全量发布工作负载使用七个真实项目过滤参数，并输出保留全部 INFO 的完整
 VCF。下表为 vcftools-ng 在 32 CPU 主机上严格串行运行五次的 wall time
 均值（秒）。Original 为 v0.12.1 已锁定的单次基线，本轮没有重跑。
-v0.12.3 未修改任何被测执行路径，因此没有重新运行这组矩阵。
+v0.12.4 的标准日志功能不改变科学执行路径或输出字节，因此继承这组矩阵。
 
 | 场景 | Original | 1 线程 | 2 线程 | 4 线程 | 8 线程 | 16 线程 | 32 线程 |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -313,8 +314,10 @@ ctest --test-dir build --output-on-failure
   （BGZF VCF + TBI、Plain VCF、BCF 自适应流式全扫描路径）
 - v0.12.2 完整四场景发布驱动：
   [benchmarks/run-v0122-full-release-matrix.sh](benchmarks/run-v0122-full-release-matrix.sh)
-- v0.12.3 技术记录：
-  [docs/versions/v0.12.3.md](docs/versions/v0.12.3.md)
+- v0.12.4 技术记录：
+  [docs/versions/v0.12.4.md](docs/versions/v0.12.4.md)
+- v0.12.4 启用日志后的三场景门禁：
+  [benchmarks/results/development-v0124-logging-final/README.md](benchmarks/results/development-v0124-logging-final/README.md)
 - 参数兼容矩阵：
   [docs/parameter-compatibility.md](docs/parameter-compatibility.md)
 - 版本历史：

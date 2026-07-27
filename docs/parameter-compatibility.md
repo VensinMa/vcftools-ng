@@ -1,6 +1,6 @@
 # Parameter compatibility and optimization status
 
-This document describes the v0.12.4 development command-line
+This document describes the v0.12.4 command-line
 surface. VCFtools 0.1.17 source and output files are the compatibility oracle.
 
 The terms below are deliberately separate:

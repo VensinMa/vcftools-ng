@@ -51,6 +51,15 @@ repeat. Inputs, original indexes, actual golden outputs, and output hashes must
 remain available after the run. Large artifacts stay local; compact TSV,
 manifest, environment, and reproduction scripts are committed.
 
+A release that changes only help, logging, packaging, or another
+non-scientific surface may inherit the most recent hash-locked full matrix
+when the release owner explicitly authorizes it. Such a release must still
+pass the complete Release and ASan/UBSan suites, its affected feature
+regressions, the permanent three-scenario development gate, and portable
+package verification. README, technical records, and Release notes must label
+the full-data values as inherited and must not present them as new
+measurements.
+
 When the release owner explicitly chooses staged qualification, run the driver
 with `GATE_ONLY=1`. Publication may proceed only after all 24 first-repeat
 candidate gates pass. Documentation and Release notes must then label every
