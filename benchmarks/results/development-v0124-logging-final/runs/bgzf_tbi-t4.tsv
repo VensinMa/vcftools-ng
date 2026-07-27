@@ -1,0 +1,2 @@
+case	threads	original_wall_s	wall_s	user_s	system_s	cpu_pct	max_rss_kb	output_bytes	output_sha256	exact
+bgzf_tbi	4	392.73	23.47	106.95	4.09	472	332400	12282602418	10f287fb3c043b6e27ce570000587ed226fbafda8754023c8c75d2ff37b80c25	PASS

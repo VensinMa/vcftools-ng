@@ -274,6 +274,7 @@ run_candidate() {
     /usr/bin/time -f '%e\t%U\t%S\t%P\t%M' -o "$timing" \
         "$NG" "--$kind" "$input" --threads "$threads" \
         "${extra[@]}" "${filter_args[@]}" \
+        --log-file "$log" \
         --recode --recode-INFO-all --stdout \
         >"$output" 2>"$log" ||
         status=$?

@@ -1,6 +1,6 @@
 # Parameter compatibility and optimization status
 
-This document describes the v0.12.1 command-line
+This document describes the v0.12.4 development command-line
 surface. VCFtools 0.1.17 source and output files are the compatibility oracle.
 
 The terms below are deliberately separate:
@@ -71,6 +71,13 @@ These options are additions, not Original-compatible parameter names:
 | `--input-backend auto\|stream\|plain\|indexed` | Selects or forces an input adapter. `auto` is the default adaptive speed policy. |
 | `--bcftools FILE` | Selects the bcftools executable used when the adaptive policy decides CSI construction is profitable. |
 | `--recode-vcf-gz` | Writes deterministic, parallel BGZF-compressed VCF. Original 0.1.17 has no compressed-VCF recode option. Validation compares the decompressed bytes with Original `--recode`; compressed bytes are deterministic across tested thread counts, but cannot be compared with a nonexistent Original artifact. |
+| `--log-file FILE` | Overrides the default `PREFIX.log` run-log path. The log is overwritten and receives the same diagnostics as stderr. |
+| `--no-log-file` | Disables the run-log file without disabling stderr diagnostics. |
+
+Original VCFtools creates `PREFIX.log` by default. vcftools-ng now preserves
+that output-prefix behavior while adding structured execution, index-policy,
+resource, and exit metadata. The log is operational evidence, not a scientific
+result artifact, and is not compared byte-for-byte with Original.
 
 `--no-auto-index` was removed in v0.12.2. Index construction and index use are
 now independent adaptive decisions. `--input-backend stream` and

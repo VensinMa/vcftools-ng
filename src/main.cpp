@@ -9,11 +9,13 @@
 #include <atomic>
 #include <cmath>
 #include <condition_variable>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <exception>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -36,15 +38,18 @@
 
 #include "fast_counts.h"
 #include "input_source.h"
+#include "run_logger.h"
 
 namespace {
 
-constexpr const char* kVersion = "0.12.3";
+constexpr const char* kVersion = "0.12.4";
 
 struct Options {
     std::string input;
     bool input_bcf = false;
     std::string output_prefix = "out";
+    std::string log_file;
+    bool no_log_file = false;
     unsigned threads =
         vcftools_ng::input::detect_available_threads().count;
     unsigned requested_threads = threads;
@@ -251,6 +256,205 @@ std::string require_value(int argc, char** argv, int& i) {
     return argv[++i];
 }
 
+bool preliminary_option_takes_value(
+    const std::string& option) {
+    static const std::unordered_set<std::string> options_with_values{
+        "--vcf", "--gzvcf", "--bcf", "--input",
+        "--out", "--log-file", "--threads", "-t",
+        "--batch-size", "--compat", "--input-backend", "--bcftools",
+        "--window-pi", "--window-pi-step", "--TajimaD",
+        "--weir-fst-pop", "--fst-window-size", "--fst-window-step",
+        "--ld-window", "--ld-window-min", "--ld-window-bp",
+        "--ld-window-bp-min", "--min-r2",
+        "--diff", "--gzdiff", "--diff-bcf",
+        "--chr", "--not-chr", "--from-bp", "--to-bp",
+        "--positions", "--exclude-positions", "--bed", "--exclude-bed",
+        "--indv", "--remove-indv", "--keep", "--remove",
+        "--min-alleles", "--max-alleles", "--minQ", "--minGQ",
+        "--minDP", "--maxDP", "--min-meanDP", "--max-meanDP",
+        "--max-missing", "--max-missing-count", "--maf", "--max-maf",
+        "--mac", "--max-mac", "--hwe", "--thin",
+        "--non-ref-af", "--max-non-ref-af",
+        "--non-ref-af-any", "--max-non-ref-af-any",
+        "--non-ref-ac", "--max-non-ref-ac",
+        "--non-ref-ac-any", "--max-non-ref-ac-any",
+        "--keep-filtered", "--remove-filtered",
+        "--keep-INFO", "--remove-INFO", "--remove-filtered-geno",
+    };
+    return options_with_values.contains(option);
+}
+
+bool is_help_or_version_request(int argc, char** argv) {
+    for (int index = 1; index < argc; ++index) {
+        const std::string argument = argv[index];
+        if (argument == "-h" || argument == "--help" ||
+            argument == "--version") {
+            return true;
+        }
+        if (preliminary_option_takes_value(argument) &&
+            index + 1 < argc) {
+            ++index;
+        }
+    }
+    return false;
+}
+
+bool paths_refer_to_same_destination(
+    const std::string& first, const std::string& second) {
+    std::error_code first_error;
+    std::error_code second_error;
+    const auto first_absolute =
+        std::filesystem::absolute(first, first_error)
+            .lexically_normal();
+    const auto second_absolute =
+        std::filesystem::absolute(second, second_error)
+            .lexically_normal();
+    if (!first_error && !second_error &&
+        first_absolute == second_absolute) {
+        return true;
+    }
+
+    std::error_code equivalent_error;
+    if (std::filesystem::exists(first) &&
+        std::filesystem::exists(second) &&
+        std::filesystem::equivalent(
+            first, second, equivalent_error) &&
+        !equivalent_error) {
+        return true;
+    }
+
+    first_error.clear();
+    second_error.clear();
+    const auto first_canonical =
+        std::filesystem::weakly_canonical(first, first_error);
+    const auto second_canonical =
+        std::filesystem::weakly_canonical(second, second_error);
+    return !first_error && !second_error &&
+           first_canonical == second_canonical;
+}
+
+std::optional<std::string> preliminary_log_path(
+    int argc, char** argv) {
+    std::string output_prefix = "out";
+    std::string explicit_log;
+    bool disabled = false;
+    bool output_stdout = false;
+    std::vector<std::string> protected_inputs;
+    std::unordered_set<std::string> requested_options;
+    static const std::unordered_set<std::string> file_inputs{
+        "--vcf", "--gzvcf", "--bcf", "--input",
+        "--diff", "--gzdiff", "--diff-bcf",
+        "--positions", "--exclude-positions",
+        "--bed", "--exclude-bed", "--keep", "--remove",
+        "--weir-fst-pop", "--bcftools",
+    };
+    for (int index = 1; index < argc; ++index) {
+        const std::string argument = argv[index];
+        requested_options.insert(argument);
+        if (argument == "--out" && index + 1 < argc) {
+            output_prefix = argv[++index];
+        } else if (
+            argument == "--log-file" && index + 1 < argc) {
+            explicit_log = argv[++index];
+        } else if (argument == "--no-log-file") {
+            disabled = true;
+        } else if (argument == "--stdout") {
+            output_stdout = true;
+        } else if (
+            file_inputs.contains(argument) &&
+            index + 1 < argc) {
+            protected_inputs.emplace_back(argv[++index]);
+        } else if (
+            preliminary_option_takes_value(argument) &&
+            index + 1 < argc) {
+            ++index;
+        }
+    }
+    if (disabled) {
+        return std::nullopt;
+    }
+    const std::string log_path =
+        explicit_log.empty()
+            ? output_prefix + ".log"
+            : explicit_log;
+    for (const auto& input : protected_inputs) {
+        if (paths_refer_to_same_destination(log_path, input)) {
+            throw std::runtime_error(
+                "Log file must not overwrite an input file: " +
+                log_path);
+        }
+    }
+
+    const auto output_requested =
+        [&](const std::string& option) {
+            return requested_options.contains(option);
+        };
+    std::vector<std::string> output_suffixes;
+    const auto add_suffix =
+        [&](bool enabled, const std::string& suffix) {
+            if (enabled) {
+                output_suffixes.push_back(suffix);
+            }
+        };
+    add_suffix(
+        output_requested("--freq") ||
+            output_requested("--freq2"),
+        ".frq");
+    add_suffix(output_requested("--counts"), ".frq.count");
+    add_suffix(output_requested("--missing-site"), ".lmiss");
+    add_suffix(output_requested("--site-depth"), ".ldepth");
+    add_suffix(
+        output_requested("--site-mean-depth"),
+        ".ldepth.mean");
+    add_suffix(output_requested("--depth"), ".idepth");
+    add_suffix(output_requested("--missing-indv"), ".imiss");
+    add_suffix(output_requested("--het"), ".het");
+    add_suffix(output_requested("--hardy"), ".hwe");
+    add_suffix(output_requested("--site-quality"), ".lqual");
+    add_suffix(output_requested("--site-pi"), ".sites.pi");
+    add_suffix(output_requested("--window-pi"), ".windowed.pi");
+    add_suffix(output_requested("--TajimaD"), ".Tajima.D");
+    add_suffix(
+        output_requested("--weir-fst-pop"),
+        output_requested("--fst-window-size")
+            ? ".windowed.weir.fst"
+            : ".weir.fst");
+    add_suffix(output_requested("--geno-r2"), ".geno.ld");
+    add_suffix(
+        output_requested("--pca") ||
+            output_requested("--pca-no-norm"),
+        ".pca");
+    add_suffix(
+        output_requested("--recode") && !output_stdout,
+        ".recode.vcf");
+    add_suffix(
+        output_requested("--recode-vcf-gz"),
+        ".recode.vcf.gz");
+    add_suffix(output_requested("--recode-bcf"), ".recode.bcf");
+    add_suffix(
+        output_requested("--diff-site"),
+        ".diff.sites_in_files");
+    add_suffix(
+        output_requested("--diff-indv"),
+        ".diff.indv_in_files");
+    add_suffix(
+        output_requested("--diff-site-discordance"),
+        ".diff.sites");
+    add_suffix(
+        output_requested("--diff-indv-discordance"),
+        ".diff.indv");
+    for (const auto& suffix : output_suffixes) {
+        const std::string output_path = output_prefix + suffix;
+        if (paths_refer_to_same_destination(
+                log_path, output_path)) {
+            throw std::runtime_error(
+                "Log file conflicts with output file: " +
+                output_path);
+        }
+    }
+    return log_path;
+}
+
 unsigned parse_unsigned(const std::string& value, const std::string& option) {
     std::size_t used = 0;
     const unsigned long parsed = std::stoul(value, &used);
@@ -391,6 +595,10 @@ GENERAL OPTIONS:
   -h, --help                   Print this help and exit
   --version                    Print the vcftools-ng version and exit
   --out PREFIX                 Prefix for output files (default: out)
+  --log-file FILE             Write the run log to FILE instead of PREFIX.log
+                               (vcftools-ng extension)
+  --no-log-file               Disable the log file; keep terminal diagnostics
+                               (vcftools-ng extension)
   -t, --threads N              Total CPU-thread budget (default: auto-detect)
   --batch-size N               Records per pipeline batch (default: 2048)
   --compat exact               Exact VCFtools 0.1.17 compatibility mode
@@ -399,6 +607,14 @@ GENERAL OPTIONS:
                                Advanced diagnostic/performance override
   --bcftools FILE              bcftools executable for profitable CSI builds
                                (default: bcftools)
+
+RUN LOGGING:
+  Normal runs overwrite PREFIX.log by default. The terminal and file receive
+  the same diagnostics. The log records command/environment metadata, input
+  and output details, filters, adaptive index decisions, thread allocation,
+  sample/site counts, wall/CPU/RSS usage, warnings, errors, and exit status.
+  --log-file changes the path. --no-log-file disables only the file.
+  VCF written by --recode --stdout remains isolated on stdout.
 
 INPUT OPTIONS (choose one):
   --vcf FILE                   Uncompressed VCF input
@@ -453,7 +669,7 @@ RECODE AND FORMAT OUTPUT:
   --stdout                     Send plain --recode VCF to stdout
 
   --recode and --recode-vcf-gz may be combined to write both files in one
-  scan. --stdout is valid only with plain --recode. v0.12.3 does not create
+  scan. --stdout is valid only with plain --recode. vcftools-ng does not create
   an index for new output; run:
     bcftools index --tbi --threads N PREFIX.recode.vcf.gz
 
@@ -547,7 +763,8 @@ COMPATIBILITY:
   VCFtools 0.1.17 is the exact-output oracle. Parameters described as
   compatible have real-data complete-file comparison gates. vcftools-ng-only
   extensions include --input, --threads, --input-backend, and
-  --recode-vcf-gz. The project does not yet implement every VCFtools option.
+  --recode-vcf-gz, --log-file, and --no-log-file. The project does not yet
+  implement every VCFtools option.
 
 TERMINAL COLORS:
   Colors are enabled automatically on an interactive terminal.
@@ -579,6 +796,10 @@ Options parse_options(int argc, char** argv) {
             options.input_bcf = arg == "--bcf";
         } else if (arg == "--out") {
             options.output_prefix = require_value(argc, argv, i);
+        } else if (arg == "--log-file") {
+            options.log_file = require_value(argc, argv, i);
+        } else if (arg == "--no-log-file") {
+            options.no_log_file = true;
         } else if (arg == "--threads" || arg == "-t") {
             options.requested_threads =
                 parse_unsigned(require_value(argc, argv, i), arg);
@@ -828,6 +1049,9 @@ Options parse_options(int argc, char** argv) {
     if (options.input.empty()) {
         fail("Input file required");
     }
+    if (options.no_log_file && !options.log_file.empty()) {
+        fail("--log-file and --no-log-file cannot be combined");
+    }
     if (options.threads_explicit) {
         options.threads = std::min(
             options.requested_threads,
@@ -959,6 +1183,472 @@ Options parse_options(int argc, char** argv) {
     }
     options.input_bcf = input_is_bcf(options.input);
     return options;
+}
+
+struct OutputArtifact {
+    std::string label;
+    std::string path;
+    bool standard_output = false;
+};
+
+std::vector<OutputArtifact> output_artifacts(
+    const Options& options) {
+    std::vector<OutputArtifact> outputs;
+    const auto add = [&](bool enabled, const std::string& label,
+                         const std::string& suffix) {
+        if (enabled) {
+            outputs.push_back(
+                {label, options.output_prefix + suffix, false});
+        }
+    };
+    add(
+        options.output_freq || options.output_freq2,
+        "Frequency", ".frq");
+    add(options.output_counts, "Allele counts", ".frq.count");
+    add(options.output_missing_site, "Site missingness", ".lmiss");
+    add(options.output_site_depth, "Site depth", ".ldepth");
+    add(
+        options.output_site_mean_depth,
+        "Site mean depth", ".ldepth.mean");
+    add(options.output_individual_depth, "Individual depth", ".idepth");
+    add(
+        options.output_individual_missingness,
+        "Individual missingness", ".imiss");
+    add(options.output_heterozygosity, "Heterozygosity", ".het");
+    add(options.output_hardy_weinberg, "Hardy-Weinberg", ".hwe");
+    add(options.output_site_quality, "Site quality", ".lqual");
+    add(options.output_site_pi, "Site pi", ".sites.pi");
+    add(options.pi_window_size > 0, "Window pi", ".windowed.pi");
+    add(options.tajima_window_size > 0, "Tajima D", ".Tajima.D");
+    if (!options.fst_population_files.empty()) {
+        add(
+            true,
+            options.fst_window_size > 0 ? "Window FST" : "Site FST",
+            options.fst_window_size > 0
+                ? ".windowed.weir.fst"
+                : ".weir.fst");
+    }
+    add(options.output_genotype_r2, "Genotype LD", ".geno.ld");
+    add(options.output_pca, "PCA", ".pca");
+    if (options.output_recode) {
+        outputs.push_back(
+            {"Recode VCF",
+             options.output_stdout
+                 ? "stdout"
+                 : options.output_prefix + ".recode.vcf",
+             options.output_stdout});
+    }
+    add(options.output_recode_vcf_gz, "Recode BGZF VCF", ".recode.vcf.gz");
+    add(options.output_recode_bcf, "Recode BCF", ".recode.bcf");
+    add(
+        options.output_diff_sites_in_files,
+        "Diff sites in files", ".diff.sites_in_files");
+    add(
+        options.output_diff_individuals_in_files,
+        "Diff individuals in files", ".diff.indv_in_files");
+    add(
+        options.output_diff_site_discordance,
+        "Diff site discordance", ".diff.sites");
+    add(
+        options.output_diff_individual_discordance,
+        "Diff individual discordance", ".diff.indv");
+    return outputs;
+}
+
+void validate_log_destination(const Options& options) {
+    if (options.no_log_file) {
+        return;
+    }
+    const std::string log_path =
+        options.log_file.empty()
+            ? options.output_prefix + ".log"
+            : options.log_file;
+    if (paths_refer_to_same_destination(
+            log_path, options.input)) {
+        fail("Log file must not overwrite the input file: " + log_path);
+    }
+    if (!options.diff_input.empty() &&
+        paths_refer_to_same_destination(
+            log_path, options.diff_input)) {
+        fail(
+            "Log file must not overwrite the diff input file: " +
+            log_path);
+    }
+    for (const auto& output : output_artifacts(options)) {
+        if (!output.standard_output &&
+            paths_refer_to_same_destination(
+                log_path, output.path)) {
+            fail(
+                "Log file conflicts with output file: " +
+                output.path);
+        }
+    }
+}
+
+std::string option_number(double value) {
+    std::ostringstream output;
+    output << value;
+    return output.str();
+}
+
+std::string input_backend_option_name(
+    vcftools_ng::input::Backend backend) {
+    switch (backend) {
+        case vcftools_ng::input::Backend::automatic:
+            return "automatic";
+        case vcftools_ng::input::Backend::stream:
+            return "forced stream";
+        case vcftools_ng::input::Backend::plain_ranges:
+            return "forced plain ranges";
+        case vcftools_ng::input::Backend::indexed_regions:
+            return "forced indexed regions";
+    }
+    return "unknown";
+}
+
+std::vector<std::string> active_filters(
+    const Options& options) {
+    std::vector<std::string> filters;
+    const auto add = [&](const std::string& option) {
+        filters.push_back("  " + option);
+    };
+    for (const auto& chromosome : options.chromosomes_to_keep) {
+        add("--chr " + chromosome);
+    }
+    for (const auto& chromosome : options.chromosomes_to_exclude) {
+        add("--not-chr " + chromosome);
+    }
+    if (options.start_position != -1) {
+        add("--from-bp " + std::to_string(options.start_position));
+    }
+    if (options.end_position != std::numeric_limits<int>::max()) {
+        add("--to-bp " + std::to_string(options.end_position));
+    }
+    if (!options.positions_file.empty()) {
+        add("--positions " + options.positions_file);
+    }
+    if (!options.exclude_positions_file.empty()) {
+        add("--exclude-positions " + options.exclude_positions_file);
+    }
+    if (!options.bed_file.empty()) {
+        add(
+            std::string(options.bed_exclude ? "--exclude-bed " : "--bed ") +
+            options.bed_file);
+    }
+    for (const auto& flag : options.site_filters_to_keep) {
+        add("--keep-filtered " + flag);
+    }
+    for (const auto& flag : options.site_filters_to_remove) {
+        add("--remove-filtered " + flag);
+    }
+    if (options.remove_all_filtered_sites) {
+        add("--remove-filtered-all");
+    }
+    for (const auto& flag : options.info_flags_to_keep) {
+        add("--keep-INFO " + flag);
+    }
+    for (const auto& flag : options.info_flags_to_remove) {
+        add("--remove-INFO " + flag);
+    }
+    for (const auto& sample : options.samples_to_keep) {
+        add("--indv " + sample);
+    }
+    for (const auto& sample : options.samples_to_exclude) {
+        add("--remove-indv " + sample);
+    }
+    for (const auto& file : options.sample_keep_files) {
+        if (std::find(
+                options.fst_population_files.begin(),
+                options.fst_population_files.end(),
+                file) == options.fst_population_files.end()) {
+            add("--keep " + file);
+        }
+    }
+    for (const auto& file : options.sample_exclude_files) {
+        add("--remove " + file);
+    }
+    if (options.min_alleles != -1) {
+        add("--min-alleles " + std::to_string(options.min_alleles));
+    }
+    if (options.max_alleles != std::numeric_limits<int>::max()) {
+        add("--max-alleles " + std::to_string(options.max_alleles));
+    }
+    if (options.remove_indels) {
+        add("--remove-indels");
+    }
+    if (options.keep_only_indels) {
+        add("--keep-only-indels");
+    }
+    if (options.min_qual != -1.0) {
+        add("--minQ " + option_number(options.min_qual));
+    }
+    if (options.min_gq != -1.0) {
+        add("--minGQ " + option_number(options.min_gq));
+    }
+    if (options.min_dp != -1) {
+        add("--minDP " + std::to_string(options.min_dp));
+    }
+    if (options.max_dp != std::numeric_limits<int>::max()) {
+        add("--maxDP " + std::to_string(options.max_dp));
+    }
+    for (const auto& flag : options.genotype_filters_to_remove) {
+        add("--remove-filtered-geno " + flag);
+    }
+    if (options.remove_all_filtered_genotypes) {
+        add("--remove-filtered-geno-all");
+    }
+    if (options.min_mean_dp != -1.0) {
+        add("--min-meanDP " + option_number(options.min_mean_dp));
+    }
+    if (options.max_mean_dp != std::numeric_limits<double>::max()) {
+        add("--max-meanDP " + option_number(options.max_mean_dp));
+    }
+    if (options.min_call_rate != 0.0) {
+        add("--max-missing " + option_number(options.min_call_rate));
+    }
+    if (options.max_missing_count != std::numeric_limits<int>::max()) {
+        add(
+            "--max-missing-count " +
+            std::to_string(options.max_missing_count));
+    }
+    if (options.min_maf != -1.0) {
+        add("--maf " + option_number(options.min_maf));
+    }
+    if (options.max_maf != std::numeric_limits<double>::max()) {
+        add("--max-maf " + option_number(options.max_maf));
+    }
+    if (options.min_mac != -1) {
+        add("--mac " + std::to_string(options.min_mac));
+    }
+    if (options.max_mac != std::numeric_limits<int>::max()) {
+        add("--max-mac " + std::to_string(options.max_mac));
+    }
+    if (options.min_hwe != -1.0) {
+        add("--hwe " + option_number(options.min_hwe));
+    }
+    if (options.thin_distance != -1) {
+        add("--thin " + std::to_string(options.thin_distance));
+    }
+    if (options.min_non_ref_af != -1.0) {
+        add("--non-ref-af " + option_number(options.min_non_ref_af));
+    }
+    if (options.max_non_ref_af != std::numeric_limits<double>::max()) {
+        add(
+            "--max-non-ref-af " +
+            option_number(options.max_non_ref_af));
+    }
+    if (options.min_non_ref_af_any != -1.0) {
+        add(
+            "--non-ref-af-any " +
+            option_number(options.min_non_ref_af_any));
+    }
+    if (options.max_non_ref_af_any !=
+        std::numeric_limits<double>::max()) {
+        add(
+            "--max-non-ref-af-any " +
+            option_number(options.max_non_ref_af_any));
+    }
+    if (options.min_non_ref_ac != -1) {
+        add("--non-ref-ac " + std::to_string(options.min_non_ref_ac));
+    }
+    if (options.max_non_ref_ac != std::numeric_limits<int>::max()) {
+        add(
+            "--max-non-ref-ac " +
+            std::to_string(options.max_non_ref_ac));
+    }
+    if (options.min_non_ref_ac_any != -1) {
+        add(
+            "--non-ref-ac-any " +
+            std::to_string(options.min_non_ref_ac_any));
+    }
+    if (options.max_non_ref_ac_any !=
+        std::numeric_limits<int>::max()) {
+        add(
+            "--max-non-ref-ac-any " +
+            std::to_string(options.max_non_ref_ac_any));
+    }
+    return filters;
+}
+
+std::vector<std::string> active_output_options(
+    const Options& options) {
+    std::vector<std::string> output_options;
+    const auto flag = [&](bool enabled, const std::string& option) {
+        if (enabled) {
+            output_options.push_back("  " + option);
+        }
+    };
+    flag(options.output_freq, "--freq");
+    flag(options.output_freq2, "--freq2");
+    flag(options.output_counts, "--counts");
+    flag(options.output_missing_site, "--missing-site");
+    flag(options.output_site_depth, "--site-depth");
+    flag(options.output_site_mean_depth, "--site-mean-depth");
+    flag(options.output_individual_depth, "--depth");
+    flag(options.output_individual_missingness, "--missing-indv");
+    flag(options.output_heterozygosity, "--het");
+    flag(options.output_hardy_weinberg, "--hardy");
+    flag(options.output_site_quality, "--site-quality");
+    flag(options.output_site_pi, "--site-pi");
+    if (options.pi_window_size > 0) {
+        output_options.push_back(
+            "  --window-pi " +
+            std::to_string(options.pi_window_size));
+    }
+    if (options.pi_window_step > 0) {
+        output_options.push_back(
+            "  --window-pi-step " +
+            std::to_string(options.pi_window_step));
+    }
+    if (options.tajima_window_size > 0) {
+        output_options.push_back(
+            "  --TajimaD " +
+            std::to_string(options.tajima_window_size));
+    }
+    for (const auto& file : options.fst_population_files) {
+        output_options.push_back("  --weir-fst-pop " + file);
+    }
+    if (options.fst_window_size > 0) {
+        output_options.push_back(
+            "  --fst-window-size " +
+            std::to_string(options.fst_window_size));
+    }
+    if (options.fst_window_step > 0) {
+        output_options.push_back(
+            "  --fst-window-step " +
+            std::to_string(options.fst_window_step));
+    }
+    flag(options.output_genotype_r2, "--geno-r2");
+    if (options.ld_snp_window_size !=
+        std::numeric_limits<int>::max()) {
+        output_options.push_back(
+            "  --ld-window " +
+            std::to_string(options.ld_snp_window_size));
+    }
+    if (options.ld_snp_window_min != -1) {
+        output_options.push_back(
+            "  --ld-window-min " +
+            std::to_string(options.ld_snp_window_min));
+    }
+    if (options.ld_bp_window_size !=
+        std::numeric_limits<int>::max()) {
+        output_options.push_back(
+            "  --ld-window-bp " +
+            std::to_string(options.ld_bp_window_size));
+    }
+    if (options.ld_bp_window_min != -1) {
+        output_options.push_back(
+            "  --ld-window-bp-min " +
+            std::to_string(options.ld_bp_window_min));
+    }
+    if (options.min_r2 != -1.0) {
+        output_options.push_back(
+            "  --min-r2 " + option_number(options.min_r2));
+    }
+    flag(
+        options.output_pca,
+        options.pca_normalise ? "--pca" : "--pca-no-norm");
+    flag(options.output_recode, "--recode");
+    flag(options.output_recode_vcf_gz, "--recode-vcf-gz");
+    flag(options.output_recode_bcf, "--recode-bcf");
+    flag(options.recode_info_all, "--recode-INFO-all");
+    flag(options.output_stdout, "--stdout");
+    if (!options.diff_input.empty()) {
+        output_options.push_back("  Diff input: " + options.diff_input);
+    }
+    flag(options.output_diff_sites_in_files, "--diff-site");
+    flag(options.output_diff_individuals_in_files, "--diff-indv");
+    flag(
+        options.output_diff_site_discordance,
+        "--diff-site-discordance");
+    flag(
+        options.output_diff_individual_discordance,
+        "--diff-indv-discordance");
+    return output_options;
+}
+
+void log_run_plan(const Options& options) {
+    std::error_code size_error;
+    const auto input_size =
+        std::filesystem::file_size(options.input, size_error);
+    std::cerr << "Input: " << options.input << "\n"
+              << "Input format: "
+              << vcftools_ng::input::describe_input_format(
+                     options.input)
+              << "\n"
+              << "Input size: ";
+    if (size_error) {
+        std::cerr << "unavailable (" << size_error.message() << ")\n";
+    } else {
+        std::cerr << input_size << " bytes\n";
+    }
+    std::cerr
+        << "Storage: "
+        << vcftools_ng::input::describe_storage(options.input)
+        << "\n"
+        << "Requested threads: " << options.requested_threads << "\n"
+        << "Effective threads: " << options.threads << "\n"
+        << "Batch size: " << options.batch_size << "\n\n"
+        << "Outputs:\n";
+    for (const auto& output : output_artifacts(options)) {
+        std::cerr << "  " << output.label << ": " << output.path << "\n";
+    }
+    std::cerr
+        << "  Log: "
+        << (options.no_log_file
+                ? "disabled"
+                : options.log_file.empty()
+                ? options.output_prefix + ".log"
+                : options.log_file)
+        << "\n";
+    if (options.recode_info_all) {
+        std::cerr << "  INFO fields: all (--recode-INFO-all)\n";
+    }
+    std::cerr << "\nOutput parameters:\n";
+    for (const auto& option : active_output_options(options)) {
+        std::cerr << option << "\n";
+    }
+    const auto filters = active_filters(options);
+    if (filters.empty()) {
+        std::cerr << "\nFilters: none\n\n";
+    } else {
+        std::cerr << "\nFilters:\n";
+        for (const auto& filter : filters) {
+            std::cerr << filter << "\n";
+        }
+        std::cerr << "\n";
+    }
+}
+
+void log_output_results(const Options& options) {
+    std::cerr << "\nOutput results:\n";
+    for (const auto& output : output_artifacts(options)) {
+        if (output.label == "Recode VCF") {
+            std::cerr << "  Output format: Plain VCF\n";
+        } else if (output.label == "Recode BGZF VCF") {
+            std::cerr << "  Output format: BGZF VCF\n";
+        } else if (output.label == "Recode BCF") {
+            std::cerr << "  Output format: BCF\n";
+        }
+        std::cerr << "  " << output.label << ": " << output.path << "\n";
+        if (output.standard_output) {
+            std::cerr << "  Output bytes: not measured (stdout)\n";
+            continue;
+        }
+        std::error_code size_error;
+        const auto bytes =
+            std::filesystem::file_size(output.path, size_error);
+        if (size_error) {
+            std::cerr << "  Output status: not created or unavailable\n";
+        } else {
+            std::cerr << "  Output bytes: " << bytes << "\n";
+        }
+        if (output.label == "Recode BGZF VCF") {
+            std::cerr
+                << "  Output index: none "
+                   "(not created automatically)\n";
+        }
+    }
 }
 
 struct HtsFileDeleter {
@@ -5000,6 +5690,28 @@ int run(const Options& options) {
         return run_diff(options);
     }
     if (can_use_fused_site_stats(options)) {
+        const std::string input_format =
+            vcftools_ng::input::describe_input_format(
+                options.input);
+        if (input_format == "Plain VCF" ||
+            input_format == "gzip-compressed VCF") {
+            std::cerr
+                << "Index policy: "
+                << input_backend_option_name(
+                       options.input_backend)
+                << "\n"
+                << "Index workload: compact site statistics\n"
+                << "Existing sidecar: none\n"
+                << "Index validation: not applicable\n"
+                << "Decision: "
+                << (input_format == "Plain VCF"
+                        ? "CSI/TBI is not applicable to Plain VCF"
+                        : "CSI/TBI requires BGZF compression")
+                << "\n"
+                << "Reason: direct fused " << input_format
+                << " site-statistics path; "
+                << options.threads << " effective threads\n";
+        }
         vcftools_ng::input::SourceOptions fast_options{
             .path = options.input,
             .requested_backend = options.input_backend,
@@ -5030,8 +5742,13 @@ int run(const Options& options) {
             const auto detected_threads =
                 vcftools_ng::input::detect_available_threads();
             std::cerr
-                << "vcftools-ng " << kVersion << "\n"
-                << "Input: " << options.input << "\n"
+                << "Selected backend: " << fast->backend << "\n"
+                << "Index used: "
+                << (fast->backend.find("indexed") !=
+                            std::string::npos
+                        ? "yes"
+                        : "no")
+                << "\n"
                 << "Input backend: " << fast->backend
                 << " (" << fast->description << ")\n"
                 << "Samples: " << fast->samples << "\n"
@@ -5051,12 +5768,18 @@ int run(const Options& options) {
                 << fast->input_threads
                 << ", HTSlib I/O " << fast->hts_io_threads
                 << ", compute fused\n"
+                << "Input threads: " << fast->input_threads << "\n"
+                << "HTSlib I/O threads: "
+                << fast->hts_io_threads << "\n"
+                << "Compute threads: fused\n"
                 << "Planned input shards: "
                 << fast->planned_shards << "\n"
                 << "Selected samples: " << fast->samples << "\n"
                 << "Scheduler: adaptive fused text site statistics\n"
                 << "After filtering, kept " << fast->kept
-                << " out of " << fast->total << " sites\n";
+                << " out of " << fast->total << " sites\n"
+                << "Kept sites: " << fast->kept << "\n"
+                << "Total sites: " << fast->total << "\n";
             return 0;
         }
     }
@@ -5086,9 +5809,7 @@ int run(const Options& options) {
         vcftools_ng::input::detect_available_threads();
     const auto& resources = source->resources();
 
-    std::cerr << "vcftools-ng " << kVersion << "\n"
-              << "Input: " << options.input << "\n"
-              << "Input backend: " << source->backend_name()
+    std::cerr << "Input backend: " << source->backend_name()
               << " (" << source->description() << ")\n"
               << "Samples: " << bcf_hdr_nsamples(header) << "\n"
               << "Threads: " << options.threads
@@ -5106,6 +5827,11 @@ int run(const Options& options) {
               << resources.input_threads
               << ", HTSlib I/O " << resources.hts_io_threads
               << ", compute " << resources.compute_threads << "\n"
+              << "Input threads: " << resources.input_threads << "\n"
+              << "HTSlib I/O threads: "
+              << resources.hts_io_threads << "\n"
+              << "Compute threads: "
+              << resources.compute_threads << "\n"
               << "Planned input shards: "
               << source->planned_shards() << "\n"
               << "Batch size: " << options.batch_size << "\n";
@@ -5123,18 +5849,57 @@ int run(const Options& options) {
 
     std::cerr << "After filtering, kept " << summary.kept << " out of "
               << summary.total
-              << " sites\n";
+              << " sites\n"
+              << "Kept sites: " << summary.kept << "\n"
+              << "Total sites: " << summary.total << "\n";
     return 0;
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
+    const auto steady_start =
+        std::chrono::steady_clock::now();
+    const auto wall_start =
+        std::chrono::system_clock::now();
+    if (is_help_or_version_request(argc, argv)) {
+        try {
+            std::locale::global(std::locale::classic());
+            (void)parse_options(argc, argv);
+            return 0;
+        } catch (const std::exception& error) {
+            std::cerr << "Error: " << error.what() << '\n';
+            return 1;
+        }
+    }
+    std::unique_ptr<vcftools_ng::RunLogger> logger;
     try {
         std::locale::global(std::locale::classic());
-        return run(parse_options(argc, argv));
+        logger = std::make_unique<vcftools_ng::RunLogger>(
+            preliminary_log_path(argc, argv),
+            kVersion, argc, argv, steady_start, wall_start);
     } catch (const std::exception& error) {
         std::cerr << "Error: " << error.what() << '\n';
+        return 1;
+    }
+    try {
+        const Options options = parse_options(argc, argv);
+        validate_log_destination(options);
+        try {
+            log_run_plan(options);
+            const int result = run(options);
+            log_output_results(options);
+            logger->finish(result == 0 ? "success" : "failed");
+            return result;
+        } catch (const std::exception& error) {
+            std::cerr << "Error: " << error.what() << '\n';
+            log_output_results(options);
+            logger->finish("failed");
+            return 1;
+        }
+    } catch (const std::exception& error) {
+        std::cerr << "Error: " << error.what() << '\n';
+        logger->finish("failed");
         return 1;
     }
 }

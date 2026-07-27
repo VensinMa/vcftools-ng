@@ -39,6 +39,7 @@ grep -Fq 'Usage: vcftools-ng INPUT [FILTERS] OUTPUT [OPTIONS]' \
 for heading in \
     'QUICK EXAMPLES:' \
     'GENERAL OPTIONS:' \
+    'RUN LOGGING:' \
     'INPUT OPTIONS (choose one):' \
     'SITE STATISTICS OUTPUT:' \
     'INDIVIDUAL STATISTICS OUTPUT:' \
@@ -60,7 +61,8 @@ do
 done
 
 options=(
-    --help --version --vcf --gzvcf --bcf --input --out --threads
+    --help --version --vcf --gzvcf --bcf --input --out
+    --log-file --no-log-file --threads
     --batch-size --compat --input-backend --bcftools
     --freq --freq2 --counts --missing-site --site-depth --site-mean-depth
     --depth --missing-indv --het --hardy --site-quality

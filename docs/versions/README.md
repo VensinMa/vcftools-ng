@@ -27,6 +27,11 @@ development version.
 - v0.12.3 changes terminal help, documentation, and portable-package
   validation only. It inherits the v0.12.2 exactness and performance matrix;
   no full-data timing is relabeled as a v0.12.3 measurement.
+- v0.12.4 development adds standard `PREFIX.log` run records and explicit
+  index-decision evidence. Scientific output bytes remain under the existing
+  Original/golden gates. Its final development gate passed all 18
+  three-scenario/thread combinations against the locked 2.3-million-record
+  Original goldens.
 
 ## Required record for every future version
 

@@ -1,0 +1,70 @@
+vcftools-ng 0.12.4
+Log format: vcftools-ng-text-v1
+Start time: 2026-07-27T13:14:18+08:00
+Command: /home/vensin/workspace/vcftools-ng/build/vcftools-ng --bcf /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf --threads 16 --min-alleles 2 --max-alleles 2 --minGQ 10 --minQ 30 --min-meanDP 7 --max-missing 0.9 --maf 0.1 --log-file /home/vensin/workspace/vcftools-ng/benchmarks/results/development-v0124-logging-final/logs/bcf_adaptive_stream-t16.stderr.txt --recode --recode-INFO-all --stdout
+Working directory: /home/vensin/workspace/vcftools-ng
+Log file: /home/vensin/workspace/vcftools-ng/benchmarks/results/development-v0124-logging-final/logs/bcf_adaptive_stream-t16.stderr.txt
+
+Input: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf
+Input format: BCF
+Input size: 4514051703 bytes
+Storage: non-rotational
+Requested threads: 16
+Effective threads: 16
+Batch size: 2048
+
+Outputs:
+  Recode VCF: stdout
+  Log: /home/vensin/workspace/vcftools-ng/benchmarks/results/development-v0124-logging-final/logs/bcf_adaptive_stream-t16.stderr.txt
+  INFO fields: all (--recode-INFO-all)
+
+Output parameters:
+  --recode
+  --recode-INFO-all
+  --stdout
+
+Filters:
+  --min-alleles 2
+  --max-alleles 2
+  --minQ 30
+  --minGQ 10
+  --min-meanDP 7
+  --max-missing 0.9
+  --maf 0.1
+
+Index policy: automatic
+Index workload: full-file recode
+Existing sidecar: /home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf.csi
+Index type: CSI
+Index validation: PASS (/home/vensin/workspace/vcftools-ng/tests/fixtures/osmanthus412.23chr_100k.bcf.csi)
+Decision: preserve existing sidecars; do not build or use an index
+Reason: adaptive policy: BCF full-file recode favors streaming; BCF, full-file recode, 16 effective threads
+Selected backend: stream
+Index used: no
+Input backend: stream (HTSlib ordered stream, non-rotational storage (fallback: adaptive policy: BCF full-file recode favors streaming))
+Samples: 412
+Threads: 16 (user specified)
+Stage concurrency: input 0, HTSlib I/O 4, compute 12
+Input threads: 0
+HTSlib I/O threads: 4
+Compute threads: 12
+Planned input shards: 0
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 1121342 out of 2300000 sites
+Kept sites: 1121342
+Total sites: 2300000
+
+Output results:
+  Output format: Plain VCF
+  Recode VCF: stdout
+  Output bytes: not measured (stdout)
+
+Wall time: 8.026 seconds
+User CPU time: 107.012 seconds
+System CPU time: 6.364 seconds
+Average CPU: 1412.672%
+Peak RSS: 130508 KiB
+Exit status: success
+End time: 2026-07-27T13:14:26+08:00

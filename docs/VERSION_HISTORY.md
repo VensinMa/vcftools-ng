@@ -23,13 +23,14 @@ otherwise, validation uses the real 2,300,000-record, 23-chromosome,
 | [v0.12.1](versions/v0.12.1.md) | Fused site statistics and scalable exact recode | 2267.88 | 77.83 | 53.01 | PASS |
 | [v0.12.2](versions/v0.12.2.md) | Workload-adaptive indexing and exact recode scaling | 2267.88 | 73.93 | 52.05 | PASS |
 | [v0.12.3](versions/v0.12.3.md) | Comprehensive colored terminal help | inherited | inherited | inherited | PASS |
+| [v0.12.4](versions/v0.12.4.md) | Standard reproducible run logging | 392.73 | 15.72 | 10.63 | PASS |
 
 The workload in each row is the version's representative compatibility
 benchmark; workloads differ between rows. Consult the per-version page before
 comparing versions directly. v0.9.0 also reran the six-output sample workload
 at 3.11/3.13 seconds for 8/16 threads.
 
-## Cumulative supported surface in v0.12.3
+## Cumulative supported surface in v0.12.4
 
 - Inputs: VCF, BGZF VCF, BCF.
 - Outputs: `--freq`, `--freq2`, `--counts`, `--missing-site`, `--site-depth`,
@@ -51,6 +52,10 @@ at 3.11/3.13 seconds for 8/16 threads.
   Index use is workload-adaptive: one-thread BGZF and full-file BCF recode
   stream, multi-thread BGZF recode can reuse/build an index, and selective
   BGZF/BCF queries retain indexed acceleration.
+- Logging: terminal diagnostics are mirrored to `PREFIX.log` by default;
+  `--log-file` overrides the path and `--no-log-file` disables only the file.
+  Logs include explicit index decisions, resource use, outputs, filters, and
+  success/failure status without entering scientific output streams.
 - Fast path: eligible `--freq`, `--freq2`, `--counts`, `--missing-site`,
   `--site-depth`, `--site-mean-depth`, and `--site-quality` workloads on
   Plain/BGZF VCF directly parse text and can share one ordered scan. Indexed

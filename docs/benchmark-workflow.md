@@ -49,14 +49,17 @@ This gate has exactly three scenarios:
 
 The BCF row is a speed-oriented full-file scenario, not an indexed-region
 scenario. The driver uses the default `auto` policy and asserts
-`Input backend: stream` in the diagnostic log, so a neighbouring CSI cannot
-silently change the measurement. BCF + CSI stays in targeted region-query
-tests and the release-only four-scenario matrix uses one adaptive BCF row.
+`Input backend: stream` in the diagnostic log. A neighbouring CSI is validated,
+reported, and preserved, but deliberately not used, so its presence cannot
+silently change the selected backend. BCF indexed access stays in targeted
+region-query tests and the release-only four-scenario matrix uses one adaptive
+BCF row.
 
 It uses 1/2/4/8/16/32 threads by default. Before any candidate starts, it
 checks every input, the required BGZF index, and every retained golden against
-the lock. The unused neighbouring BCF CSI is neither required nor measured in
-the daily gate. Original is not executed. Every candidate output must pass
+the lock. The neighbouring BCF CSI is not required by the baseline lock, but
+when present its validation cost is part of the measured candidate run.
+Original is not executed. Every candidate output must pass
 `cmp`; SHA-256, bytes, wall time, user/system CPU, CPU utilization, and RSS are
 then recorded. Candidate VCFs are deleted after the exact comparison, because
 retaining every 12 GB duplicate would make iterative optimization impractical.

@@ -1,0 +1,16 @@
+key	value
+date	2026-07-27T13:14:50+08:00
+revision_label	v0124-logging-final
+git_commit	438baf6b19e36c5a0fbdb979abe67c9f886d7ca9
+ng_version	vcftools-ng 0.12.4
+ng_binary_sha256	46e27de325bba7cdc02ea8ed6031a647e9bc6fc59b7c112366a1a77da62f491e
+git_tree_state	dirty
+baseline_root	/home/vensin/workspace/vcftools-ng/benchmarks/results/v0114-real-filter-subset
+baseline_lock_sha256	2758de9f4de8eeea72b8a4c2d9f549f16a7e9da6115ccff66841abb17ab14adc
+scenarios	BGZF VCF + TBI;Plain VCF;BCF adaptive streaming full-scan path
+bcf_development_policy	default auto policy validates and preserves an existing CSI but must select stream for full-file recode
+threads	1 2 4 8 16 32
+workload	--min-alleles 2 --max-alleles 2 --minGQ 10 --minQ 30 --min-meanDP 7 --max-missing 0.9 --maf 0.1 --recode --recode-INFO-all --stdout
+oracle_policy	locked; Original was not rerun
+comparison	cmp plus SHA-256
+cache	operating-system cache not flushed

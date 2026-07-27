@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(vcftools_ng VERSION 0.12.3 LANGUAGES CXX)
+project(vcftools_ng VERSION 0.12.4 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -32,6 +32,7 @@ add_executable(
   src/fast_counts.cpp
   src/input_source.cpp
   src/main.cpp
+  src/run_logger.cpp
 )
 
 target_include_directories(vcftools-ng PRIVATE "${HTSLIB_INCLUDE_DIR}")
@@ -60,6 +61,13 @@ if(BUILD_TESTING)
     COMMAND
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/help_output.sh"
       "$<TARGET_FILE:vcftools-ng>"
+  )
+  add_test(
+    NAME run_logging
+    COMMAND
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_logging.sh"
+      "$<TARGET_FILE:vcftools-ng>"
+      "${CMAKE_CURRENT_SOURCE_DIR}"
   )
   add_test(
     NAME input_backend_differential

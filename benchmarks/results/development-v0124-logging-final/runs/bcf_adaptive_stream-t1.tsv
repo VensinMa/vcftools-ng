@@ -1,0 +1,2 @@
+case	threads	original_wall_s	wall_s	user_s	system_s	cpu_pct	max_rss_kb	output_bytes	output_sha256	exact
+bcf_adaptive_stream	1	327.22	66.83	80.86	3.56	126	86816	11823282204	29aff251548ec7a58bae4db7f766c27b7a0e32f7c396f428b63ea4d281c4d946	PASS

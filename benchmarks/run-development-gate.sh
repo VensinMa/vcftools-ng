@@ -159,6 +159,7 @@ for case_name in bgzf_tbi plain_vcf bcf_adaptive_stream; do
             "$NG" "--$kind" "$input" --threads "$threads" \
             "${backend_args[@]}" \
             "${filter_args[@]}" \
+            --log-file "$stderr" \
             --recode --recode-INFO-all --stdout \
             >"$output" 2>"$stderr"
         if [[ "$case_name" == bcf_adaptive_stream ]]; then
@@ -216,11 +217,20 @@ awk -F '\t' '
     printf 'revision_label\t%s\n' "$revision"
     printf 'git_commit\t%s\n' "$(git -C "$source_root" rev-parse HEAD)"
     printf 'ng_version\t%s\n' "$("$NG" --version)"
+    printf 'ng_binary_sha256\t%s\n' \
+        "$(sha256sum "$NG" | cut -d' ' -f1)"
+    printf 'git_tree_state\t%s\n' "$(
+        if [[ -z "$(git -C "$source_root" status --short)" ]]; then
+            printf clean
+        else
+            printf dirty
+        fi
+    )"
     printf 'baseline_root\t%s\n' "$BASELINE_ROOT"
     printf 'baseline_lock_sha256\t%s\n' \
         "$(sha256sum "$lock" | cut -d' ' -f1)"
     printf 'scenarios\tBGZF VCF + TBI;Plain VCF;BCF adaptive streaming full-scan path\n'
-    printf 'bcf_development_policy\tdefault auto policy must select stream for full-file recode; existing CSI is ignored\n'
+    printf 'bcf_development_policy\tdefault auto policy validates and preserves an existing CSI but must select stream for full-file recode\n'
     printf 'threads\t%s\n' "$THREAD_LIST"
     printf 'workload\t%s\n' "$(lock_value workload)"
     printf 'oracle_policy\tlocked; Original was not rerun\n'

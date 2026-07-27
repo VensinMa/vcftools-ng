@@ -7,6 +7,9 @@ Experimental high-performance, output-compatible successor to VCFtools 0.1.17.
 **Latest release:** [v0.12.3 — Comprehensive Colored Terminal
 Help](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.12.3)
 
+**Current master development:** v0.12.4 adds a standard, reproducible run log
+with explicit adaptive-index decisions. It is not yet a published Release.
+
 v0.12.3 adds a complete, structured terminal manual covering every supported
 option, practical examples, output suffixes, combination rules, and adaptive
 backend behavior. Color is enabled automatically only on interactive
@@ -104,6 +107,9 @@ The command-line surface is divided into three evidence classes:
 **not** provide this option. Conversely, `--freq2` and `--stdout` are Original
 parameters and are included in the compatibility surface.
 
+`--log-file` and `--no-log-file` are also vcftools-ng extensions. Original
+generates `PREFIX.log` by default but does not provide these two controls.
+
 The complete parameter-by-parameter matrix, performance evidence, input
 coverage, compatibility boundaries, and intentionally inherited Original bugs
 are documented in
@@ -156,6 +162,41 @@ vcftools-ng --help
 vcftools-ng --help > vcftools-ng-help.txt
 NO_COLOR=1 vcftools-ng --help
 CLICOLOR_FORCE=1 vcftools-ng --help
+```
+
+## Standard run log
+
+Normal runs generate `PREFIX.log` by default, matching Original VCFtools'
+output-prefix convention while adding reproducibility metadata:
+
+| Invocation | Log behavior |
+|---|---|
+| `--out subset` | Overwrite `subset.log` |
+| `--out results/sample` | Overwrite `results/sample.log` |
+| no `--out` | Overwrite `out.log` |
+| `--log-file FILE` | Overwrite the explicitly selected file |
+| `--no-log-file` | Disable the file while retaining terminal diagnostics |
+
+The terminal and log file receive the same diagnostics through one central
+logger. With `--recode --stdout`, VCF bytes remain exclusively on stdout;
+diagnostics continue to stderr and the log file.
+
+The log records the complete command, working directory, timestamps, input
+format/size/storage, detected sidecars and validation, adaptive index decision
+and reason, index-build threads/time, selected backend, stage thread
+allocation, outputs, filters, sample/site counts, output sizes, wall and CPU
+time, peak RSS, warnings/errors, and final exit status. An existing valid
+CSI/TBI is reported even when the adaptive policy deliberately leaves it
+unused; it is never removed or overwritten.
+
+```bash
+vcftools-ng --gzvcf input.vcf.gz --threads 24 \
+  --recode --out subset
+# Data: subset.recode.vcf
+# Log:  subset.log
+
+vcftools-ng --gzvcf input.vcf.gz --counts \
+  --log-file logs/counts-run.log --out counts
 ```
 
 ## Run

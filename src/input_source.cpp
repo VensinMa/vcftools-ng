@@ -4,6 +4,7 @@
 #include <htslib/tbx.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -317,6 +318,8 @@ IndexValidation validate_index_file(
 struct SidecarInspection {
     bool any_present = false;
     std::string selected_path;
+    std::vector<std::string> valid_paths;
+    std::vector<std::string> invalid_paths;
     std::vector<std::string> invalid;
 };
 
@@ -333,9 +336,13 @@ SidecarInspection inspect_sidecars(
         const IndexValidation validation =
             validate_index_file(
                 data_path, candidate, is_bcf, header);
-        if (validation.valid && result.selected_path.empty()) {
-            result.selected_path = candidate;
+        if (validation.valid) {
+            result.valid_paths.push_back(candidate);
+            if (result.selected_path.empty()) {
+                result.selected_path = candidate;
+            }
         } else if (!validation.valid) {
+            result.invalid_paths.push_back(candidate);
             result.invalid.push_back(
                 candidate + ": " + validation.reason);
         }
@@ -457,16 +464,19 @@ struct IndexBuildResult {
     bool success = false;
     std::string detail;
     std::string index_path;
+    double seconds = 0.0;
 
     IndexBuildResult(
         bool succeeded, std::string message,
-        std::string selected_index = {})
+        std::string selected_index = {},
+        double elapsed_seconds = 0.0)
         : success(succeeded),
           detail(std::move(message)),
-          index_path(std::move(selected_index)) {}
+          index_path(std::move(selected_index)),
+          seconds(elapsed_seconds) {}
 };
 
-IndexBuildResult build_csi_index(
+IndexBuildResult build_csi_index_impl(
     const SourceOptions& options, bool is_bcf,
     bcf_hdr_t* header) {
     const int input_descriptor =
@@ -517,14 +527,28 @@ IndexBuildResult build_csi_index(
         << options.bcftools_path << " index --csi --threads "
         << thread_count << " for " << options.path << "\n";
 
+    int child_stderr[2] {-1, -1};
+    if (pipe(child_stderr) != 0) {
+        return {
+            false,
+            "could not create bcftools diagnostic pipe: " +
+                std::string(std::strerror(errno))};
+    }
     const pid_t child = fork();
     if (child < 0) {
+        close(child_stderr[0]);
+        close(child_stderr[1]);
         return {
             false,
             "could not start bcftools: " +
                 std::string(std::strerror(errno))};
     }
     if (child == 0) {
+        close(child_stderr[0]);
+        if (dup2(child_stderr[1], STDERR_FILENO) < 0) {
+            _exit(126);
+        }
+        close(child_stderr[1]);
         close(input_lock.get());
         execlp(
             options.bcftools_path.c_str(),
@@ -539,6 +563,24 @@ IndexBuildResult build_csi_index(
             options.bcftools_path.c_str(), std::strerror(errno));
         _exit(127);
     }
+
+    close(child_stderr[1]);
+    std::array<char, 4096> diagnostic_buffer {};
+    while (true) {
+        const ssize_t count = read(
+            child_stderr[0], diagnostic_buffer.data(),
+            diagnostic_buffer.size());
+        if (count > 0) {
+            std::cerr.write(
+                diagnostic_buffer.data(), count);
+            continue;
+        }
+        if (count < 0 && errno == EINTR) {
+            continue;
+        }
+        break;
+    }
+    close(child_stderr[0]);
 
     int status = 0;
     pid_t waited = -1;
@@ -640,6 +682,19 @@ IndexBuildResult build_csi_index(
         final_path};
 }
 
+IndexBuildResult build_csi_index(
+    const SourceOptions& options, bool is_bcf,
+    bcf_hdr_t* header) {
+    const auto started = std::chrono::steady_clock::now();
+    IndexBuildResult result =
+        build_csi_index_impl(options, is_bcf, header);
+    result.seconds =
+        std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - started)
+            .count();
+    return result;
+}
+
 unsigned descriptor_limited_input_threads(unsigned requested);
 
 ResourcePlan plan_resources(
@@ -692,6 +747,76 @@ std::string storage_note(const ResourcePlan& plan) {
                    : "rotational storage, low-seek input";
     }
     return "non-rotational storage";
+}
+
+std::string input_format_label(const htsFormat& format) {
+    if (format.format == bcf) {
+        return "BCF";
+    }
+    if (format.format == vcf &&
+        format.compression == no_compression) {
+        return "Plain VCF";
+    }
+    if (format.format == vcf &&
+        format.compression == bgzf) {
+        return "BGZF VCF";
+    }
+    if (format.format == vcf) {
+        return "gzip-compressed VCF";
+    }
+    return "unknown";
+}
+
+std::string backend_request_label(Backend backend) {
+    switch (backend) {
+        case Backend::automatic:
+            return "automatic";
+        case Backend::stream:
+            return "forced stream";
+        case Backend::plain_ranges:
+            return "forced plain ranges";
+        case Backend::indexed_regions:
+            return "forced indexed regions";
+    }
+    return "unknown";
+}
+
+std::string workload_label(WorkloadProfile workload) {
+    switch (workload) {
+        case WorkloadProfile::general:
+            return "general full scan";
+        case WorkloadProfile::compact_site_statistics:
+            return "compact site statistics";
+        case WorkloadProfile::full_recode:
+            return "full-file recode";
+    }
+    return "unknown";
+}
+
+void log_sidecar_inspection(
+    const SidecarInspection& indexes) {
+    if (!indexes.any_present) {
+        std::cerr
+            << "Existing sidecar: none\n"
+            << "Index validation: not applicable\n";
+        return;
+    }
+    for (const auto& path : indexes.valid_paths) {
+        const std::string type =
+            path.ends_with(".tbi") ? "TBI" : "CSI";
+        std::cerr
+            << "Existing sidecar: " << path << "\n"
+            << "Index type: " << type << "\n"
+            << "Index validation: PASS (" << path << ")\n";
+    }
+    for (std::size_t index = 0;
+         index < indexes.invalid.size(); ++index) {
+        std::cerr
+            << "Existing sidecar: "
+            << indexes.invalid_paths[index] << "\n"
+            << "Index validation: FAIL ("
+            << indexes.invalid[index] << ")\n";
+    }
 }
 
 unsigned descriptor_limited_input_threads(unsigned requested) {
@@ -1758,6 +1883,23 @@ Backend parse_backend(const std::string& value) {
         " (use auto, stream, plain, or indexed)");
 }
 
+std::string describe_input_format(const std::string& path) {
+    auto input = open_input(path);
+    const htsFormat* format = hts_get_format(input.get());
+    if (format == nullptr) {
+        fail("Could not inspect input format: " + path);
+    }
+    return input_format_label(*format);
+}
+
+std::string describe_storage(const std::string& path) {
+    const auto rotational = detect_rotational_storage(path);
+    if (!rotational.has_value()) {
+        return "unknown";
+    }
+    return *rotational ? "rotational" : "non-rotational";
+}
+
 std::string prepare_variant_index(const SourceOptions& options) {
     auto inspection = open_input(options.path);
     const htsFormat* format_pointer =
@@ -1779,19 +1921,35 @@ std::string prepare_variant_index(const SourceOptions& options) {
 
     const AdaptiveIndexPolicy policy =
         choose_index_policy(options, format.format == bcf);
+    std::cerr
+        << "Index policy: "
+        << backend_request_label(options.requested_backend) << "\n"
+        << "Index workload: " << workload_label(options.workload) << "\n"
+        << "Index decision reason: " << policy.reason << "; "
+        << input_format_label(format) << ", "
+        << options.total_threads << " effective threads\n";
+    SidecarInspection indexes = inspect_sidecars(
+        options.path, format.format == bcf, header.get());
+    log_sidecar_inspection(indexes);
     if (!policy.inspect_sidecars) {
-        std::cerr << "Adaptive index: " << policy.reason << "\n";
+        std::cerr
+            << "Decision: preserve existing sidecars; "
+               "do not build or use an index\n"
+            << "Reason: " << policy.reason << "\n"
+            << "Index used: no\n";
         return {};
     }
 
-    SidecarInspection indexes = inspect_sidecars(
-        options.path, format.format == bcf, header.get());
     for (const auto& diagnostic : indexes.invalid) {
         std::cerr
             << "Index warning: protected sidecar is unusable: "
             << diagnostic << "\n";
     }
     if (!indexes.selected_path.empty()) {
+        std::cerr
+            << "Decision: use existing index\n"
+            << "Reason: " << policy.reason << "\n"
+            << "Index used: yes\n";
         return indexes.selected_path;
     }
     if (indexes.any_present) {
@@ -1803,17 +1961,34 @@ std::string prepare_variant_index(const SourceOptions& options) {
             fail(message);
         }
         std::cerr << "Adaptive-index warning: " << message << "\n";
+        std::cerr
+            << "Decision: preserve unusable sidecar and use stream\n"
+            << "Reason: protected sidecars are never overwritten\n"
+            << "Index used: no\n";
         return {};
     }
     if (!policy.build_missing ||
         !std::filesystem::is_regular_file(options.path)) {
         std::cerr << "Adaptive index: " << policy.reason
                   << "; no valid index available, using stream\n";
+        std::cerr
+            << "Decision: do not build an index\n"
+            << "Reason: " << policy.reason << "\n"
+            << "Index used: no\n";
         return {};
     }
 
+    std::cerr
+        << "Decision: build CSI\n"
+        << "Reason: " << policy.reason << "; "
+        << input_format_label(format) << ", full scan, "
+        << options.total_threads << " effective threads\n"
+        << "Index build threads: "
+        << std::max(1u, options.total_threads) << "\n";
     const IndexBuildResult build = build_csi_index(
         options, format.format == bcf, header.get());
+    std::cerr
+        << "Index build time: " << build.seconds << " seconds\n";
     if (!build.success) {
         if (options.requested_backend == Backend::indexed_regions) {
             fail(
@@ -1824,8 +1999,15 @@ std::string prepare_variant_index(const SourceOptions& options) {
             << "Adaptive-index warning: automatic CSI construction "
                "failed: "
             << build.detail << "\n";
+        std::cerr << "Index used: no\n";
         return {};
     }
+    std::cerr
+        << "Index build result: PASS\n"
+        << "Index path: " << build.index_path << "\n"
+        << "Index type: CSI\n"
+        << "Index validation: PASS (" << build.index_path << ")\n"
+        << "Index used: yes\n";
     return build.index_path;
 }
 
@@ -1854,51 +2036,108 @@ std::unique_ptr<OrderedShardSource> make_ordered_source(
     const bool automatic_plain_ranges_worthwhile =
         options.parallel_safe && options.total_threads >= 3;
     const AdaptiveIndexPolicy index_policy =
-        choose_index_policy(options, format.format == bcf);
+        is_plain_vcf &&
+                options.requested_backend == Backend::automatic
+            ? AdaptiveIndexPolicy{
+                  false, false,
+                  automatic_plain_ranges_worthwhile
+                      ? "adaptive policy: Plain VCF at three or more "
+                        "threads favors aligned ranges"
+                      : "adaptive policy: low-thread Plain VCF favors "
+                        "streaming"}
+            : !is_bgzf_variant &&
+                      options.requested_backend == Backend::automatic
+            ? AdaptiveIndexPolicy{
+                  false, false,
+                  "adaptive policy: non-BGZF VCF requires streaming"}
+            : choose_index_policy(
+                  options, format.format == bcf);
+    std::cerr
+        << "Index policy: "
+        << backend_request_label(options.requested_backend) << "\n"
+        << "Index workload: " << workload_label(options.workload) << "\n";
     std::string auto_index_failure;
     SidecarInspection indexes;
-    if (is_bgzf_variant && index_policy.inspect_sidecars) {
+    if (is_bgzf_variant) {
         indexes = inspect_sidecars(
             options.path, format.format == bcf, header.get());
-        prepared.index_path = indexes.selected_path;
+        log_sidecar_inspection(indexes);
+        if (index_policy.inspect_sidecars) {
+            prepared.index_path = indexes.selected_path;
+        }
         for (const auto& diagnostic : indexes.invalid) {
             std::cerr
                 << "Index warning: protected sidecar is unusable: "
                 << diagnostic << "\n";
         }
-        if (prepared.index_path.empty() &&
+        if (index_policy.inspect_sidecars &&
+            prepared.index_path.empty() &&
             indexes.any_present) {
             auto_index_failure =
                 "existing CSI/TBI sidecar is unusable; refusing "
                 "to overwrite it: " +
                 invalid_sidecar_summary(indexes);
         } else if (
+            index_policy.inspect_sidecars &&
             prepared.index_path.empty() &&
             index_policy.build_missing &&
             std::filesystem::is_regular_file(options.path)) {
+            std::cerr
+                << "Decision: build CSI\n"
+                << "Reason: " << index_policy.reason << "; "
+                << input_format_label(format) << ", full scan, "
+                << options.total_threads << " effective threads\n"
+                << "Index build threads: "
+                << std::max(1u, options.total_threads) << "\n";
             const IndexBuildResult build =
                 build_csi_index(
                     options, format.format == bcf,
                     header.get());
+            std::cerr
+                << "Index build time: " << build.seconds
+                << " seconds\n";
             if (build.success) {
                 prepared.index_path = build.index_path;
+                std::cerr
+                    << "Index build result: PASS\n"
+                    << "Index path: " << build.index_path << "\n"
+                    << "Index type: CSI\n"
+                    << "Index validation: PASS ("
+                    << build.index_path << ")\n";
             } else {
                 auto_index_failure =
                     "automatic CSI construction failed: " +
                     build.detail;
             }
+        } else if (!index_policy.inspect_sidecars) {
+            std::cerr
+                << "Decision: preserve existing sidecars; "
+                   "do not build or use an index\n";
+        } else if (!prepared.index_path.empty()) {
+            std::cerr << "Decision: use existing index\n";
+        } else {
+            std::cerr << "Decision: do not build an index\n";
         }
         if (!auto_index_failure.empty()) {
             std::cerr
                 << "Adaptive-index warning: "
                 << auto_index_failure << "\n";
         }
-    } else if (
-        is_bgzf_variant &&
-        options.requested_backend == Backend::automatic) {
-        std::cerr << "Adaptive index: "
-                  << index_policy.reason << "\n";
+    } else {
+        std::cerr
+            << "Existing sidecar: none\n"
+            << "Index validation: not applicable\n"
+            << "Decision: "
+            << (is_plain_vcf
+                    ? "CSI/TBI is not applicable to Plain VCF"
+                    : "do not build an index")
+            << "\n";
     }
+    std::cerr
+        << "Reason: " << index_policy.reason << "; "
+        << input_format_label(format) << ", "
+        << workload_label(options.workload) << ", "
+        << options.total_threads << " effective threads\n";
     const bool is_indexable =
         is_bgzf_variant && !prepared.index_path.empty();
     bool page_cache_prefetched = false;
@@ -1947,6 +2186,9 @@ std::unique_ptr<OrderedShardSource> make_ordered_source(
     }
 
     if (selected == Backend::plain_ranges) {
+        std::cerr
+            << "Selected backend: plain-ranges\n"
+            << "Index used: no\n";
         ResourcePlan resources =
             plan_resources(
                 options.total_threads, true, false, true,
@@ -1961,12 +2203,21 @@ std::unique_ptr<OrderedShardSource> make_ordered_source(
                 format.format == vcf, rotational,
                 page_cache_prefetched);
         try {
-            return std::make_unique<IndexedRegionSource>(
+            auto source = std::make_unique<IndexedRegionSource>(
                 prepared, std::move(header), format, resources);
+            std::cerr
+                << "Selected backend: indexed-regions\n"
+                << "Index used: yes\n";
+            return source;
         } catch (const std::exception& error) {
             if (options.requested_backend != Backend::automatic) {
                 throw;
             }
+            std::cerr
+                << "Selected backend: stream\n"
+                << "Index used: no\n"
+                << "Reason: indexed backend initialization failed: "
+                << error.what() << "\n";
             return std::make_unique<StreamSource>(
                 prepared, error.what());
         }
@@ -1985,6 +2236,9 @@ std::unique_ptr<OrderedShardSource> make_ordered_source(
                 "adaptive policy: rotational storage favors streaming";
         }
     }
+    std::cerr
+        << "Selected backend: stream\n"
+        << "Index used: no\n";
     return std::make_unique<StreamSource>(
         prepared, std::move(stream_reason));
 }

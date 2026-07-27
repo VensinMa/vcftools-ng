@@ -1,0 +1,69 @@
+vcftools-ng 0.12.4
+Log format: vcftools-ng-text-v1
+Start time: 2026-07-27T13:08:43+08:00
+Command: /home/vensin/workspace/vcftools-ng/build/vcftools-ng --vcf /home/vensin/workspace/vcftools-ng/data/osmanthus412.subset.vcf --threads 2 --min-alleles 2 --max-alleles 2 --minGQ 10 --minQ 30 --min-meanDP 7 --max-missing 0.9 --maf 0.1 --log-file /home/vensin/workspace/vcftools-ng/benchmarks/results/development-v0124-logging-final/logs/plain_vcf-t2.stderr.txt --recode --recode-INFO-all --stdout
+Working directory: /home/vensin/workspace/vcftools-ng
+Log file: /home/vensin/workspace/vcftools-ng/benchmarks/results/development-v0124-logging-final/logs/plain_vcf-t2.stderr.txt
+
+Input: /home/vensin/workspace/vcftools-ng/data/osmanthus412.subset.vcf
+Input format: Plain VCF
+Input size: 25173128179 bytes
+Storage: non-rotational
+Requested threads: 2
+Effective threads: 2
+Batch size: 2048
+
+Outputs:
+  Recode VCF: stdout
+  Log: /home/vensin/workspace/vcftools-ng/benchmarks/results/development-v0124-logging-final/logs/plain_vcf-t2.stderr.txt
+  INFO fields: all (--recode-INFO-all)
+
+Output parameters:
+  --recode
+  --recode-INFO-all
+  --stdout
+
+Filters:
+  --min-alleles 2
+  --max-alleles 2
+  --minQ 30
+  --minGQ 10
+  --min-meanDP 7
+  --max-missing 0.9
+  --maf 0.1
+
+Index policy: automatic
+Index workload: full-file recode
+Existing sidecar: none
+Index validation: not applicable
+Decision: CSI/TBI is not applicable to Plain VCF
+Reason: adaptive policy: low-thread Plain VCF favors streaming; Plain VCF, full-file recode, 2 effective threads
+Selected backend: stream
+Index used: no
+Input backend: stream (HTSlib ordered stream, non-rotational storage (fallback: adaptive policy: low-thread Plain VCF favors streaming))
+Samples: 412
+Threads: 2 (user specified)
+Stage concurrency: input 0, HTSlib I/O 0, compute 2
+Input threads: 0
+HTSlib I/O threads: 0
+Compute threads: 2
+Planned input shards: 0
+Batch size: 2048
+Selected samples: 412
+Scheduler: bounded ordered pipeline (3 batches)
+After filtering, kept 1121342 out of 2300000 sites
+Kept sites: 1121342
+Total sites: 2300000
+
+Output results:
+  Output format: Plain VCF
+  Recode VCF: stdout
+  Output bytes: not measured (stdout)
+
+Wall time: 58.634 seconds
+User CPU time: 82.923 seconds
+System CPU time: 8.391 seconds
+Average CPU: 155.734%
+Peak RSS: 49848 KiB
+Exit status: success
+End time: 2026-07-27T13:09:42+08:00

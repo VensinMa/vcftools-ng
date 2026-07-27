@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repository_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
-archive=${1:-"$repository_root/dist/vcftools-ng-v0.12.3-linux-x86_64.tar.gz"}
+archive=${1:-"$repository_root/dist/vcftools-ng-v0.12.4-linux-x86_64.tar.gz"}
 checksum="${archive}.sha256"
 archive_name=$(basename "$archive")
 archive_directory=$(cd -- "$(dirname -- "$archive")" && pwd)
@@ -68,6 +68,10 @@ cp /fixtures/osmanthus412.flags.23chr_1k.vcf.gz /work/input.vcf.gz
     --out /work/out
 
 [[ -s /work/input.vcf.gz.csi ]]
+[[ -s /work/out.log ]]
+grep -Fqx 'Log format: vcftools-ng-text-v1' /work/out.log
+grep -Fqx 'Exit status: success' /work/out.log
+grep -Fqx 'Selected backend: indexed-regions' /work/out.log
 cmp /golden/flags-site-info.recode.vcf /work/out.recode.vcf
 printf 'PORTABLE_PASS %s\n' "$(
     . /etc/os-release

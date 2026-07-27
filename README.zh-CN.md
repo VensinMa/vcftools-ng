@@ -7,6 +7,9 @@ vcftools-ng 是 VCFtools 0.1.17 的实验性高性能、输出兼容后继实现
 **最新正式版：**
 [v0.12.3 — 完整彩色终端帮助](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.12.3)
 
+**master 当前开发版：**v0.12.4 新增标准可复现运行日志和明确的自适应索引
+决策记录，目前尚未发布为正式 Release。
+
 v0.12.3 新增结构完整的终端手册，覆盖全部已支持参数、常用示例、输出后缀、
 组合限制和自适应后端策略。颜色只在交互式终端自动启用，并支持
 `NO_COLOR` 和 `CLICOLOR_FORCE`。过滤、统计、输入和输出执行路径与
@@ -96,6 +99,8 @@ VCFtools 0.1.17 是兼容性 oracle。只有通过完整文件 `cmp` 的工作�
 | `--input-backend auto\|stream\|plain\|indexed` | 自动选择或强制输入后端 |
 | `--bcftools FILE` | 指定自适应策略判定值得构建 CSI 时使用的 bcftools |
 | `--recode-vcf-gz` | 并行生成确定性的 BGZF 压缩 VCF |
+| `--log-file FILE` | 自定义运行日志路径并覆盖写入 |
+| `--no-log-file` | 关闭日志文件，但保留终端 stderr 信息 |
 
 特别说明：Original 0.1.17 **没有** `--recode-vcf-gz`。该扩展通过将
 解压后的内容与 Original `--recode` 逐字节比较来验证；不存在可供比较的
@@ -136,6 +141,39 @@ vcftools-ng --help
 vcftools-ng --help > vcftools-ng-help.txt
 NO_COLOR=1 vcftools-ng --help
 CLICOLOR_FORCE=1 vcftools-ng --help
+```
+
+## 标准运行日志
+
+普通运行默认生成 `PREFIX.log`，延续 Original VCFtools 的输出前缀习惯，
+并增加完整的复现元数据：
+
+| 调用方式 | 日志行为 |
+|---|---|
+| `--out subset` | 覆盖写入 `subset.log` |
+| `--out results/sample` | 覆盖写入 `results/sample.log` |
+| 未指定 `--out` | 覆盖写入 `out.log` |
+| `--log-file FILE` | 覆盖写入用户指定路径 |
+| `--no-log-file` | 不生成日志文件，但终端信息仍写入 stderr |
+
+终端与日志文件由同一个中心 logger 输出完全相同的诊断信息。使用
+`--recode --stdout` 时，VCF 字节只进入 stdout；日志始终只进入 stderr
+和日志文件，不会污染 VCF。
+
+日志记录完整命令、工作目录、开始/结束时间、输入格式/大小/存储类型、
+已有 TBI/CSI 及验证结果、自适应索引决定和原因、建索引线程数与耗时、
+实际输入 backend、各阶段线程分配、全部输出和过滤参数、样本/位点数、
+输出大小、wall/CPU 时间、峰值 RSS、警告、错误和最终退出状态。已有有效
+索引即使本次策略决定不使用，也会被明确记录并保留，绝不删除或覆盖。
+
+```bash
+vcftools-ng --gzvcf input.vcf.gz --threads 24 \
+  --recode --out subset
+# 数据：subset.recode.vcf
+# 日志：subset.log
+
+vcftools-ng --gzvcf input.vcf.gz --counts \
+  --log-file logs/counts-run.log --out counts
 ```
 
 ## 使用示例
