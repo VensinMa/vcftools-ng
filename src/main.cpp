@@ -280,68 +280,284 @@ double parse_double(const std::string& value, const std::string& option) {
     return parsed;
 }
 
+bool help_color_enabled() {
+    if (std::getenv("NO_COLOR") != nullptr) {
+        return false;
+    }
+    const char* force = std::getenv("CLICOLOR_FORCE");
+    if (force != nullptr && std::strcmp(force, "0") != 0) {
+        return true;
+    }
+    const char* term = std::getenv("TERM");
+    if (term != nullptr && std::strcmp(term, "dumb") == 0) {
+        return false;
+    }
+    return isatty(STDOUT_FILENO) == 1;
+}
+
+void emit_help(const std::string& plain) {
+    if (!help_color_enabled()) {
+        std::cout << plain;
+        return;
+    }
+
+    constexpr const char* reset = "\033[0m";
+    constexpr const char* title = "\033[1;36m";
+    constexpr const char* heading = "\033[1;34m";
+    constexpr const char* usage = "\033[1;33m";
+    constexpr const char* option = "\033[32m";
+    constexpr const char* example = "\033[36m";
+    constexpr const char* warning = "\033[33m";
+    constexpr const char* link = "\033[4;36m";
+
+    std::istringstream input(plain);
+    std::string line;
+    bool first_line = true;
+    while (std::getline(input, line)) {
+        if (first_line) {
+            std::cout << title << line << reset;
+            first_line = false;
+        } else if (
+            !line.empty() && line.front() != ' ' &&
+            line.back() == ':') {
+            std::cout << heading << line << reset;
+        } else if (line.rfind("Usage:", 0) == 0) {
+            std::cout << usage << "Usage:" << reset
+                      << line.substr(6);
+        } else if (
+            line.rfind("    vcftools-ng", 0) == 0 ||
+            line.rfind("      --", 0) == 0 ||
+            line.rfind("    bcftools ", 0) == 0) {
+            std::cout << example << line << reset;
+        } else if (line.rfind("  * ", 0) == 0) {
+            std::cout << warning << line << reset;
+        } else if (line.rfind("  http", 0) == 0) {
+            std::cout << link << line << reset;
+        } else if (line.rfind("  -", 0) == 0) {
+            const std::size_t description = line.find("  ", 2);
+            if (description != std::string::npos &&
+                description <= 32) {
+                std::cout
+                    << line.substr(0, 2)
+                    << option
+                    << line.substr(2, description - 2)
+                    << reset
+                    << line.substr(description);
+            } else {
+                std::cout << line;
+            }
+        } else {
+            std::cout << line;
+        }
+        std::cout << '\n';
+    }
+}
+
 void print_help() {
-    std::cout
-        << "vcftools-ng " << kVersion << "\n\n"
-        << "Batched exact-compatibility statistics and recode engine.\n\n"
-        << "Input:\n"
-        << "  --vcf FILE | --gzvcf FILE | --bcf FILE\n"
-        << "vcftools-ng input/execution extensions:\n"
-        << "  --input FILE\n"
-        << "  --out PREFIX\n"
-        << "  -t, --threads N\n"
-        << "  --batch-size N\n"
-        << "  --input-backend auto|stream|plain|indexed [default: auto]\n"
-        << "  --bcftools FILE  bcftools used when adaptive CSI is profitable\n"
-        << "  --compat exact\n"
-        << "Adaptive input/index defaults:\n"
-        << "  Plain VCF: aligned ranges; CSI/TBI is never built.\n"
-        << "  BGZF recode: stream at 1 thread; use/build an index at 2+.\n"
-        << "  BCF full recode: stream even when CSI exists.\n"
-        << "  BGZF/BCF region query: use/build an index.\n"
-        << "  Compact full-scan stats: reuse an existing index at 4+;\n"
-        << "    do not build a one-use index. Existing sidecars are never"
-        << " overwritten.\n"
-        << "Outputs (may be combined in one scan):\n"
-        << "  --freq --freq2 --counts --missing-site --site-depth"
-        << " --site-mean-depth\n"
-        << "  --depth --missing-indv --het --hardy --site-quality\n"
-        << "  --site-pi --window-pi N [--window-pi-step N] --TajimaD N\n"
-        << "  --weir-fst-pop FILE (repeat) [--fst-window-size N]"
-        << " [--fst-window-step N]\n"
-        << "  --geno-r2 [--ld-window N] [--ld-window-min N]\n"
-        << "    [--ld-window-bp N] [--ld-window-bp-min N] [--min-r2 X]\n"
-        << "  --pca | --pca-no-norm\n"
-        << "  --recode [--recode-INFO-all] [--stdout]\n"
-        << "  --recode-bcf [--recode-INFO-all]\n"
-        << "  --diff FILE | --gzdiff FILE | --diff-bcf FILE\n"
-        << "    --diff-site --diff-indv --diff-site-discordance\n"
-        << "    --diff-indv-discordance\n"
-        << "vcftools-ng output extension:\n"
-        << "  --recode-vcf-gz [--recode-INFO-all]\n"
-        << "Filters:\n"
-        << "  --chr CHROM --not-chr CHROM\n"
-        << "  --from-bp POS --to-bp POS\n"
-        << "  --positions FILE --exclude-positions FILE\n"
-        << "  --bed FILE | --exclude-bed FILE\n"
-        << "  --keep-filtered FLAG --remove-filtered FLAG\n"
-        << "  --remove-filtered-all\n"
-        << "  --keep-INFO FLAG --remove-INFO FLAG\n"
-        << "  --indv SAMPLE --remove-indv SAMPLE\n"
-        << "  --keep FILE --remove FILE\n"
-        << "  --min-alleles N --max-alleles N\n"
-        << "  --remove-indels --keep-only-indels --minQ FLOAT\n"
-        << "  --minGQ FLOAT --minDP N --maxDP N\n"
-        << "  --remove-filtered-geno FLAG --remove-filtered-geno-all\n"
-        << "  --min-meanDP FLOAT --max-meanDP FLOAT\n"
-        << "  --max-missing FLOAT --max-missing-count N\n"
-        << "  --maf FLOAT --max-maf FLOAT\n"
-        << "  --mac N --max-mac N --hwe FLOAT\n"
-        << "  --non-ref-af FLOAT --max-non-ref-af FLOAT\n"
-        << "  --non-ref-af-any FLOAT --max-non-ref-af-any FLOAT\n"
-        << "  --non-ref-ac N --max-non-ref-ac N\n"
-        << "  --non-ref-ac-any N --max-non-ref-ac-any N\n"
-        << "  --thin N\n";
+    std::ostringstream help;
+    help << "vcftools-ng " << kVersion << R"HELP(
+
+High-performance, byte-compatible successor to VCFtools 0.1.17.
+Adaptive VCF/BGZF/BCF input, shared statistics, exact recode, and filtering.
+
+Usage: vcftools-ng INPUT [FILTERS] OUTPUT [OPTIONS]
+
+Choose exactly one input and at least one output. Most single-file outputs can
+be combined and are produced in one scan.
+
+QUICK EXAMPLES:
+
+  Filter and write an Original-compatible uncompressed VCF:
+    vcftools-ng --gzvcf input.vcf.gz --threads 16 \
+      --min-alleles 2 --max-alleles 2 --minQ 30 --minGQ 10 \
+      --min-meanDP 7 --max-missing 0.9 --maf 0.1 \
+      --recode --recode-INFO-all --out filtered
+
+  Filter and write BGZF VCF directly (vcftools-ng extension):
+    vcftools-ng --gzvcf input.vcf.gz --threads 16 \
+      --minQ 30 --max-missing 0.9 --maf 0.1 \
+      --recode-vcf-gz --recode-INFO-all --out filtered
+    Output: filtered.recode.vcf.gz
+
+  Generate several compatible statistics in one scan:
+    vcftools-ng --bcf input.bcf --threads 16 \
+      --freq --counts --missing-site --site-mean-depth --out stats
+
+  Query one region and count alleles:
+    vcftools-ng --gzvcf input.vcf.gz --chr chr1 \
+      --from-bp 1 --to-bp 1000000 --counts --out chr1
+
+GENERAL OPTIONS:
+  -h, --help                   Print this help and exit
+  --version                    Print the vcftools-ng version and exit
+  --out PREFIX                 Prefix for output files (default: out)
+  -t, --threads N              Total CPU-thread budget (default: auto-detect)
+  --batch-size N               Records per pipeline batch (default: 2048)
+  --compat exact               Exact VCFtools 0.1.17 compatibility mode
+                               (default and currently the only mode)
+  --input-backend MODE         auto|stream|plain|indexed (default: auto)
+                               Advanced diagnostic/performance override
+  --bcftools FILE              bcftools executable for profitable CSI builds
+                               (default: bcftools)
+
+INPUT OPTIONS (choose one):
+  --vcf FILE                   Uncompressed VCF input
+  --gzvcf FILE                 BGZF/gzip-compressed VCF input
+  --bcf FILE                   BCF input
+  --input FILE                 Auto-detect VCF, BGZF VCF, gzip VCF, or BCF
+                               (vcftools-ng extension)
+
+SITE STATISTICS OUTPUT:
+  --freq                       Allele frequencies with allele labels (.frq)
+  --freq2                      Frequencies in VCF allele order (.frq)
+  --counts                     Allele counts (.frq.count)
+  --missing-site               Per-site missingness (.lmiss)
+  --site-depth                 Per-site total-depth statistics (.ldepth)
+  --site-mean-depth            Per-site mean depth (.ldepth.mean)
+  --site-quality               Per-site QUAL value (.lqual)
+  --hardy                      Per-site Hardy-Weinberg statistics (.hwe)
+
+INDIVIDUAL STATISTICS OUTPUT:
+  --depth                      Mean depth per individual (.idepth)
+  --missing-indv               Missingness per individual (.imiss)
+  --het                        Heterozygosity/inbreeding per individual (.het)
+
+DIVERSITY AND POPULATION STATISTICS:
+  --site-pi                    Nucleotide diversity per site (.sites.pi)
+  --window-pi N                Nucleotide diversity in N-bp windows
+                               (.windowed.pi)
+  --window-pi-step N           Step size for --window-pi
+  --TajimaD N                  Tajima's D in N-bp windows (.Tajima.D)
+  --weir-fst-pop FILE          Population sample file for Weir-Cockerham FST;
+                               repeat once per population
+  --fst-window-size N          FST window size in bp (.windowed.weir.fst)
+  --fst-window-step N          Step size for windowed FST
+
+LD AND PCA OUTPUT:
+  --geno-r2                    Genotype-correlation LD for biallelic sites
+                               (.geno.ld)
+  --ld-window N                Maximum SNP count in an LD window
+  --ld-window-min N            Minimum SNP separation for LD pairs
+  --ld-window-bp N             Maximum physical LD distance in bp
+  --ld-window-bp-min N         Minimum physical LD distance in bp
+  --min-r2 FLOAT               Report LD pairs with r2 >= FLOAT
+  --pca                        Normalized-genotype PCA (.pca)
+  --pca-no-norm                PCA without genotype normalization (.pca)
+
+RECODE AND FORMAT OUTPUT:
+  --recode                     Write uncompressed VCF (PREFIX.recode.vcf)
+  --recode-vcf-gz              Write deterministic parallel BGZF VCF
+                               (PREFIX.recode.vcf.gz; vcftools-ng extension)
+  --recode-bcf                 Write BCF (PREFIX.recode.bcf)
+  --recode-INFO-all            Retain all INFO fields in recoded output
+  --stdout                     Send plain --recode VCF to stdout
+
+  --recode and --recode-vcf-gz may be combined to write both files in one
+  scan. --stdout is valid only with plain --recode. v0.12.2 does not create
+  an index for new output; run:
+    bcftools index --tbi --threads N PREFIX.recode.vcf.gz
+
+TWO-FILE COMPARISON:
+  --diff FILE                  Compare with a second uncompressed VCF
+  --gzdiff FILE                Compare with a second compressed VCF
+  --diff-bcf FILE              Compare with a second BCF
+  --diff-site                  Report site membership differences
+  --diff-indv                  Report individual membership differences
+  --diff-site-discordance      Report per-site genotype discordance
+  --diff-indv-discordance      Report per-individual genotype discordance
+
+CHROMOSOME, POSITION, AND BED FILTERS:
+  --chr CHROM                  Keep CHROM; may be repeated
+  --not-chr CHROM              Exclude CHROM; may be repeated
+  --from-bp POS                Keep positions >= POS; requires exactly one --chr
+  --to-bp POS                  Keep positions <= POS; requires exactly one --chr
+  --positions FILE             Keep sites listed as CHROM and POS
+  --exclude-positions FILE     Exclude sites listed as CHROM and POS
+  --bed FILE                   Keep sites overlapping BED intervals
+  --exclude-bed FILE           Exclude sites overlapping BED intervals
+  --thin N                     Keep sites at least N bp apart
+
+SAMPLE FILTERS:
+  --indv SAMPLE                Keep one sample; may be repeated
+  --remove-indv SAMPLE         Exclude one sample; may be repeated
+  --keep FILE                  Keep samples listed in FILE; may be repeated
+  --remove FILE                Exclude samples listed in FILE; may be repeated
+
+ALLELE, QUALITY, DEPTH, AND MISSINGNESS FILTERS:
+  --min-alleles N              Keep sites with at least N alleles
+  --max-alleles N              Keep sites with at most N alleles
+  --remove-indels              Exclude indels
+  --keep-only-indels           Keep indels and exclude other variants
+  --minQ FLOAT                 Keep sites with QUAL >= FLOAT
+  --minGQ FLOAT                Mask genotypes with GQ < FLOAT
+  --minDP N                    Mask genotypes with depth < N
+  --maxDP N                    Mask genotypes with depth > N
+  --min-meanDP FLOAT           Keep sites with mean depth >= FLOAT
+  --max-meanDP FLOAT           Keep sites with mean depth <= FLOAT
+  --max-missing FLOAT          Keep sites with call rate >= FLOAT
+  --max-missing-count N        Keep sites with at most N missing genotypes
+
+FREQUENCY, COUNT, AND HWE FILTERS:
+  --maf FLOAT                  Keep sites with MAF >= FLOAT
+  --max-maf FLOAT              Keep sites with MAF <= FLOAT
+  --mac N                      Keep sites with minor-allele count >= N
+  --max-mac N                  Keep sites with minor-allele count <= N
+  --hwe FLOAT                  Keep biallelic sites with HWE p >= FLOAT
+  --non-ref-af FLOAT           Minimum total non-reference allele frequency
+  --max-non-ref-af FLOAT       Maximum total non-reference allele frequency
+  --non-ref-af-any FLOAT       Minimum frequency of any non-reference allele
+  --max-non-ref-af-any FLOAT   Maximum frequency of every non-reference allele
+  --non-ref-ac N               Minimum total non-reference allele count
+  --max-non-ref-ac N           Maximum total non-reference allele count
+  --non-ref-ac-any N           Minimum count of any non-reference allele
+  --max-non-ref-ac-any N       Maximum count of every non-reference allele
+
+VCF FILTER, INFO, AND GENOTYPE FILTERS:
+  --keep-filtered FLAG         Keep sites carrying FILTER FLAG; may be repeated
+  --remove-filtered FLAG       Exclude sites carrying FILTER FLAG; repeatable
+  --remove-filtered-all        Exclude every site whose FILTER is not PASS
+  --keep-INFO FLAG             Keep sites carrying INFO flag FLAG; repeatable
+  --remove-INFO FLAG           Exclude sites carrying INFO flag FLAG; repeatable
+  --remove-filtered-geno FLAG  Mask genotypes carrying FORMAT/FT FLAG
+  --remove-filtered-geno-all   Mask every genotype with non-PASS FORMAT/FT
+
+ADAPTIVE INPUT AND INDEX POLICY (default --input-backend auto):
+  Plain VCF       Stream at 1-2 threads; aligned byte ranges at 3+ threads.
+                  Plain VCF cannot use CSI/TBI.
+  BGZF recode     Stream at 1 thread; reuse/build TBI/CSI at 2+ threads.
+  BCF recode      Stream for full-file recode even when CSI exists.
+  Region query    Reuse/build a valid index for selective BGZF/BCF access.
+  Full-scan stats Reuse an existing index from 4 threads; do not build a
+                  one-use index.
+
+  Existing .tbi/.csi sidecars are validated independently and never
+  overwritten. If a protected sidecar is stale or invalid, automatic mode
+  warns and falls back instead of replacing it.
+
+IMPORTANT COMBINATION RULES:
+  * --freq and --freq2 write the same artifact and cannot be combined.
+  * Diff outputs cannot be combined with single-file outputs.
+  * --chr and --not-chr cannot be used together.
+  * --bed and --exclude-bed cannot be used together.
+  * --remove-indels and --keep-only-indels cannot be used together.
+  * Exact BCF recode rejects genotype masking where Original output is corrupt.
+  * At least one output option is required.
+
+COMPATIBILITY:
+  VCFtools 0.1.17 is the exact-output oracle. Parameters described as
+  compatible have real-data complete-file comparison gates. vcftools-ng-only
+  extensions include --input, --threads, --input-backend, and
+  --recode-vcf-gz. The project does not yet implement every VCFtools option.
+
+TERMINAL COLORS:
+  Colors are enabled automatically on an interactive terminal.
+  Set NO_COLOR=1 to disable or CLICOLOR_FORCE=1 to force colored help.
+
+Documentation:
+  https://github.com/VensinMa/vcftools-ng
+  https://github.com/VensinMa/vcftools-ng/blob/master/docs/parameter-compatibility.md
+)HELP";
+    emit_help(help.str());
 }
 
 Options parse_options(int argc, char** argv) {

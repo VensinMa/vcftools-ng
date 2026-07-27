@@ -15,7 +15,7 @@ Original was not rerun for v0.12.2.
 
 The current implementation uses adaptive ordered input shards and a bounded,
 order-preserving pipeline. Plain VCF streams at 1–2 threads and uses aligned
-byte ranges at 4+ threads. Full-file BGZF recode streams at one thread, then
+byte ranges at 3+ threads. Full-file BGZF recode streams at one thread, then
 reuses or builds an index at 2+ threads. Full-file BCF recode streams even
 when CSI exists; selective BGZF/BCF queries still reuse or build an index.
 Persistent
@@ -131,6 +131,23 @@ cmake -S . -B build \
   -DCMAKE_BUILD_TYPE=Release \
   -DHTSLIB_ROOT=/path/to/htslib
 cmake --build build -j
+```
+
+## Command-line help
+
+Run `vcftools-ng -h` or `vcftools-ng --help` for the complete terminal
+reference. It includes quick examples, descriptions for every supported
+parameter, output suffixes, combination rules, and the adaptive input/index
+policy.
+
+Interactive terminals use colored section headings, options, examples, and
+warnings. Pipes and redirected output remain plain text:
+
+```bash
+vcftools-ng --help
+vcftools-ng --help > vcftools-ng-help.txt
+NO_COLOR=1 vcftools-ng --help
+CLICOLOR_FORCE=1 vcftools-ng --help
 ```
 
 ## Run

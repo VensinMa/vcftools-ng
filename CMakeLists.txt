@@ -56,6 +56,12 @@ set_target_properties(
 include(CTest)
 if(BUILD_TESTING)
   add_test(
+    NAME help_output
+    COMMAND
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/help_output.sh"
+      "$<TARGET_FILE:vcftools-ng>"
+  )
+  add_test(
     NAME input_backend_differential
     COMMAND
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/input_backends.sh"

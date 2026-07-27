@@ -15,7 +15,7 @@ Original。
 
 vcftools-ng 使用自适应、有序的输入分片和有界流水线：
 
-- Plain VCF 在 1–2 线程时流式读取，4 线程及以上使用按完整记录边界
+- Plain VCF 在 1–2 线程时流式读取，3 线程及以上使用按完整记录边界
   对齐的并行字节范围；
 - BGZF 完整重编码在 1 线程时流式读取，2 线程及以上复用或构建索引；
 - BCF 完整重编码即使存在 CSI 也使用流式路径，选择性区域查询才复用或
@@ -115,6 +115,22 @@ README 不会把 Original 的错误隐藏在“兼容”表述中：
 
 未来如果增加标准修正版行为，必须使用明确的新模式，不能静默改变
 `--compat exact`。
+
+## 命令行帮助
+
+运行 `vcftools-ng -h` 或 `vcftools-ng --help` 可以查看完整终端手册，
+其中包含基础示例、所有已支持参数的用途、输出文件后缀、参数组合限制和
+自适应输入/索引策略。
+
+交互式终端会为分组标题、参数、示例和重要提示自动着色；通过管道或重定向
+保存时仍输出无 ANSI 转义码的纯文本：
+
+```bash
+vcftools-ng --help
+vcftools-ng --help > vcftools-ng-help.txt
+NO_COLOR=1 vcftools-ng --help
+CLICOLOR_FORCE=1 vcftools-ng --help
+```
 
 ## 使用示例
 
