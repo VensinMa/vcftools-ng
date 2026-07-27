@@ -129,6 +129,34 @@ README 不会把 Original 的错误隐藏在“兼容”表述中：
   --out results/filtered
 ```
 
+### 直接生成 BGZF VCF
+
+过滤时使用 vcftools-ng 新增的 `--recode-vcf-gz` 替代 `--recode`，
+可以直接写出 BGZF VCF，不需要先生成未压缩的中间 VCF：
+
+```bash
+vcftools-ng \
+  --gzvcf input.vcf.gz \
+  --threads 24 \
+  --min-alleles 2 --max-alleles 2 \
+  --minQ 40 --minGQ 20 --minDP 5 --maxDP 30 \
+  --min-meanDP 10 --max-missing 0.9 --maf 0.1 \
+  --recode-vcf-gz --recode-INFO-all \
+  --out subset
+```
+
+输出文件名为 `subset.recode.vcf.gz`。BGZF 压缩使用 `--threads` 的有效
+线程预算，并在已经测试的线程数下产生确定性的压缩字节。解压后的 VCF
+已经与 Original VCFtools 0.1.17 的 `--recode` 输出通过完整文件逐字节
+比较；Original 本身没有 `--recode-vcf-gz` 参数。
+
+v0.12.2 不会自动为新生成的输出创建索引。如果下游需要索引访问，可在
+过滤完成后创建 TBI：
+
+```bash
+bcftools index --tbi --threads 24 subset.recode.vcf.gz
+```
+
 Plain VCF 不能建立 CSI/TBI，因为索引使用 BGZF 虚拟偏移。已有有效
 `.csi`/`.tbi` 会被独立验证并保留；vcftools-ng 不覆盖用户已有索引。
 v0.12.2 只把索引作为自适应加速手段：BGZF完整重编码在1线程时流式读取，

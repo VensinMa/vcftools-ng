@@ -146,6 +146,36 @@ cmake --build build -j
   --out results/subset
 ```
 
+### Direct BGZF VCF output
+
+Use the vcftools-ng-only `--recode-vcf-gz` extension instead of `--recode`
+to write the filtered records directly as BGZF VCF without first creating an
+uncompressed intermediate:
+
+```bash
+vcftools-ng \
+  --gzvcf input.vcf.gz \
+  --threads 24 \
+  --min-alleles 2 --max-alleles 2 \
+  --minQ 40 --minGQ 20 --minDP 5 --maxDP 30 \
+  --min-meanDP 10 --max-missing 0.9 --maf 0.1 \
+  --recode-vcf-gz --recode-INFO-all \
+  --out subset
+```
+
+This writes `subset.recode.vcf.gz`. Compression uses the effective
+`--threads` budget and produces deterministic BGZF bytes across the tested
+thread counts. The decompressed VCF has passed complete-file comparison with
+Original VCFtools 0.1.17 `--recode`; Original itself has no
+`--recode-vcf-gz` option.
+
+v0.12.2 does not automatically index the newly written output. Create a TBI
+after filtering when indexed downstream access is required:
+
+```bash
+bcftools index --tbi --threads 24 subset.recode.vcf.gz
+```
+
 BCF backend performance is workload-dependent: indexed regions are valuable
 for selective queries, while streaming is faster for a full-file
 filter/recode. v0.12.2 therefore treats indexing only as an adaptive
