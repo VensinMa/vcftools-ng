@@ -148,9 +148,19 @@ cmake --build build -j
 
 ### Direct BGZF VCF output
 
-Use the vcftools-ng-only `--recode-vcf-gz` extension instead of `--recode`
-to write the filtered records directly as BGZF VCF without first creating an
-uncompressed intermediate:
+`--recode-vcf-gz` is a vcftools-ng-only output option that writes filtered
+records directly as BGZF VCF. It does not create an uncompressed intermediate
+and does not require `--recode`.
+
+| Item | Behavior |
+|---|---|
+| Accepted input | `--vcf`, `--gzvcf`, `--bcf`, or auto-detected `--input` |
+| Compressed output only | Use `--recode-vcf-gz` without `--recode` |
+| Output name | `PREFIX.recode.vcf.gz`, where `PREFIX` comes from `--out` |
+| INFO fields | Add `--recode-INFO-all` to retain all input INFO fields |
+| Compression | Deterministic BGZF using the effective `--threads` budget |
+| Output index | Not created automatically in v0.12.2 |
+| Compatibility | Decompressed bytes are compared with Original `--recode` |
 
 ```bash
 vcftools-ng \
@@ -163,14 +173,41 @@ vcftools-ng \
   --out subset
 ```
 
-This writes `subset.recode.vcf.gz`. Compression uses the effective
-`--threads` budget and produces deterministic BGZF bytes across the tested
-thread counts. The decompressed VCF has passed complete-file comparison with
-Original VCFtools 0.1.17 `--recode`; Original itself has no
-`--recode-vcf-gz` option.
+This command writes:
 
-v0.12.2 does not automatically index the newly written output. Create a TBI
-after filtering when indexed downstream access is required:
+```text
+subset.recode.vcf.gz
+```
+
+`--recode` and `--recode-vcf-gz` are not mutually exclusive. Request both
+when an uncompressed and a BGZF copy are genuinely needed:
+
+```bash
+vcftools-ng \
+  --gzvcf input.vcf.gz \
+  --threads 24 \
+  --recode --recode-vcf-gz --recode-INFO-all \
+  --out subset
+```
+
+The second command performs one filter/decode/format scan and writes both:
+
+```text
+subset.recode.vcf
+subset.recode.vcf.gz
+```
+
+Writing both formats adds output I/O and compression work. `--stdout` is
+supported only with plain `--recode`; it cannot be combined with
+`--recode-vcf-gz`.
+
+Compression produces deterministic BGZF bytes across the tested thread
+counts. The decompressed VCF has passed complete-file comparison with Original
+VCFtools 0.1.17 `--recode`; Original itself has no `--recode-vcf-gz` option.
+No strict `--recode` versus `--recode-vcf-gz` performance comparison has yet
+been recorded.
+
+Create a TBI after filtering when indexed downstream access is required:
 
 ```bash
 bcftools index --tbi --threads 24 subset.recode.vcf.gz

@@ -131,8 +131,19 @@ README 不会把 Original 的错误隐藏在“兼容”表述中：
 
 ### 直接生成 BGZF VCF
 
-过滤时使用 vcftools-ng 新增的 `--recode-vcf-gz` 替代 `--recode`，
-可以直接写出 BGZF VCF，不需要先生成未压缩的中间 VCF：
+`--recode-vcf-gz` 是 vcftools-ng 新增的输出参数，可以将过滤后的记录
+直接写为 BGZF VCF，不会先生成未压缩中间文件，也不要求同时指定
+`--recode`。
+
+| 项目 | 行为 |
+|---|---|
+| 支持的输入 | `--vcf`、`--gzvcf`、`--bcf` 或自动识别的 `--input` |
+| 只输出压缩 VCF | 使用 `--recode-vcf-gz`，不加 `--recode` |
+| 输出文件名 | `PREFIX.recode.vcf.gz`，`PREFIX` 来自 `--out` |
+| INFO 字段 | 添加 `--recode-INFO-all` 以保留输入中的全部 INFO |
+| 压缩方式 | 使用有效 `--threads` 预算的确定性 BGZF 压缩 |
+| 输出索引 | v0.12.2 不会自动创建 |
+| 兼容性 | 解压内容与 Original `--recode` 做逐字节比较 |
 
 ```bash
 vcftools-ng \
@@ -145,13 +156,39 @@ vcftools-ng \
   --out subset
 ```
 
-输出文件名为 `subset.recode.vcf.gz`。BGZF 压缩使用 `--threads` 的有效
-线程预算，并在已经测试的线程数下产生确定性的压缩字节。解压后的 VCF
-已经与 Original VCFtools 0.1.17 的 `--recode` 输出通过完整文件逐字节
-比较；Original 本身没有 `--recode-vcf-gz` 参数。
+该命令生成：
 
-v0.12.2 不会自动为新生成的输出创建索引。如果下游需要索引访问，可在
-过滤完成后创建 TBI：
+```text
+subset.recode.vcf.gz
+```
+
+`--recode` 与 `--recode-vcf-gz` 不互斥。如果确实同时需要未压缩和
+BGZF 两种文件，可以一起指定：
+
+```bash
+vcftools-ng \
+  --gzvcf input.vcf.gz \
+  --threads 24 \
+  --recode --recode-vcf-gz --recode-INFO-all \
+  --out subset
+```
+
+第二条命令只执行一次过滤、解码和 VCF 格式化，同时写出：
+
+```text
+subset.recode.vcf
+subset.recode.vcf.gz
+```
+
+同时写两种格式会增加输出 I/O 和压缩工作。`--stdout` 仅支持单独的
+`--recode`，不能与 `--recode-vcf-gz` 组合。
+
+在已经测试的线程数下，压缩输出字节保持确定性；解压后的 VCF 已经与
+Original VCFtools 0.1.17 的 `--recode` 输出通过完整文件逐字节比较。
+Original 本身没有 `--recode-vcf-gz` 参数。目前尚未记录严格同条件的
+`--recode` 与 `--recode-vcf-gz` 性能对照。
+
+如果下游需要索引访问，可在过滤完成后创建 TBI：
 
 ```bash
 bcftools index --tbi --threads 24 subset.recode.vcf.gz
