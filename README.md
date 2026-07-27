@@ -4,14 +4,22 @@
 
 Experimental high-performance, output-compatible successor to VCFtools 0.1.17.
 
-**Latest release:** [v0.12.2 — Workload-Adaptive Indexing and Exact Recode
-Scaling](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.12.2)
+**Latest release:** [v0.12.3 — Comprehensive Colored Terminal
+Help](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.12.3)
+
+v0.12.3 adds a complete, structured terminal manual covering every supported
+option, practical examples, output suffixes, combination rules, and adaptive
+backend behavior. Color is enabled automatically only on interactive
+terminals, with `NO_COLOR` and `CLICOLOR_FORCE` controls. The filtering,
+statistics, input, and output execution paths are unchanged from v0.12.2.
 
 The full 11,230,392-record release matrix passed in four representative input
 scenarios at 1/2/4/8/16/32 threads. All 120 vcftools-ng outputs (five repeats
 per configuration) were byte-identical to the retained VCFtools 0.1.17
 goldens. The hash-locked Original timings and goldens from v0.12.1 were reused;
-Original was not rerun for v0.12.2.
+Original was not rerun for v0.12.2. Because v0.12.3 changes only help,
+documentation, and packaging validation, it inherits this hash-locked
+performance and exactness evidence without relabeling it as a new benchmark.
 
 The current implementation uses adaptive ordered input shards and a bounded,
 order-preserving pipeline. Plain VCF streams at 1–2 threads and uses aligned
@@ -34,11 +42,11 @@ includes vcftools-ng, bcftools for automatic CSI construction, HTSlib, and
 the required non-glibc runtime libraries.
 
 ```bash
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.2/vcftools-ng-v0.12.2-linux-x86_64.tar.gz
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.2/vcftools-ng-v0.12.2-linux-x86_64.tar.gz.sha256
-sha256sum -c vcftools-ng-v0.12.2-linux-x86_64.tar.gz.sha256
-tar -xzf vcftools-ng-v0.12.2-linux-x86_64.tar.gz
-./vcftools-ng-v0.12.2-linux-x86_64/bin/vcftools-ng --version
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.3/vcftools-ng-v0.12.3-linux-x86_64.tar.gz
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.3/vcftools-ng-v0.12.3-linux-x86_64.tar.gz.sha256
+sha256sum -c vcftools-ng-v0.12.3-linux-x86_64.tar.gz.sha256
+tar -xzf vcftools-ng-v0.12.3-linux-x86_64.tar.gz
+./vcftools-ng-v0.12.3-linux-x86_64/bin/vcftools-ng --version
 ```
 
 The archive requires Linux x86_64 with glibc 2.17 or newer. It is built on a
@@ -176,7 +184,7 @@ and does not require `--recode`.
 | Output name | `PREFIX.recode.vcf.gz`, where `PREFIX` comes from `--out` |
 | INFO fields | Add `--recode-INFO-all` to retain all input INFO fields |
 | Compression | Deterministic BGZF using the effective `--threads` budget |
-| Output index | Not created automatically in v0.12.2 |
+| Output index | Not created automatically in v0.12.3 |
 | Compatibility | Decompressed bytes are compared with Original `--recode` |
 
 ```bash
@@ -242,12 +250,13 @@ overwritten. `--input-backend stream|indexed` remains an advanced override,
 and `--bcftools FILE` selects the executable used when adaptive CSI
 construction is profitable.
 
-## v0.12.2 full-data five-repeat performance
+## Inherited v0.12.2 full-data five-repeat performance
 
 The release workload applies seven real-project filters and writes a complete
 VCF with all INFO fields. Values are mean wall-clock seconds from five
 strictly serial vcftools-ng repeats on the 32-CPU host. Original values are
-the hash-locked single-run v0.12.1 baselines and were not rerun.
+the hash-locked single-run v0.12.1 baselines and were not rerun. v0.12.3 did
+not rerun this matrix because it does not modify any measured execution path.
 
 | Input path | Original | 1 thread | 2 threads | 4 threads | 8 threads | 16 threads | 32 threads |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -288,6 +297,7 @@ development gate are documented here:
 - [v0.11.3 full-data summary](benchmarks/results/final-full-v0113/summary.tsv)
 - [v0.12.2 full-data matrix](benchmarks/results/final-full-v0122/README.md)
 - [v0.12.2 technical record](docs/versions/v0.12.2.md)
+- [v0.12.3 technical record](docs/versions/v0.12.3.md)
 
 ## Verify
 

@@ -39,7 +39,7 @@
 
 namespace {
 
-constexpr const char* kVersion = "0.12.2";
+constexpr const char* kVersion = "0.12.3";
 
 struct Options {
     std::string input;
@@ -453,7 +453,7 @@ RECODE AND FORMAT OUTPUT:
   --stdout                     Send plain --recode VCF to stdout
 
   --recode and --recode-vcf-gz may be combined to write both files in one
-  scan. --stdout is valid only with plain --recode. v0.12.2 does not create
+  scan. --stdout is valid only with plain --recode. v0.12.3 does not create
   an index for new output; run:
     bcftools index --tbi --threads N PREFIX.recode.vcf.gz
 

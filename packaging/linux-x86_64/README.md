@@ -25,8 +25,8 @@ Validate the archive in clean CentOS 7 and Ubuntu 20.04 containers:
 Artifacts are written to `dist/`:
 
 ```text
-vcftools-ng-v0.12.2-linux-x86_64.tar.gz
-vcftools-ng-v0.12.2-linux-x86_64.tar.gz.sha256
+vcftools-ng-v0.12.3-linux-x86_64.tar.gz
+vcftools-ng-v0.12.3-linux-x86_64.tar.gz.sha256
 ```
 
 The build installs the CentOS SCL GCC 11 toolchain, pins and verifies the

@@ -5,13 +5,19 @@
 vcftools-ng 是 VCFtools 0.1.17 的实验性高性能、输出兼容后继实现。
 
 **最新正式版：**
-[v0.12.2 — 工作负载自适应索引与精确重编码扩展](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.12.2)
+[v0.12.3 — 完整彩色终端帮助](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.12.3)
+
+v0.12.3 新增结构完整的终端手册，覆盖全部已支持参数、常用示例、输出后缀、
+组合限制和自适应后端策略。颜色只在交互式终端自动启用，并支持
+`NO_COLOR` 和 `CLICOLOR_FORCE`。过滤、统计、输入和输出执行路径与
+v0.12.2 完全相同。
 
 完整 11,230,392 位点的四场景发布矩阵已经通过：
 1/2/4/8/16/32 线程、每个配置五次重复，共 120/120 个 vcftools-ng
 输出均与保留的 VCFtools 0.1.17 golden 逐字节一致。v0.12.2 复用了
 v0.12.1 已锁定并重新校验哈希的 Original 时间与 golden，本轮没有重跑
-Original。
+Original。v0.12.3 仅修改帮助、文档和便携包验证，因此直接继承这组已锁定
+哈希的性能与一致性证据，不会把旧数据重新标成 v0.12.3 新跑基准。
 
 vcftools-ng 使用自适应、有序的输入分片和有界流水线：
 
@@ -32,11 +38,11 @@ Linux x86_64 便携包解压后即可运行，包内包含 vcftools-ng、用于�
 构建 CSI 的 bcftools、HTSlib 以及所需的非 glibc 运行库：
 
 ```bash
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.2/vcftools-ng-v0.12.2-linux-x86_64.tar.gz
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.2/vcftools-ng-v0.12.2-linux-x86_64.tar.gz.sha256
-sha256sum -c vcftools-ng-v0.12.2-linux-x86_64.tar.gz.sha256
-tar -xzf vcftools-ng-v0.12.2-linux-x86_64.tar.gz
-./vcftools-ng-v0.12.2-linux-x86_64/bin/vcftools-ng --version
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.3/vcftools-ng-v0.12.3-linux-x86_64.tar.gz
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.3/vcftools-ng-v0.12.3-linux-x86_64.tar.gz.sha256
+sha256sum -c vcftools-ng-v0.12.3-linux-x86_64.tar.gz.sha256
+tar -xzf vcftools-ng-v0.12.3-linux-x86_64.tar.gz
+./vcftools-ng-v0.12.3-linux-x86_64/bin/vcftools-ng --version
 ```
 
 便携包面向 glibc 2.17 或更高版本，在 CentOS 7 兼容的
@@ -158,7 +164,7 @@ CLICOLOR_FORCE=1 vcftools-ng --help
 | 输出文件名 | `PREFIX.recode.vcf.gz`，`PREFIX` 来自 `--out` |
 | INFO 字段 | 添加 `--recode-INFO-all` 以保留输入中的全部 INFO |
 | 压缩方式 | 使用有效 `--threads` 预算的确定性 BGZF 压缩 |
-| 输出索引 | v0.12.2 不会自动创建 |
+| 输出索引 | v0.12.3 不会自动创建 |
 | 兼容性 | 解压内容与 Original `--recode` 做逐字节比较 |
 
 ```bash
@@ -218,11 +224,12 @@ BGZF/BCF区域查询才优先复用或构建索引；紧凑型全文件统计从
 已有索引，但不为单次扫描临时构建索引。`--no-auto-index` 已移除。
 `--input-backend stream|indexed` 仍可用于高级诊断和显式覆盖。
 
-## v0.12.2 完整数据五轮发布矩阵
+## 继承的 v0.12.2 完整数据五轮发布矩阵
 
 全量发布工作负载使用七个真实项目过滤参数，并输出保留全部 INFO 的完整
 VCF。下表为 vcftools-ng 在 32 CPU 主机上严格串行运行五次的 wall time
 均值（秒）。Original 为 v0.12.1 已锁定的单次基线，本轮没有重跑。
+v0.12.3 未修改任何被测执行路径，因此没有重新运行这组矩阵。
 
 | 场景 | Original | 1 线程 | 2 线程 | 4 线程 | 8 线程 | 16 线程 | 32 线程 |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -268,6 +275,8 @@ ctest --test-dir build --output-on-failure
   （BGZF VCF + TBI、Plain VCF、BCF 自适应流式全扫描路径）
 - v0.12.2 完整四场景发布驱动：
   [benchmarks/run-v0122-full-release-matrix.sh](benchmarks/run-v0122-full-release-matrix.sh)
+- v0.12.3 技术记录：
+  [docs/versions/v0.12.3.md](docs/versions/v0.12.3.md)
 - 参数兼容矩阵：
   [docs/parameter-compatibility.md](docs/parameter-compatibility.md)
 - 版本历史：

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly version=0.12.2
+readonly version=0.12.3
 readonly htslib_version=1.23
 readonly bcftools_version=1.23
 readonly htslib_sha256=63927199ef9cea03096345b95d96cb600ae10385248b2ef670b0496c2ab7e4cd

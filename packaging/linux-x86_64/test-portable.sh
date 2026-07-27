@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repository_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
-archive=${1:-"$repository_root/dist/vcftools-ng-v0.12.2-linux-x86_64.tar.gz"}
+archive=${1:-"$repository_root/dist/vcftools-ng-v0.12.3-linux-x86_64.tar.gz"}
 checksum="${archive}.sha256"
 archive_name=$(basename "$archive")
 archive_directory=$(cd -- "$(dirname -- "$archive")" && pwd)
@@ -38,6 +38,16 @@ package_root="/work/${ARCHIVE_NAME%.tar.gz}"
 
 "$package_root/bin/vcftools-ng" --version
 "$package_root/bin/bcftools" --version | head -n 2
+env -u NO_COLOR CLICOLOR_FORCE=1 \
+    "$package_root/bin/vcftools-ng" --help > /work/help.color
+NO_COLOR=1 CLICOLOR_FORCE=1 \
+    "$package_root/bin/vcftools-ng" --help > /work/help.plain
+grep -Fq $'\033[1;36m' /work/help.color
+grep -Fq 'QUICK EXAMPLES:' /work/help.plain
+if grep -q $'\033\\[' /work/help.plain; then
+    echo "error: NO_COLOR help contains ANSI escapes" >&2
+    exit 1
+fi
 if LD_LIBRARY_PATH="$package_root/lib" \
     ldd "$package_root/libexec/vcftools-ng.bin" |
     grep -q "not found"; then

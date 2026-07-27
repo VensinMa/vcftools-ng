@@ -24,6 +24,9 @@ development version.
 - v0.12.2 reused the hash-locked v0.12.1 Original baselines and completed a
   four-scenario, five-repeat full-data matrix: 120/120 vcftools-ng outputs
   passed. Original was not rerun.
+- v0.12.3 changes terminal help, documentation, and portable-package
+  validation only. It inherits the v0.12.2 exactness and performance matrix;
+  no full-data timing is relabeled as a v0.12.3 measurement.
 
 ## Required record for every future version
 
