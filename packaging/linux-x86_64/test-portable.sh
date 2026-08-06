@@ -2,7 +2,8 @@
 set -euo pipefail
 
 repository_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
-archive=${1:-"$repository_root/dist/vcftools-ng-v0.12.4-linux-x86_64.tar.gz"}
+version=$(tr -d '[:space:]' <"$repository_root/VERSION")
+archive=${1:-"$repository_root/dist/vcftools-ng-v${version}-linux-x86_64.tar.gz"}
 checksum="${archive}.sha256"
 archive_name=$(basename "$archive")
 archive_directory=$(cd -- "$(dirname -- "$archive")" && pwd)
@@ -37,7 +38,13 @@ tar -xzf "/dist/$ARCHIVE_NAME"
 package_root="/work/${ARCHIVE_NAME%.tar.gz}"
 
 "$package_root/bin/vcftools-ng" --version
-"$package_root/bin/bcftools" --version | head -n 2
+test "$(find "$package_root/bin" -maxdepth 1 -type f | wc -l)" -eq 1
+bcftools_version=$(
+    "$package_root/libexec/bcftools.bin" --version | head -n 2
+)
+printf '%s\n' "$bcftools_version"
+grep -Fqx 'bcftools 1.24' <<<"$bcftools_version"
+grep -Fqx 'Using htslib 1.24' <<<"$bcftools_version"
 env -u NO_COLOR CLICOLOR_FORCE=1 \
     "$package_root/bin/vcftools-ng" --help > /work/help.color
 NO_COLOR=1 CLICOLOR_FORCE=1 \
@@ -72,6 +79,7 @@ cp /fixtures/osmanthus412.flags.23chr_1k.vcf.gz /work/input.vcf.gz
 grep -Fqx 'Log format: vcftools-ng-text-v1' /work/out.log
 grep -Fqx 'Exit status: success' /work/out.log
 grep -Fqx 'Selected backend: indexed-regions' /work/out.log
+gzip -dc /work/out.recode.vcf.gz >/work/out.recode.vcf
 cmp /golden/flags-site-info.recode.vcf /work/out.recode.vcf
 printf 'PORTABLE_PASS %s\n' "$(
     . /etc/os-release

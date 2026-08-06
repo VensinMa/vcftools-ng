@@ -4,7 +4,7 @@ set -euo pipefail
 project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 ng_binary=${1:-"$project_root/build/vcftools-ng"}
 fixture=${2:-"$project_root/tests/fixtures/osmanthus412.23chr_100k.bcf"}
-golden="$project_root/tests/golden/subset-filtered-recode-info-all.recode.vcf"
+golden="$project_root/tests/golden/subset-filtered-bcf-recode-info-all.recode.vcf"
 result_dir="$project_root/benchmarks/results"
 
 if [[ ! -x "$ng_binary" ]]; then
@@ -50,7 +50,7 @@ for threads in 8 16; do
         --bcf "$fixture" \
         --threads "$threads" \
         "${filters[@]}" \
-        --recode \
+        --recode-vcf \
         --recode-INFO-all \
         --out "$prefix"
 

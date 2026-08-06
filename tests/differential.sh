@@ -68,7 +68,7 @@ filters=(
     --missing-site \
     --site-depth \
     --site-mean-depth \
-    --recode \
+    --recode-vcf \
     --recode-INFO-all \
     --out "$output/filtered"
 
@@ -88,7 +88,7 @@ rm -f -- "$output/filtered.recode.vcf"
     --bcf "$fixture" \
     --threads 16 \
     "${filters[@]}" \
-    --recode \
+    --recode-vcf \
     --out "$output/recode-no-info"
 
 cmp \
@@ -119,7 +119,7 @@ cmp "$output/filtered.ldepth.mean" "$output/single-thread.ldepth.mean"
     --positions "$project_root/tests/fixtures/positions.keep.txt" \
     --exclude-positions "$project_root/tests/fixtures/positions.exclude.txt" \
     --not-chr chr2 \
-    --recode \
+    --recode-vcf \
     --recode-INFO-all \
     --out "$output/position-selection"
 
@@ -134,7 +134,7 @@ rm -f -- "$output/position-selection.recode.vcf"
     --chr chr7 \
     --from-bp 1 \
     --to-bp 2000000 \
-    --recode \
+    --recode-vcf \
     --recode-INFO-all \
     --out "$output/region"
 
@@ -156,7 +156,7 @@ rm -f -- "$output/region.recode.vcf"
     --missing-site \
     --site-depth \
     --site-mean-depth \
-    --recode \
+    --recode-vcf \
     --recode-INFO-all \
     --out "$output/samples"
 
@@ -182,7 +182,7 @@ cmp \
     --mac 4 \
     --max-mac 12 \
     --hwe 0.001 \
-    --recode \
+    --recode-vcf \
     --recode-INFO-all \
     --out "$output/mac-hwe"
 
@@ -269,7 +269,7 @@ flag_vcf_fixture="$project_root/tests/fixtures/osmanthus412.flags.23chr_1k.vcf.g
     --remove-filtered Cluster \
     --keep-INFO Hotspot \
     --remove-INFO Artifact \
-    --recode \
+    --recode-vcf \
     --recode-INFO-all \
     --out "$output/flags-site-info"
 
@@ -302,7 +302,7 @@ flag_sample_filters=(
     --remove-filtered-geno-all \
     --counts \
     --missing-site \
-    --recode \
+    --recode-vcf \
     --recode-INFO-all \
     --out "$output/flags-ft-all"
 
@@ -316,7 +316,7 @@ cmp "$golden/flags-ft-all.recode.vcf" "$output/flags-ft-all.recode.vcf"
     "${flag_sample_filters[@]}" \
     --remove-filtered-geno LowDP \
     --remove-filtered-geno MendelFail \
-    --recode \
+    --recode-vcf \
     --recode-INFO-all \
     --out "$output/flags-ft-specific"
 

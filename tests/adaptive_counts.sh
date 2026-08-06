@@ -7,10 +7,19 @@ fixture="$source_root/tests/fixtures/osmanthus412.flags.23chr_1k.vcf.gz"
 bcf_fixture="$source_root/tests/fixtures/osmanthus412.flags.23chr_1k.bcf"
 synthetic="$source_root/tests/fixtures/fast-counts.vcf"
 site_stats="$source_root/tests/fixtures/fast-site-stats.vcf"
+fast_recode="$source_root/tests/fixtures/fast-recode.vcf"
 polyploid="$source_root/tests/fixtures/fast-counts-polyploid.vcf"
 synthetic_golden="$source_root/tests/golden/fast-counts.frq.count"
 site_stats_golden="$source_root/tests/golden/fast-site-stats"
+fast_recode_info_golden="$source_root/tests/golden/fast-recode.info.vcf"
+fast_recode_clear_golden="$source_root/tests/golden/fast-recode.clear-info.vcf"
 filtered_stdout_sha256=292684f4994507b09b1ac339dcb03211293e9dd68fcf9b309ed006e1968818c4
+filtered_bgzf_sha256=d8455a9642c220045d95705a74beb794faa9b6eda58ac22c792939f419236e14
+real_filters=(
+    --min-alleles 2 --max-alleles 2
+    --minGQ 10 --minQ 30 --min-meanDP 7
+    --max-missing 0.9 --maf 0.1
+)
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/vcftools-ng-adaptive-counts.XXXXXX")
 cleanup() {
@@ -27,6 +36,35 @@ compare_site_stats() {
     cmp "$site_stats_golden.ldepth.mean" "$prefix.ldepth.mean"
     cmp "$site_stats_golden.lqual" "$prefix.lqual"
 }
+
+for threads in 1 4 8 16 32; do
+    "$ng" --vcf "$fast_recode" --threads "$threads" \
+        --minGQ 10 --recode-vcf --recode-INFO-all \
+        --out "$work/recode-edge-info-t$threads" \
+        >/dev/null 2>"$work/recode-edge-info-t$threads.log"
+    cmp "$fast_recode_info_golden" \
+        "$work/recode-edge-info-t$threads.recode.vcf"
+    grep -q 'Input backend: fast-filter-recode-plain' \
+        "$work/recode-edge-info-t$threads.log"
+done
+
+"$ng" --vcf "$fast_recode" --threads 8 \
+    --minGQ 10 --recode-vcf \
+    --out "$work/recode-edge-clear" \
+    >/dev/null 2>"$work/recode-edge-clear.log"
+cmp "$fast_recode_clear_golden" \
+    "$work/recode-edge-clear.recode.vcf"
+
+"$ng" --vcf "$fast_recode" --threads 8 \
+    --minGQ 10 --recode-vcf --recode-vcf-gz --recode-INFO-all \
+    --out "$work/recode-edge-dual" \
+    >/dev/null 2>"$work/recode-edge-dual.log"
+cmp "$fast_recode_info_golden" \
+    "$work/recode-edge-dual.recode.vcf"
+gzip -dc -- "$work/recode-edge-dual.recode.vcf.gz" \
+    >"$work/recode-edge-dual.uncompressed.vcf"
+cmp "$fast_recode_info_golden" \
+    "$work/recode-edge-dual.uncompressed.vcf"
 
 "$ng" --gzvcf "$fixture" --input-backend stream --threads 4 \
     --counts --out "$work/reference" \
@@ -78,6 +116,21 @@ done
 
 for threads in 1 32; do
     "$ng" --gzvcf "$fixture" --threads "$threads" \
+        "${real_filters[@]}" \
+        --recode --recode-INFO-all \
+        --out "$work/filtered-bgzf-recode-t$threads" \
+        >/dev/null 2>"$work/filtered-bgzf-recode-t$threads.log"
+    test "$filtered_bgzf_sha256" = "$(
+        sha256sum \
+            "$work/filtered-bgzf-recode-t$threads.recode.vcf.gz" |
+            cut -d' ' -f1
+    )"
+    grep -q 'Input backend: fast-filter-recode-' \
+        "$work/filtered-bgzf-recode-t$threads.log"
+done
+
+for threads in 1 32; do
+    "$ng" --gzvcf "$fixture" --threads "$threads" \
         --min-alleles 2 --max-alleles 2 \
         --minGQ 10 --minQ 30 --min-meanDP 7 \
         --max-missing 0.9 --maf 0.1 \
@@ -98,6 +151,42 @@ for threads in 4 8 16 32; do
         "$work/indexed-t$threads.frq.count"
     grep -q 'Input backend: fast-counts-indexed-bgzf' \
         "$work/indexed-t$threads.log"
+done
+
+"$ng" --bcf "$bcf_fixture" --input-backend stream --threads 4 \
+    "${real_filters[@]}" --counts --out "$work/filtered-reference" \
+    >/dev/null 2>"$work/filtered-reference.log"
+"$ng" --gzvcf "$fixture" --threads 8 \
+    "${real_filters[@]}" --counts --recode --recode-INFO-all \
+    --out "$work/filtered-combined" \
+    >/dev/null 2>"$work/filtered-combined.log"
+cmp "$work/filtered-reference.frq.count" \
+    "$work/filtered-combined.frq.count"
+test "$filtered_bgzf_sha256" = "$(
+    sha256sum "$work/filtered-combined.recode.vcf.gz" |
+        cut -d' ' -f1
+)"
+grep -q 'Input backend: fast-filter-recode-' \
+    "$work/filtered-combined.log"
+gzip -dc -- "$fixture" >"$work/filtered.vcf"
+for threads in 1 4 32; do
+    "$ng" --vcf "$work/filtered.vcf" --threads "$threads" \
+        "${real_filters[@]}" --counts \
+        --out "$work/filtered-plain-t$threads" \
+        >/dev/null 2>"$work/filtered-plain-t$threads.log"
+    cmp "$work/filtered-reference.frq.count" \
+        "$work/filtered-plain-t$threads.frq.count"
+    grep -q 'Input backend: fast-counts-plain' \
+        "$work/filtered-plain-t$threads.log"
+
+    "$ng" --gzvcf "$fixture" --threads "$threads" \
+        "${real_filters[@]}" --counts \
+        --out "$work/filtered-bgzf-t$threads" \
+        >/dev/null 2>"$work/filtered-bgzf-t$threads.log"
+    cmp "$work/filtered-reference.frq.count" \
+        "$work/filtered-bgzf-t$threads.frq.count"
+    grep -q 'Input backend: fast-counts-' \
+        "$work/filtered-bgzf-t$threads.log"
 done
 
 if "$ng" --vcf "$polyploid" --threads 1 \

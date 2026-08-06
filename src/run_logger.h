@@ -36,6 +36,7 @@ private:
     std::string file_path_;
     std::chrono::steady_clock::time_point steady_start_;
     struct rusage usage_start_ {};
+    struct rusage child_usage_start_ {};
     bool file_via_stderr_ = false;
     bool finished_ = false;
 };

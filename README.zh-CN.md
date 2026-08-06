@@ -5,7 +5,23 @@
 vcftools-ng 是 VCFtools 0.1.17 的实验性高性能、输出兼容后继实现。
 
 **最新正式版：**
-[v0.12.4 — 标准可复现运行日志](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.12.4)
+[v0.13.0 — 事务式 BGZF 输出与热路径加速](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.13.0)
+
+v0.13.0 已加入科学输出事务式发布、日志与资源限制
+加固，并默认输出更节省磁盘的 BGZF VCF。新的 ordered pipeline 会在运行
+开始时一次编译不变的执行决策，将 DP/过滤样本扫描融合为一次，以 batch
+连续块提交 VCF 文本，复用每个 BGZF worker 的压缩状态，并让 Plain VCF
+worker 跨 shard 复用文件描述符。文本输入在严格总线程预算内采用偏向输入
+阶段的自适应分配。便携构建已锁定 bcftools 1.24 与 HTSlib 1.24；完整数据
+第一轮发布门禁已经 108/108 通过。后续重复仍在运行，不会被提前表述为已
+完成的多轮均值。
+
+全部科学结果先写入目标目录中的私有暂存文件，完成 flush、close 和写入
+状态检查后才统一发布；运行失败会清理暂存文件并保留原有正式结果。日志
+镜像写入失败只会关闭文件镜像，不会破坏 stderr 或科学输出。所有浮点参数
+拒绝 NaN/Inf。未指定 `--threads` 时会对调度器、CPU affinity、cgroup 和
+硬件限制求交，并将自动值限制为最多 128；阶段规划还会服从文件描述符
+上限。显式线程值不受自动 128 上限限制，但仍服从实际资源分配上限。
 
 v0.12.4 默认生成 `PREFIX.log`，记录完整命令、输入输出、过滤参数、线程
 分配、资源使用、CSI/TBI 验证、自适应索引决定及原因、耗时、警告和最终
@@ -34,19 +50,23 @@ vcftools-ng 使用自适应、有序的输入分片和有界流水线：
 - `--freq`、`--freq2`、`--counts`、`--missing-site`、
   `--site-depth`、`--site-mean-depth` 和 `--site-quality` 可以进入
   直接融合文本路径，避免构建中间 `bcf1_t`；
+- v0.13.0 将同一个直接文本内核扩展到 Plain/BGZF VCF 重编码，
+  七个常用过滤参数与统计、重编码可以共享一次扫描；不支持的过滤、选择、
+  输入格式或高级分析会在发布任何输出前自动回退到通用兼容流水线；
 - 乱序 shard 的待提交输出带有背压，内存不会随剩余文件无限增长。
 
 ## 推荐安装方式
 
-Linux x86_64 便携包解压后即可运行，包内包含 vcftools-ng、用于自动
-构建 CSI 的 bcftools、HTSlib 以及所需的非 glibc 运行库：
+Linux x86_64 便携包解压后即可运行。`bin` 中只放 `vcftools-ng`；用于
+自动构建 CSI 的私有 bcftools 放在 `libexec`。v0.13.0 便携构建同时
+打包 bcftools 1.24、HTSlib 1.24 和所需的非 glibc 运行库：
 
 ```bash
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.4/vcftools-ng-v0.12.4-linux-x86_64.tar.gz
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.4/vcftools-ng-v0.12.4-linux-x86_64.tar.gz.sha256
-sha256sum -c vcftools-ng-v0.12.4-linux-x86_64.tar.gz.sha256
-tar -xzf vcftools-ng-v0.12.4-linux-x86_64.tar.gz
-./vcftools-ng-v0.12.4-linux-x86_64/bin/vcftools-ng --version
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.13.0/vcftools-ng-v0.13.0-linux-x86_64.tar.gz
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.13.0/vcftools-ng-v0.13.0-linux-x86_64.tar.gz.sha256
+sha256sum -c vcftools-ng-v0.13.0-linux-x86_64.tar.gz.sha256
+tar -xzf vcftools-ng-v0.13.0-linux-x86_64.tar.gz
+./vcftools-ng-v0.13.0-linux-x86_64/bin/vcftools-ng --version
 ```
 
 便携包面向 glibc 2.17 或更高版本，在 CentOS 7 兼容的
@@ -93,13 +113,14 @@ VCFtools 0.1.17 是兼容性 oracle。只有通过完整文件 `cmp` 的工作�
 
 | 参数 | 作用 |
 |---|---|
-| `--threads N`、`-t N` | 设置总 CPU 预算；未指定时检测调度器/CPU affinity |
+| `--threads N`、`-t N` | 设置输入/计算/I/O 共享 worker 预算；自动检测各资源上限并最多取 128 |
 | `--batch-size N` | 调整通用有界流水线批大小 |
 | `--input FILE` | 自动识别 VCF/BGZF VCF/BCF 的输入别名 |
 | `--compat exact` | 显式选择当前唯一的精确兼容模式 |
 | `--input-backend auto\|stream\|plain\|indexed` | 自动选择或强制输入后端 |
 | `--bcftools FILE` | 指定自适应策略判定值得构建 CSI 时使用的 bcftools |
 | `--recode-vcf-gz` | 并行生成确定性的 BGZF 压缩 VCF |
+| `--recode-vcf` | 在默认 `--recode` 改为 BGZF 后，显式生成未压缩 VCF |
 | `--log-file FILE` | 自定义运行日志路径并覆盖写入 |
 | `--no-log-file` | 关闭日志文件，但保留终端 stderr 信息 |
 
@@ -127,6 +148,10 @@ README 不会把 Original 的错误隐藏在“兼容”表述中：
 
 未来如果增加标准修正版行为，必须使用明确的新模式，不能静默改变
 `--compat exact`。
+
+独立的 [Original VCFtools 0.1.17 已知问题档案](docs/original-vcftools-0.1.17-known-issues.md)
+持续记录每项问题的触发条件、Original 实际输出、vcftools-ng 处理策略和
+回归证据。
 
 ## 命令行帮助
 
@@ -170,7 +195,7 @@ CLICOLOR_FORCE=1 vcftools-ng --help
 ```bash
 vcftools-ng --gzvcf input.vcf.gz --threads 24 \
   --recode --out subset
-# 数据：subset.recode.vcf
+# 数据：subset.recode.vcf.gz
 # 日志：subset.log
 
 vcftools-ng --gzvcf input.vcf.gz --counts \
@@ -190,20 +215,21 @@ vcftools-ng --gzvcf input.vcf.gz --counts \
   --out results/filtered
 ```
 
-### 直接生成 BGZF VCF
+### VCF 重编码输出
 
-`--recode-vcf-gz` 是 vcftools-ng 新增的输出参数，可以将过滤后的记录
-直接写为 BGZF VCF，不会先生成未压缩中间文件，也不要求同时指定
-`--recode`。
+从 v0.13.0 源码候选版开始，`--recode` 默认直接写出 BGZF VCF；
+`--recode-vcf-gz` 是同一输出的显式别名，两者都不会生成未压缩中间
+文件。只有明确需要普通 VCF 文件时才使用新增的 `--recode-vcf`。
 
 | 项目 | 行为 |
 |---|---|
 | 支持的输入 | `--vcf`、`--gzvcf`、`--bcf` 或自动识别的 `--input` |
-| 只输出压缩 VCF | 使用 `--recode-vcf-gz`，不加 `--recode` |
+| 默认压缩输出 | `--recode` 或 `--recode-vcf-gz` |
+| 显式普通 VCF | `--recode-vcf` |
 | 输出文件名 | `PREFIX.recode.vcf.gz`，`PREFIX` 来自 `--out` |
 | INFO 字段 | 添加 `--recode-INFO-all` 以保留输入中的全部 INFO |
 | 压缩方式 | 使用有效 `--threads` 预算的确定性 BGZF 压缩 |
-| 输出索引 | v0.12.4 不会自动创建 |
+| 输出索引 | 不会自动创建 |
 | 兼容性 | 解压内容与 Original `--recode` 做逐字节比较 |
 
 ```bash
@@ -223,14 +249,14 @@ vcftools-ng \
 subset.recode.vcf.gz
 ```
 
-`--recode` 与 `--recode-vcf-gz` 不互斥。如果确实同时需要未压缩和
-BGZF 两种文件，可以一起指定：
+如果确实同时需要未压缩和 BGZF 两种文件，可同时指定
+`--recode-vcf` 与 `--recode-vcf-gz`：
 
 ```bash
 vcftools-ng \
   --gzvcf input.vcf.gz \
   --threads 24 \
-  --recode --recode-vcf-gz --recode-INFO-all \
+  --recode-vcf --recode-vcf-gz --recode-INFO-all \
   --out subset
 ```
 
@@ -241,8 +267,8 @@ subset.recode.vcf
 subset.recode.vcf.gz
 ```
 
-同时写两种格式会增加输出 I/O 和压缩工作。`--stdout` 仅支持单独的
-`--recode`，不能与 `--recode-vcf-gz` 组合。
+同时写两种格式会增加输出 I/O 和压缩工作。为保持兼容，
+`--recode --stdout` 仍输出普通 VCF stdout，不能再组合文件型 BGZF 输出。
 
 在已经测试的线程数下，压缩输出字节保持确定性；解压后的 VCF 已经与
 Original VCFtools 0.1.17 的 `--recode` 输出通过完整文件逐字节比较。
@@ -300,6 +326,7 @@ cmake -S . -B build \
   -DCMAKE_BUILD_TYPE=Release \
   -DHTSLIB_ROOT=/path/to/htslib
 cmake --build build -j
+cmake --install build --prefix /path/to/install-prefix
 ctest --test-dir build --output-on-failure
 ```
 
@@ -318,6 +345,8 @@ ctest --test-dir build --output-on-failure
   [docs/versions/v0.12.4.md](docs/versions/v0.12.4.md)
 - v0.12.4 启用日志后的三场景门禁：
   [benchmarks/results/development-v0124-logging-final/README.md](benchmarks/results/development-v0124-logging-final/README.md)
+- v0.13.0 输入/输出/存储完整数据发布门禁：
+  [benchmarks/results/v0130-input-output-storage/README.md](benchmarks/results/v0130-input-output-storage/README.md)
 - 参数兼容矩阵：
   [docs/parameter-compatibility.md](docs/parameter-compatibility.md)
 - 版本历史：

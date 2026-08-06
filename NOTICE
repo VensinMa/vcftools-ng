@@ -1,0 +1,16 @@
+vcftools-ng
+===========
+
+Copyright (c) 2026 Ma Wenxin and vcftools-ng contributors.
+
+This project is distributed under the GNU Lesser General Public License,
+version 3.0. See LICENSE.
+
+vcftools-ng is an output-compatible successor to VCFtools 0.1.17 and includes
+algorithms adapted from VCFtools, including exact compatibility behavior for
+Hardy-Weinberg, population statistics, and output formatting. VCFtools 0.1.17
+is distributed under the GNU Lesser General Public License, version 3.0.
+
+The portable distribution also contains HTSlib, bcftools, and selected system
+runtime libraries. Their license texts are installed in the package LICENSES
+directory. Those components remain under their respective upstream licenses.

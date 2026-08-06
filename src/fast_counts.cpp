@@ -1,4 +1,5 @@
 #include "fast_counts.h"
+#include "output_transaction.h"
 
 #include <htslib/hts.h>
 #include <htslib/kstring.h>
@@ -139,6 +140,27 @@ struct HeaderLayout {
     std::size_t samples = 0;
 };
 
+std::string read_text_vcf_header(
+    htsFile* input, const std::string& path) {
+    KStringBuffer line;
+    std::string header;
+    while (hts_getline(input, '\n', &line.value) >= 0) {
+        std::string_view text(line.value.s, line.value.l);
+        if (!text.empty() && text.back() == '\r') {
+            text.remove_suffix(1);
+        }
+        if (text.empty() || text.front() != '#') {
+            fail("VCF data appeared before #CHROM header: " + path);
+        }
+        header.append(text);
+        header.push_back('\n');
+        if (text.rfind("#CHROM\t", 0) == 0) {
+            return header;
+        }
+    }
+    fail("Could not find #CHROM header: " + path);
+}
+
 struct PlainShard {
     std::uint64_t begin = 0;
     std::uint64_t end = 0;
@@ -152,14 +174,21 @@ struct IndexedShard {
 
 struct ShardOutput {
     std::array<std::string, kArtifactCount> text;
+    std::string recode_text;
+    std::vector<std::uint8_t> genotype_filtered;
     std::uint64_t records = 0;
+    std::uint64_t kept = 0;
 };
 
 class OrderedArtifactSet {
 public:
     OrderedArtifactSet(
         const std::string& prefix,
-        const FastSiteStatPlan& plan) {
+        const FastSiteStatPlan& plan)
+        : plan_(plan) {
+        if (plan.recode && !plan.recode_sink) {
+            fail("Fast recode output has no destination");
+        }
         if (plan.freq || plan.freq2) {
             open(
                 Artifact::freq, prefix + ".frq",
@@ -202,12 +231,16 @@ public:
                 static_cast<std::streamsize>(
                     shard.text[index].size()));
         }
+        if (plan_.recode && !shard.recode_text.empty()) {
+            plan_.recode_sink(shard.recode_text);
+        }
     }
 
-    void validate() const {
+    void validate() {
         for (std::size_t index = 0; index < outputs_.size(); ++index) {
-            if (enabled_[index] && !outputs_[index]) {
-                fail("Could not write fused site-stat artifact");
+            if (enabled_[index]) {
+                vcftools_ng::output::finish_stream(
+                    outputs_[index], final_paths_[index]);
             }
         }
     }
@@ -217,11 +250,9 @@ private:
         Artifact artifact, const std::string& path,
         std::string_view header) {
         const std::size_t index = artifact_index(artifact);
-        outputs_[index].open(
+        final_paths_[index] = path;
+        outputs_[index] = vcftools_ng::output::open_stream(
             path, std::ios::binary | std::ios::trunc);
-        if (!outputs_[index]) {
-            fail("Could not open fused site-stat output: " + path);
-        }
         enabled_[index] = true;
         outputs_[index].write(
             header.data(),
@@ -229,7 +260,9 @@ private:
     }
 
     std::array<std::ofstream, kArtifactCount> outputs_;
+    std::array<std::string, kArtifactCount> final_paths_;
     std::array<bool, kArtifactCount> enabled_{};
+    const FastSiteStatPlan& plan_;
 };
 
 unsigned descriptor_limited_workers(
@@ -357,6 +390,7 @@ void append_floating(std::string& output, double value) {
 struct FormatIndices {
     std::optional<std::size_t> gt;
     std::optional<std::size_t> dp;
+    std::optional<std::size_t> gq;
 };
 
 FormatIndices format_indices(std::string_view format) {
@@ -374,6 +408,8 @@ FormatIndices format_indices(std::string_view format) {
             result.gt = index;
         } else if (key == "DP") {
             result.dp = index;
+        } else if (key == "GQ") {
+            result.gq = index;
         }
         if (end == std::string_view::npos) {
             break;
@@ -387,6 +423,7 @@ FormatIndices format_indices(std::string_view format) {
 struct SampleFields {
     std::string_view gt;
     std::string_view dp;
+    std::string_view gq;
 };
 
 SampleFields select_sample_fields(
@@ -408,6 +445,9 @@ SampleFields select_sample_fields(
         if (indices.dp.has_value() && index == *indices.dp) {
             result.dp = value;
         }
+        if (indices.gq.has_value() && index == *indices.gq) {
+            result.gq = value;
+        }
         if (end == std::string_view::npos) {
             break;
         }
@@ -415,6 +455,133 @@ SampleFields select_sample_fields(
         ++index;
     }
     return result;
+}
+
+void append_masked_genotype(
+    std::string_view /* genotype */, std::string& output) {
+    // VCFtools 0.1.17 recodes every filtered GT as an unphased
+    // diploid missing genotype, including haploid and phased inputs.
+    output.append("./.");
+}
+
+void append_recode_sample(
+    std::string_view sample, std::size_t gt_index,
+    bool filtered, std::string& output) {
+    if (!filtered) {
+        output.append(sample);
+        return;
+    }
+    std::size_t index = 0;
+    std::size_t begin = 0;
+    while (begin <= sample.size()) {
+        const std::size_t end = sample.find(':', begin);
+        if (index > 0) {
+            output.push_back(':');
+        }
+        const std::string_view value = sample.substr(
+            begin,
+            end == std::string_view::npos
+                ? std::string_view::npos
+                : end - begin);
+        if (index == gt_index) {
+            append_masked_genotype(value, output);
+        } else {
+            output.append(value);
+        }
+        if (end == std::string_view::npos) {
+            return;
+        }
+        begin = end + 1;
+        ++index;
+    }
+}
+
+void append_sorted_filter_column(
+    std::string_view filter, std::string& output) {
+    if (filter == "." ||
+        filter.find(';') == std::string_view::npos) {
+        output.append(filter);
+        return;
+    }
+    std::vector<std::string_view> names;
+    std::size_t begin = 0;
+    while (begin <= filter.size()) {
+        const std::size_t end = filter.find(';', begin);
+        names.push_back(filter.substr(
+            begin,
+            end == std::string_view::npos
+                ? std::string_view::npos
+                : end - begin));
+        if (end == std::string_view::npos) {
+            break;
+        }
+        begin = end + 1;
+    }
+    std::sort(names.begin(), names.end());
+    for (std::size_t index = 0; index < names.size(); ++index) {
+        if (index > 0) {
+            output.push_back(';');
+        }
+        output.append(names[index]);
+    }
+}
+
+void append_recode_record(
+    std::string_view line,
+    const std::array<std::string_view, 9>& columns,
+    std::size_t samples_begin, std::size_t sample_count,
+    const FormatIndices& indices,
+    const std::vector<std::uint8_t>& genotype_filtered,
+    bool info_all, std::string& output) {
+    const bool any_filtered = std::any_of(
+        genotype_filtered.begin(), genotype_filtered.end(),
+        [](std::uint8_t value) { return value != 0; });
+    const bool filter_already_canonical =
+        columns[6].find(';') == std::string_view::npos;
+    if (info_all && !any_filtered && filter_already_canonical) {
+        output.append(line);
+        output.push_back('\n');
+        return;
+    }
+
+    for (std::size_t column = 0; column < 7; ++column) {
+        if (column > 0) {
+            output.push_back('\t');
+        }
+        if (column == 6) {
+            append_sorted_filter_column(columns[column], output);
+        } else {
+            output.append(columns[column]);
+        }
+    }
+    output.push_back('\t');
+    output.append(info_all ? columns[7] : std::string_view("."));
+    if (sample_count > 0) {
+        output.push_back('\t');
+        output.append(columns[8]);
+    }
+
+    std::size_t begin = samples_begin;
+    for (std::size_t sample_index = 0;
+         sample_index < sample_count; ++sample_index) {
+        const std::size_t end = line.find('\t', begin);
+        const std::string_view sample = line.substr(
+            begin,
+            end == std::string_view::npos
+                ? std::string_view::npos
+                : end - begin);
+        output.push_back('\t');
+        append_recode_sample(
+            sample, indices.gt.value_or(0),
+            indices.gt.has_value() &&
+                genotype_filtered[sample_index] != 0,
+            output);
+        begin =
+            end == std::string_view::npos
+                ? line.size()
+                : end + 1;
+    }
+    output.push_back('\n');
 }
 
 struct GenotypeSummary {
@@ -457,7 +624,7 @@ double parse_quality(std::string_view value) {
 template <typename Counts>
 GenotypeSummary count_genotype(
     std::string_view genotype, Counts& counts,
-    std::size_t valid_alleles) {
+    std::size_t valid_alleles, bool include) {
     GenotypeSummary result;
     std::size_t begin = 0;
     while (begin < genotype.size()) {
@@ -485,19 +652,21 @@ GenotypeSummary count_genotype(
                 index >= valid_alleles) {
                 fail("Invalid GT allele in VCF record");
             }
-            ++counts[static_cast<std::size_t>(index)];
-            ++result.called;
+            if (include) {
+                ++counts[static_cast<std::size_t>(index)];
+                ++result.called;
+            }
         }
         begin = end + 1;
     }
     return result;
 }
 
-void append_site_stat_record(
+bool append_site_stat_record(
     std::string_view line, std::size_t sample_count,
     const FastSiteStatPlan& plan, ShardOutput& output) {
     if (line.empty() || line.front() == '#') {
-        return;
+        return false;
     }
     if (line.back() == '\r') {
         line.remove_suffix(1);
@@ -518,6 +687,7 @@ void append_site_stat_record(
         columns[column] = line.substr(begin, end - begin);
         begin = end + 1;
     }
+    const std::size_t samples_begin = begin;
 
     std::array<std::string_view, kInlineAlleles> inline_alleles{};
     std::size_t allele_count = 1;
@@ -546,6 +716,15 @@ void append_site_stat_record(
             alternate.remove_prefix(separator + 1);
         }
     }
+    if (static_cast<int>(allele_count) < plan.min_alleles ||
+        static_cast<int>(allele_count) > plan.max_alleles) {
+        return false;
+    }
+    const double quality = parse_quality(columns[5]);
+    if (plan.min_quality >= 0.0 &&
+        quality < plan.min_quality) {
+        return false;
+    }
 
     std::array<std::uint64_t, kInlineAlleles> inline_counts{};
     std::vector<std::uint64_t> heap_counts;
@@ -559,9 +738,18 @@ void append_site_stat_record(
     std::uint32_t sum_depth = 0;
     std::uint32_t sumsq_depth = 0;
     std::uint32_t depth_count = 0;
+    double raw_depth_sum = 0.0;
+    std::uint64_t total_ploidy = 0;
     const bool need_gt =
         plan.freq || plan.freq2 ||
-        plan.counts || plan.missing_site;
+        plan.counts || plan.missing_site ||
+        plan.min_call_rate > 0.0 || plan.min_maf > 0.0;
+    const bool need_dp =
+        plan.site_depth || plan.site_mean_depth ||
+        plan.min_mean_depth > 0.0;
+    if (plan.recode) {
+        output.genotype_filtered.assign(sample_count, 0);
+    }
     for (std::size_t sample_index = 0;
          sample_index < sample_count; ++sample_index) {
         std::string_view sample;
@@ -579,21 +767,37 @@ void append_site_stat_record(
         }
         const SampleFields fields =
             select_sample_fields(sample, indices);
+        const bool genotype_filtered =
+            plan.min_genotype_quality > 0.0 &&
+            indices.gq.has_value() &&
+            parse_depth(fields.gq) < plan.min_genotype_quality;
+        if (plan.recode) {
+            output.genotype_filtered[sample_index] =
+                genotype_filtered;
+        }
         if (need_gt && indices.gt.has_value()) {
             const GenotypeSummary genotype =
                 heap_counts.empty()
                     ? count_genotype(
-                          fields.gt, inline_counts, allele_count)
+                          fields.gt, inline_counts, allele_count,
+                          !genotype_filtered)
                     : count_genotype(
-                          fields.gt, heap_counts, allele_count);
+                          fields.gt, heap_counts, allele_count,
+                          !genotype_filtered);
+            total_ploidy += genotype.ploidy;
             called += genotype.called;
-            n_data += genotype.ploidy;
-            n_missing += genotype.missing;
+            if (!genotype_filtered) {
+                n_data += genotype.ploidy;
+                n_missing += genotype.missing;
+            }
         }
-        if ((plan.site_depth || plan.site_mean_depth) &&
+        if (need_dp &&
             indices.dp.has_value()) {
             const int depth = parse_depth(fields.dp);
             if (depth >= 0) {
+                raw_depth_sum += depth;
+            }
+            if (!genotype_filtered && depth >= 0) {
                 const auto unsigned_depth =
                     static_cast<std::uint32_t>(depth);
                 sum_depth += unsigned_depth;
@@ -610,6 +814,35 @@ void append_site_stat_record(
         }
         n_data = static_cast<std::uint32_t>(absent);
         n_missing = n_data;
+    }
+
+    if (plan.min_mean_depth > 0.0 &&
+        raw_depth_sum / static_cast<double>(sample_count) <
+            plan.min_mean_depth) {
+        return false;
+    }
+    if (plan.min_call_rate > 0.0 &&
+        called / static_cast<double>(total_ploidy) <
+            plan.min_call_rate) {
+        return false;
+    }
+    if (plan.min_maf > 0.0) {
+        double maf = std::numeric_limits<double>::max();
+        if (called > 0) {
+            for (std::size_t allele = 0;
+                 allele < allele_count; ++allele) {
+                const double frequency =
+                    (heap_counts.empty()
+                         ? inline_counts[allele]
+                         : heap_counts[allele]) /
+                    static_cast<double>(called);
+                maf = std::min(
+                    maf, std::min(frequency, 1.0 - frequency));
+            }
+        }
+        if (maf < plan.min_maf) {
+            return false;
+        }
     }
 
     const auto allele_at =
@@ -717,9 +950,16 @@ void append_site_stat_record(
             output.text[artifact_index(Artifact::quality)];
         append_position(text);
         text.push_back('\t');
-        append_floating(text, parse_quality(columns[5]));
+        append_floating(text, quality);
         text.push_back('\n');
     }
+    if (plan.recode) {
+        append_recode_record(
+            line, columns, samples_begin, sample_count,
+            indices, output.genotype_filtered,
+            plan.recode_info_all, output.recode_text);
+    }
+    return true;
 }
 
 ShardOutput process_plain_shard(
@@ -772,6 +1012,9 @@ ShardOutput process_plain_shard(
     if (plan.site_quality) {
         result.text[artifact_index(Artifact::quality)].reserve(reserve / 2);
     }
+    if (plan.recode) {
+        result.recode_text.reserve(input_bytes.size());
+    }
     std::size_t begin = 0;
     while (begin < input_bytes.size()) {
         std::size_t end = input_bytes.find('\n', begin);
@@ -779,7 +1022,7 @@ ShardOutput process_plain_shard(
             end = input_bytes.size();
         }
         if (end > begin) {
-            append_site_stat_record(
+            result.kept += append_site_stat_record(
                 std::string_view(
                     input_bytes.data() + begin, end - begin),
                 samples, plan, result);
@@ -869,6 +1112,7 @@ FastSiteStatsSummary run_plain_site_stats(
     }
 
     std::uint64_t records = 0;
+    std::uint64_t kept = 0;
     try {
         for (std::size_t index = 0; index < shards.size(); ++index) {
             std::optional<ShardOutput> result;
@@ -888,6 +1132,7 @@ FastSiteStatsSummary run_plain_site_stats(
             capacity_available.notify_all();
             outputs.append(*result);
             records += result->records;
+            kept += result->kept;
         }
     } catch (...) {
         std::lock_guard lock(mutex);
@@ -907,17 +1152,21 @@ FastSiteStatsSummary run_plain_site_stats(
     outputs.validate();
     return FastSiteStatsSummary{
         .total = records,
-        .kept = records,
+        .kept = kept,
         .samples = header.samples,
         .input_threads = worker_count,
         .hts_io_threads = 0,
         .planned_shards = shards.size(),
         .backend =
-            plan.counts_only()
+            plan.recode
+                ? "fast-filter-recode-plain"
+                : plan.counts_only()
                 ? "fast-counts-plain"
                 : "fast-site-stats-plain",
         .description =
-            "fused aligned byte ranges with direct site statistics",
+            plan.recode
+                ? "fused aligned byte ranges with direct filtering/recode"
+                : "fused aligned byte ranges with direct site statistics",
     };
 }
 
@@ -939,6 +1188,7 @@ FastSiteStatsSummary run_compressed_site_stats(
     std::size_t samples = 0;
     bool saw_header = false;
     std::uint64_t records = 0;
+    std::uint64_t kept = 0;
     ShardOutput buffer;
     std::size_t buffered_bytes = 0;
     while (hts_getline(
@@ -956,18 +1206,20 @@ FastSiteStatsSummary run_compressed_site_stats(
             }
             continue;
         }
-        append_site_stat_record(
+        kept += append_site_stat_record(
             text, samples, plan, buffer);
         ++records;
         buffered_bytes = 0;
         for (const auto& artifact : buffer.text) {
             buffered_bytes += artifact.size();
         }
+        buffered_bytes += buffer.recode_text.size();
         if (buffered_bytes >= kOutputFlushBytes) {
             outputs.append(buffer);
             for (auto& artifact : buffer.text) {
                 artifact.clear();
             }
+            buffer.recode_text.clear();
         }
     }
     if (!saw_header) {
@@ -977,13 +1229,17 @@ FastSiteStatsSummary run_compressed_site_stats(
     outputs.validate();
     return FastSiteStatsSummary{
         .total = records,
-        .kept = records,
+        .kept = kept,
         .samples = samples,
         .input_threads = 1,
         .hts_io_threads = io_threads,
         .planned_shards = 1,
         .backend =
-            plan.counts_only()
+            plan.recode
+                ? (bgzf
+                       ? "fast-filter-recode-bgzf"
+                       : "fast-filter-recode-gzip")
+                : plan.counts_only()
                 ? (bgzf
                        ? "fast-counts-bgzf"
                        : "fast-counts-gzip")
@@ -991,7 +1247,11 @@ FastSiteStatsSummary run_compressed_site_stats(
                        ? "fast-site-stats-bgzf"
                        : "fast-site-stats-gzip"),
         .description =
-            bgzf
+            plan.recode
+                ? (bgzf
+                       ? "direct filtering/recode with BGZF decompression overlap"
+                       : "direct filtering/recode from compressed VCF")
+                : bgzf
                 ? "direct site statistics with BGZF decompression overlap"
                 : "direct site statistics from compressed VCF",
     };
@@ -1216,7 +1476,7 @@ FastSiteStatsSummary run_indexed_site_stats(
                              position >= shard.end)) {
                             continue;
                         }
-                        append_site_stat_record(
+                        result.kept += append_site_stat_record(
                             text, samples, plan, result);
                         ++result.records;
                     }
@@ -1251,6 +1511,7 @@ FastSiteStatsSummary run_indexed_site_stats(
     }
 
     std::uint64_t records = 0;
+    std::uint64_t kept = 0;
     try {
         for (std::size_t ordinal = 0;
              ordinal < shards.size(); ++ordinal) {
@@ -1271,6 +1532,7 @@ FastSiteStatsSummary run_indexed_site_stats(
             capacity_available.notify_all();
             outputs.append(*result);
             records += result->records;
+            kept += result->kept;
         }
     } catch (...) {
         std::lock_guard lock(mutex);
@@ -1290,17 +1552,21 @@ FastSiteStatsSummary run_indexed_site_stats(
     outputs.validate();
     return FastSiteStatsSummary{
         .total = records,
-        .kept = records,
+        .kept = kept,
         .samples = samples,
         .input_threads = worker_count,
         .hts_io_threads = 0,
         .planned_shards = shards.size(),
         .backend =
-            plan.counts_only()
+            plan.recode
+                ? "fast-filter-recode-indexed-bgzf"
+                : plan.counts_only()
                 ? "fast-counts-indexed-bgzf"
                 : "fast-site-stats-indexed-bgzf",
         .description =
-            "ordered tabix regions with direct site statistics via " +
+            (plan.recode
+                 ? "ordered tabix regions with direct filtering/recode via "
+                 : "ordered tabix regions with direct site statistics via ") +
             index_path,
     };
 }
@@ -1323,12 +1589,18 @@ std::optional<FastSiteStatsSummary> run_fast_text_site_stats(
     if (format == nullptr || format->format != vcf) {
         return std::nullopt;
     }
-    if (format->compression == no_compression) {
+    const auto compression = format->compression;
+    if (plan.recode) {
+        const std::string header =
+            read_text_vcf_header(probe.get(), input_path);
+        plan.recode_sink(header);
+    }
+    if (compression == no_compression) {
         probe.reset();
         return run_plain_site_stats(
             input_path, output_prefix, threads, plan);
     }
-    const bool is_bgzf = format->compression == bgzf;
+    const bool is_bgzf = compression == bgzf;
     if (is_bgzf) {
         probe.reset();
         input::SourceOptions effective_options = options;
@@ -1340,6 +1612,12 @@ std::optional<FastSiteStatsSummary> run_fast_text_site_stats(
                 input_path, index_path, output_prefix,
                 threads, plan);
         }
+        probe.reset(hts_open(input_path.c_str(), "r"));
+        if (!probe) {
+            fail("Could not reopen compressed VCF: " + input_path);
+        }
+    }
+    if (!is_bgzf && plan.recode) {
         probe.reset(hts_open(input_path.c_str(), "r"));
         if (!probe) {
             fail("Could not reopen compressed VCF: " + input_path);

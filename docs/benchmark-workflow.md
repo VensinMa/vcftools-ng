@@ -100,6 +100,15 @@ repeat byte for byte, and then performs the agreed repeats. It updates README,
 version history, environment report, portable Linux x86_64 archive, master,
 and GitHub Release together.
 
+The v0.13.0 storage matrix uses at most three candidate repeats. A row whose
+first application-wall time exceeds 1,800 seconds runs only once. Otherwise,
+every row runs twice after its first-repeat exactness gate. If either of those
+two runs exceeds 600 seconds and their application-wall times differ by less
+than 10% (symmetric percentage difference), repeat three is skipped and the
+decision is retained as a machine-readable gate record. All other rows run
+three times. Summary tables expose the actual repeat count; a one- or two-run
+row is never reported as a three-run mean.
+
 Automatic-index timing includes inspection, any CSI construction selected by
 the adaptive policy, filtering, and output. Existing valid or invalid user
 sidecars are never overwritten. The BCF row records the automatically selected

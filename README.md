@@ -4,8 +4,29 @@
 
 Experimental high-performance, output-compatible successor to VCFtools 0.1.17.
 
-**Latest release:** [v0.12.4 — Standard Reproducible Run
-Logging](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.12.4)
+**Latest release:** [v0.13.0 — Transactional BGZF Output and Hot-Path
+Acceleration](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.13.0)
+
+v0.13.0 adds transactional scientific
+outputs, hardened logging and resource limits, and disk-safe BGZF VCF output
+by default. The ordered pipeline now compiles immutable per-run execution
+decisions once, shares one DP/filter sample pass, commits VCF text in batch
+blobs, reuses per-worker BGZF compression state, and keeps Plain VCF worker
+descriptors open across aligned ranges. Text input receives an adaptive
+input-heavy share of the strict total thread budget. The portable build is
+locked to bcftools 1.24 and HTSlib 1.24. Its complete first-repeat full-data
+release gate passed 108/108 configurations; follow-up repeats remain in
+progress and are not represented as completed means.
+
+Scientific artifacts are now written beside their destination under private
+staging names, checked through flush and close, and published only after every
+requested output completes. A failed run removes staged files and preserves
+pre-existing destination files. Log-mirror failures disable only the file
+mirror, while stderr and scientific output continue. Floating-point options
+reject NaN and infinity. Automatic thread selection intersects scheduler,
+CPU-affinity, cgroup, and hardware limits and is capped at 128 unless
+`--threads` is supplied explicitly; stage planning additionally respects the
+file-descriptor ceiling.
 
 v0.12.4 generates `PREFIX.log` by default and records the complete command,
 inputs, outputs, filters, thread allocation, resources, CSI/TBI validation,
@@ -34,25 +55,29 @@ reuses or builds an index at 2+ threads. Full-file BCF recode streams even
 when CSI exists; selective BGZF/BCF queries still reuse or build an index.
 Persistent
 compute workers and the ordered committer overlap work on up to three batches.
-For eligible unfiltered site statistics, an adaptive fused path avoids
-`bcf1_t` construction. It currently covers `--freq`, `--freq2`, `--counts`,
-`--missing-site`, `--site-depth`, `--site-mean-depth`, and `--site-quality`.
-Plain VCF workers parse aligned byte ranges directly, while indexed BGZF
-workers query ordered tabix regions. Worker output is bounded and committed
-in exact input order.
+For eligible site-local work, an adaptive fused path avoids `bcf1_t`
+construction. It covers `--freq`, `--freq2`, `--counts`, `--missing-site`,
+`--site-depth`, `--site-mean-depth`, and `--site-quality`; v0.13.0 also
+applies the same direct kernel to Plain/BGZF VCF recode with
+the common seven-filter workload. Plain VCF workers parse aligned byte ranges
+directly, while indexed BGZF workers query ordered tabix regions. Recode and
+statistics can share one scan, and all worker output is bounded and committed
+in exact input order. Unsupported filters, selections, formats, and analyses
+automatically use the general compatibility pipeline.
 
 ## Install (recommended)
 
-The portable Linux x86_64 archive is ready to run after extraction. It
-includes vcftools-ng, bcftools for automatic CSI construction, HTSlib, and
-the required non-glibc runtime libraries.
+The portable Linux x86_64 archive is ready to run after extraction. `bin`
+contains only `vcftools-ng`; private bcftools support for automatic CSI
+construction is kept under `libexec`. The v0.13.0 archive bundles bcftools
+1.24, HTSlib 1.24, and the required non-glibc runtime libraries.
 
 ```bash
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.4/vcftools-ng-v0.12.4-linux-x86_64.tar.gz
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.12.4/vcftools-ng-v0.12.4-linux-x86_64.tar.gz.sha256
-sha256sum -c vcftools-ng-v0.12.4-linux-x86_64.tar.gz.sha256
-tar -xzf vcftools-ng-v0.12.4-linux-x86_64.tar.gz
-./vcftools-ng-v0.12.4-linux-x86_64/bin/vcftools-ng --version
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.13.0/vcftools-ng-v0.13.0-linux-x86_64.tar.gz
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.13.0/vcftools-ng-v0.13.0-linux-x86_64.tar.gz.sha256
+sha256sum -c vcftools-ng-v0.13.0-linux-x86_64.tar.gz.sha256
+tar -xzf vcftools-ng-v0.13.0-linux-x86_64.tar.gz
+./vcftools-ng-v0.13.0-linux-x86_64/bin/vcftools-ng --version
 ```
 
 The archive requires Linux x86_64 with glibc 2.17 or newer. It is built on a
@@ -112,6 +137,8 @@ parameters and are included in the compatibility surface.
 
 `--log-file` and `--no-log-file` are also vcftools-ng extensions. Original
 generates `PREFIX.log` by default but does not provide these two controls.
+v0.13.0 also adds `--recode-vcf` for explicitly writing
+an uncompressed VCF after file-based `--recode` changed to BGZF by default.
 
 The complete parameter-by-parameter matrix, performance evidence, input
 coverage, compatibility boundaries, and intentionally inherited Original bugs
@@ -137,6 +164,10 @@ partially missing diff quirks are detailed in the parameter matrix. A future
 standards-correct mode must be explicit and must not silently alter
 `--compat exact`.
 
+The separate [Original VCFtools 0.1.17 known-issues ledger](docs/original-vcftools-0.1.17-known-issues.md)
+keeps the trigger, observed output, policy, and regression evidence for every
+confirmed defect or surprising legacy behavior.
+
 ## Build from source
 
 Source builds are intended for developers or platforms not covered by the
@@ -148,6 +179,7 @@ cmake -S . -B build \
   -DCMAKE_BUILD_TYPE=Release \
   -DHTSLIB_ROOT=/path/to/htslib
 cmake --build build -j
+cmake --install build --prefix /path/to/install-prefix
 ```
 
 ## Command-line help
@@ -195,7 +227,7 @@ unused; it is never removed or overwritten.
 ```bash
 vcftools-ng --gzvcf input.vcf.gz --threads 24 \
   --recode --out subset
-# Data: subset.recode.vcf
+# Data: subset.recode.vcf.gz
 # Log:  subset.log
 
 vcftools-ng --gzvcf input.vcf.gz --counts \
@@ -215,20 +247,22 @@ vcftools-ng --gzvcf input.vcf.gz --counts \
   --out results/subset
 ```
 
-### Direct BGZF VCF output
+### VCF recode output
 
-`--recode-vcf-gz` is a vcftools-ng-only output option that writes filtered
-records directly as BGZF VCF. It does not create an uncompressed intermediate
-and does not require `--recode`.
+Starting with v0.13.0, `--recode` writes filtered records
+directly as BGZF VCF. `--recode-vcf-gz` is an explicit alias for the same
+output. Neither mode creates an uncompressed intermediate. Use the new
+`--recode-vcf` extension only when a plain VCF file is required.
 
 | Item | Behavior |
 |---|---|
 | Accepted input | `--vcf`, `--gzvcf`, `--bcf`, or auto-detected `--input` |
-| Compressed output only | Use `--recode-vcf-gz` without `--recode` |
+| Default compressed output | `--recode` or `--recode-vcf-gz` |
+| Explicit plain output | `--recode-vcf` |
 | Output name | `PREFIX.recode.vcf.gz`, where `PREFIX` comes from `--out` |
 | INFO fields | Add `--recode-INFO-all` to retain all input INFO fields |
 | Compression | Deterministic BGZF using the effective `--threads` budget |
-| Output index | Not created automatically in v0.12.4 |
+| Output index | Not created automatically |
 | Compatibility | Decompressed bytes are compared with Original `--recode` |
 
 ```bash
@@ -248,14 +282,14 @@ This command writes:
 subset.recode.vcf.gz
 ```
 
-`--recode` and `--recode-vcf-gz` are not mutually exclusive. Request both
-when an uncompressed and a BGZF copy are genuinely needed:
+Request `--recode-vcf` together with `--recode-vcf-gz` only when both an
+uncompressed and a BGZF copy are genuinely needed:
 
 ```bash
 vcftools-ng \
   --gzvcf input.vcf.gz \
   --threads 24 \
-  --recode --recode-vcf-gz --recode-INFO-all \
+  --recode-vcf --recode-vcf-gz --recode-INFO-all \
   --out subset
 ```
 
@@ -266,9 +300,9 @@ subset.recode.vcf
 subset.recode.vcf.gz
 ```
 
-Writing both formats adds output I/O and compression work. `--stdout` is
-supported only with plain `--recode`; it cannot be combined with
-`--recode-vcf-gz`.
+Writing both formats adds output I/O and compression work. For compatibility,
+`--recode --stdout` remains plain VCF stdout; it cannot be combined with a
+file-based BGZF output.
 
 Compression produces deterministic BGZF bytes across the tested thread
 counts. The decompressed VCF has passed complete-file comparison with Original
@@ -345,6 +379,7 @@ development gate are documented here:
 - [v0.12.3 technical record](docs/versions/v0.12.3.md)
 - [v0.12.4 technical record](docs/versions/v0.12.4.md)
 - [v0.12.4 logging-enabled development gate](benchmarks/results/development-v0124-logging-final/README.md)
+- [v0.13.0 input/output/storage release gate](benchmarks/results/v0130-input-output-storage/README.md)
 
 ## Verify
 

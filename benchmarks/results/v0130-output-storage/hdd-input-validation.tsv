@@ -1,0 +1,13 @@
+key	value
+status	PASS
+validated	2026-08-05T21:41:29+08:00
+source	/home/vensin/workspace/Sweet_Osmanthus/05.variant_filter/02.vcftools_filter_snp_indel/412samples.SNP.biallelic.minGQ10.minQ30.meanDP6.maxmiss0.8.maf0.05.vcf.gz
+source_bytes	18940264903
+source_sha256	24d9dceeb6cf174c5112523cdc1488c55f92f8f5a484c89ac2f61807384313b4
+source_index	/home/vensin/workspace/Sweet_Osmanthus/05.variant_filter/02.vcftools_filter_snp_indel/412samples.SNP.biallelic.minGQ10.minQ30.meanDP6.maxmiss0.8.maf0.05.vcf.gz.tbi
+source_index_sha256	f2dd96154a2f75f1c8bd49acc005036785ea03d8ab1d373e2c0a655f89bff371
+retained_hdd_input	/home/data/vcftools-ng-benchmark-v0130/input/osmanthus412.snps.vcf.gz
+retained_hdd_input_sha256	24d9dceeb6cf174c5112523cdc1488c55f92f8f5a484c89ac2f61807384313b4
+retained_hdd_index	/home/data/vcftools-ng-benchmark-v0130/input/osmanthus412.snps.vcf.gz.tbi
+retained_hdd_index_sha256	f2dd96154a2f75f1c8bd49acc005036785ea03d8ab1d373e2c0a655f89bff371
+copy_policy	one-time; retained; never overwritten automatically

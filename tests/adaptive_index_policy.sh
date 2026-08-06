@@ -64,8 +64,10 @@ grep -q '^Input backend: indexed-regions ' "$work/bcf-region-auto.log"
 # for a full recode.
 run_recode gzvcf "$bgzf" 1 bgzf-tbi-t1
 run_recode gzvcf "$bgzf" 2 bgzf-tbi-t2
-grep -q '^Input backend: stream ' "$work/bgzf-tbi-t1.log"
-grep -q '^Input backend: indexed-regions ' "$work/bgzf-tbi-t2.log"
+grep -q '^Input backend: fast-filter-recode-bgzf ' \
+    "$work/bgzf-tbi-t1.log"
+grep -q '^Input backend: fast-filter-recode-indexed-bgzf ' \
+    "$work/bgzf-tbi-t2.log"
 cmp "$work/bgzf-tbi-t1.vcf" "$work/bgzf-tbi-t2.vcf"
 
 # Missing BGZF index is not built at one thread, but automatic CSI is
@@ -73,12 +75,14 @@ cmp "$work/bgzf-tbi-t1.vcf" "$work/bgzf-tbi-t2.vcf"
 cp "$bgzf" "$work/auto-t1.vcf.gz"
 run_recode gzvcf "$work/auto-t1.vcf.gz" 1 bgzf-auto-t1
 test ! -e "$work/auto-t1.vcf.gz.csi"
-grep -q '^Input backend: stream ' "$work/bgzf-auto-t1.log"
+grep -q '^Input backend: fast-filter-recode-bgzf ' \
+    "$work/bgzf-auto-t1.log"
 
 cp "$bgzf" "$work/auto-t2.vcf.gz"
 run_recode gzvcf "$work/auto-t2.vcf.gz" 2 bgzf-auto-t2
 test -s "$work/auto-t2.vcf.gz.csi"
-grep -q '^Input backend: indexed-regions ' "$work/bgzf-auto-t2.log"
+grep -q '^Input backend: fast-filter-recode-indexed-bgzf ' \
+    "$work/bgzf-auto-t2.log"
 cmp "$work/bgzf-auto-t1.vcf" "$work/bgzf-auto-t2.vcf"
 
 # Compact full-scan statistics reuse a valid index only at the measured

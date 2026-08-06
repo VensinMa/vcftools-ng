@@ -1,0 +1,3 @@
+#pragma once
+
+#define VCFTOOLS_NG_VERSION "@VCFTOOLS_NG_VERSION@"

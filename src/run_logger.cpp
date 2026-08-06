@@ -82,13 +82,12 @@ protected:
         const bool terminal_ok =
             !traits_type::eq_int_type(
                 terminal_->sputc(value), traits_type::eof());
-        const bool file_ok =
-            file_ == nullptr ||
-            !traits_type::eq_int_type(
-                file_->sputc(value), traits_type::eof());
-        return terminal_ok && file_ok
-                   ? character
-                   : traits_type::eof();
+        if (!file_failed_ && file_ != nullptr &&
+            traits_type::eq_int_type(
+                file_->sputc(value), traits_type::eof())) {
+            disable_file();
+        }
+        return terminal_ok ? character : traits_type::eof();
     }
 
     std::streamsize xsputn(
@@ -96,23 +95,46 @@ protected:
         std::lock_guard lock(mutex_);
         const std::streamsize terminal_written =
             terminal_->sputn(data, size);
-        const std::streamsize file_written =
-            file_ == nullptr ? size : file_->sputn(data, size);
-        return std::min(terminal_written, file_written);
+        if (!file_failed_ && file_ != nullptr &&
+            file_->sputn(data, size) != size) {
+            disable_file();
+        }
+        return terminal_written;
     }
 
     int sync() override {
         std::lock_guard lock(mutex_);
         const int terminal_status = terminal_->pubsync();
-        const int file_status =
-            file_ == nullptr ? 0 : file_->pubsync();
-        return terminal_status == 0 && file_status == 0 ? 0 : -1;
+        if (!file_failed_ && file_ != nullptr &&
+            file_->pubsync() != 0) {
+            disable_file();
+        }
+        return terminal_status;
+    }
+
+public:
+    [[nodiscard]] bool file_complete() const noexcept {
+        return !file_failed_;
     }
 
 private:
+    void disable_file() noexcept {
+        if (file_failed_) {
+            return;
+        }
+        file_failed_ = true;
+        static constexpr char warning[] =
+            "\nWarning: log file write failed; continuing with stderr "
+            "only. The log file is incomplete.\n";
+        (void)terminal_->sputn(
+            warning, static_cast<std::streamsize>(sizeof(warning) - 1));
+        (void)terminal_->pubsync();
+    }
+
     std::streambuf* terminal_;
     std::streambuf* file_;
     std::mutex mutex_;
+    bool file_failed_ = false;
 };
 
 std::string format_timestamp(
@@ -141,6 +163,7 @@ RunLogger::RunLogger(
     std::chrono::system_clock::time_point wall_start)
     : steady_start_(steady_start) {
     (void)getrusage(RUSAGE_SELF, &usage_start_);
+    (void)getrusage(RUSAGE_CHILDREN, &child_usage_start_);
     original_stderr_ = std::cerr.rdbuf();
     if (file_path.has_value()) {
         file_path_ = *file_path;
@@ -203,17 +226,25 @@ void RunLogger::finish(const std::string& status) {
         return;
     }
     struct rusage usage_end {};
+    struct rusage child_usage_end {};
     (void)getrusage(RUSAGE_SELF, &usage_end);
+    (void)getrusage(RUSAGE_CHILDREN, &child_usage_end);
     const double wall_seconds =
         std::chrono::duration<double>(
             std::chrono::steady_clock::now() - steady_start_)
             .count();
     const double user_seconds =
         timeval_seconds(usage_end.ru_utime) -
-        timeval_seconds(usage_start_.ru_utime);
+            timeval_seconds(usage_start_.ru_utime) +
+        timeval_seconds(child_usage_end.ru_utime) -
+            timeval_seconds(child_usage_start_.ru_utime);
     const double system_seconds =
         timeval_seconds(usage_end.ru_stime) -
-        timeval_seconds(usage_start_.ru_stime);
+            timeval_seconds(usage_start_.ru_stime) +
+        timeval_seconds(child_usage_end.ru_stime) -
+            timeval_seconds(child_usage_start_.ru_stime);
+    const long peak_rss =
+        std::max(usage_end.ru_maxrss, child_usage_end.ru_maxrss);
     const double cpu_percent =
         wall_seconds > 0.0
             ? (user_seconds + system_seconds) /
@@ -226,12 +257,16 @@ void RunLogger::finish(const std::string& status) {
         << "User CPU time: " << user_seconds << " seconds\n"
         << "System CPU time: " << system_seconds << " seconds\n"
         << "Average CPU: " << cpu_percent << "%\n"
-        << "Peak RSS: " << usage_end.ru_maxrss << " KiB\n"
+        << "Peak RSS: " << peak_rss << " KiB\n"
         << "Exit status: " << status << "\n"
         << "End time: "
         << format_timestamp(std::chrono::system_clock::now())
         << "\n";
     std::cerr.flush();
+    if (tee_ != nullptr && !tee_->file_complete()) {
+        std::cerr << "Log status: incomplete (file write failed)\n";
+        std::cerr.flush();
+    }
     finished_ = true;
 }
 

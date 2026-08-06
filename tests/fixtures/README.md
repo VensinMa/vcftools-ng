@@ -39,3 +39,25 @@ variant allele was synthesized. Rebuild it with:
 
 VCFtools 0.1.17 reads the BGZF VCF encoding to create the flag goldens;
 `vcftools-ng` reads the byte-equivalent BCF encoding.
+
+`osmanthus205.gatk.23chr_1k` is the independent GATK-origin compatibility
+fixture. It preserves the original header and the first 1,000 records from
+each of `Chr01` through `Chr23`, all 205 samples, and 23,000 records total.
+Unlike the DeepVariant-origin fixture, it carries 11 FORMAT tags, 17 INFO
+tags, nine declared FILTER tags, and 5,308 multiallelic records. It is stored
+locally as BGZF VCF plus TBI and BCF plus CSI. Source identity, per-contig
+counts, artifact hashes, and tool versions are in
+`osmanthus205.gatk.23chr_1k.provenance.txt`.
+
+Rebuild it without modifying or indexing the 121-GB source file:
+
+```bash
+./tests/create-gatk-fixture.sh \
+  /media/vensin/其它/DATA/snpcalling_wild/13.genetic_load/ancestral_allele/205_samples_snp_filtered.vcf.gz
+```
+
+Original VCFtools 0.1.17 goldens for the seven-filter `--counts` and
+`--recode --recode-INFO-all` workloads are retained locally under
+`tests/golden/gatk205-seven-filter.*`; their hashes are tracked in
+`tests/golden/SHA256SUMS`. Run `tests/gatk_fixture_compatibility.sh` to compare
+Plain/BGZF direct recode and BCF statistics against those oracles.

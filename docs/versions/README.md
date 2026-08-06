@@ -12,6 +12,10 @@ development version.
 - Flag fixture: `tests/fixtures/osmanthus412.flags.23chr_1k`, containing
   23,000 records derived from the same real data and deterministic
   FILTER/INFO/FT annotations.
+- GATK fixture: `tests/fixtures/osmanthus205.gatk.23chr_1k`, containing 23,000
+  records and all 205 samples from an independent GATK callset. Its source,
+  artifact, and Original-oracle hashes are locked in the fixture provenance
+  and `tests/golden/SHA256SUMS`.
 - Exactness: complete output files are compared with `cmp`; golden hashes are
   stored in `tests/golden/SHA256SUMS`.
 - v0.11.2 completed a five-repeat, seven-scenario benchmark on all
@@ -34,6 +38,10 @@ development version.
   its portable package passed CentOS 7 and Ubuntu 20.04 verification. With
   release-owner approval, the full-data performance matrix is inherited from
   v0.12.2 rather than rerun.
+- v0.13.0 completed a 108/108 first-repeat full-data release gate across four
+  input scenarios, three same-device output/storage scenarios, and
+  1/2/4/8/12/16/24/28/32 threads. Follow-up adaptive repeats remain explicitly
+  pending; the first-repeat values are never labeled as means.
 
 ## Required record for every future version
 

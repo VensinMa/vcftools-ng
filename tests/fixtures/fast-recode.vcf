@@ -1,0 +1,14 @@
+##fileformat=VCFv4.2
+##FILTER=<ID=PASS,Description="All filters passed">
+##FILTER=<ID=q10,Description="Quality below 10">
+##FILTER=<ID=Cluster,Description="Clustered calls">
+##contig=<ID=chr1,length=1000>
+##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Depth">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype quality">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	S1	S2	S3
+chr1	1	.	A	C	40	q10;Cluster	AC=2	GT:GQ:DP	1|1:5:8	1:5:8	.:.:.
+chr1	2	.	G	T	40	PASS	AC=1	DP	3	4	.
+chr1	3	.	C	G	40	PASS	AC=2	GQ:GT	5:0|1	20:1|1	.:.
+chr1	4	.	T	A	40	PASS	AC=3	GT:GQ	0/1:20	1/1:30	./.:.

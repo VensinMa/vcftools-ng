@@ -1,7 +1,8 @@
 # Parameter compatibility and optimization status
 
-This document describes the v0.12.4 command-line
-surface. VCFtools 0.1.17 source and output files are the compatibility oracle.
+This document describes the v0.13.0 source-candidate command-line surface.
+VCFtools 0.1.17 source and output files are the compatibility oracle. Release
+qualification for the candidate-only behavior is still pending.
 
 The terms below are deliberately separate:
 
@@ -28,7 +29,7 @@ independent speedup for every possible combination.
 | Individual and HWE statistics | `--depth`, `--missing-indv`, `--het`, `--hardy` | Real 2.3-million-record exact gates and individual/combined benchmarks in v0.10.0. |
 | Diversity and population statistics | `--site-pi`, `--window-pi`, `--window-pi-step`, `--TajimaD`, `--weir-fst-pop`, `--fst-window-size`, `--fst-window-step` | Real-data exact gates and π, Tajima's D, site/window FST benchmarks in v0.10.0. |
 | LD and PCA | `--geno-r2`, `--ld-window`, `--ld-window-min`, `--ld-window-bp`, `--ld-window-bp-min`, `--min-r2`, `--pca`, `--pca-no-norm` | Real-data exact gates and LD/PCA benchmarks in v0.10.0. |
-| VCF/BCF recode | `--recode`, `--recode-bcf`, `--recode-INFO-all`, `--stdout` | Complete VCF/BCF byte gates and conversion benchmarks. The v0.11.4 real seven-filter recode gate passed all three development scenarios at 1/2/4/8/16/32 threads. `--stdout` is currently supported only with plain `--recode`. |
+| VCF/BCF recode | `--recode`, `--recode-bcf`, `--recode-INFO-all`, `--stdout` | Complete VCF/BCF byte gates and conversion benchmarks. The v0.11.4 real seven-filter recode gate passed all three development scenarios at 1/2/4/8/16/32 threads. In the v0.13.0 candidate, file-based `--recode` changes only the container to BGZF; decompressed VCF bytes retain the Original-compatible path, while `--recode-vcf` selects a directly comparable plain file. Candidate release qualification is pending. `--recode --stdout` remains plain VCF. |
 | Common numeric/site filters | `--min-alleles`, `--max-alleles`, `--remove-indels`, `--keep-only-indels`, `--minQ`, `--min-meanDP`, `--max-meanDP`, `--max-missing`, `--max-missing-count`, `--maf`, `--max-maf`, `--mac`, `--max-mac`, `--hwe` | Exact filtered statistics/recode gates and v0.2/v0.5/v0.11.4 real-data benchmarks. |
 | Chromosome, position, and interval filters | `--chr`, `--not-chr`, `--from-bp`, `--to-bp`, `--positions`, `--exclude-positions`, `--bed`, `--exclude-bed`, `--thin` | Complete-file exact gates and v0.3/v0.6/v0.7 benchmarks. |
 | Non-reference filters | `--non-ref-af`, `--max-non-ref-af`, `--non-ref-af-any`, `--max-non-ref-af-any`, `--non-ref-ac`, `--max-non-ref-ac`, `--non-ref-ac-any`, `--max-non-ref-ac-any` | Complete-file exact gates and v0.8 benchmark. |
@@ -64,13 +65,14 @@ These options are additions, not Original-compatible parameter names:
 
 | Extension | Purpose and validation |
 |---|---|
-| `--threads N`, `-t N` | Sets the total CPU budget. When omitted, vcftools-ng detects the scheduler/affinity CPU count. |
+| `--threads N`, `-t N` | Sets the shared input/compute/I/O CPU budget. When omitted, vcftools-ng intersects scheduler, affinity, cgroup, and hardware limits and caps automatic selection at 128. |
 | `--batch-size N` | Tunes the bounded generic pipeline batch size. |
 | `--input FILE` | Auto-detected input alias for `--vcf`/`--gzvcf`/`--bcf`. |
 | `--compat exact` | Explicitly selects the only currently implemented compatibility mode. |
 | `--input-backend auto\|stream\|plain\|indexed` | Selects or forces an input adapter. `auto` is the default adaptive speed policy. |
 | `--bcftools FILE` | Selects the bcftools executable used when the adaptive policy decides CSI construction is profitable. |
 | `--recode-vcf-gz` | Writes deterministic, parallel BGZF-compressed VCF. Original 0.1.17 has no compressed-VCF recode option. Validation compares the decompressed bytes with Original `--recode`; compressed bytes are deterministic across tested thread counts, but cannot be compared with a nonexistent Original artifact. |
+| `--recode-vcf` | Writes an uncompressed VCF file after v0.13.0 changed the default `--recode` file output to BGZF. `--recode --stdout` remains plain VCF for compatibility. |
 | `--log-file FILE` | Overrides the default `PREFIX.log` run-log path. The log is overwritten and receives the same diagnostics as stderr. |
 | `--no-log-file` | Disables the run-log file without disabling stderr diagnostics. |
 
@@ -91,6 +93,11 @@ extension. Original normally requires separate invocations.
 output is naturally program-specific.
 
 ## Deliberate boundaries and Original defects
+
+The maintained issue ledger is
+[`original-vcftools-0.1.17-known-issues.md`](original-vcftools-0.1.17-known-issues.md).
+It records minimal triggers, observed Original behavior, and whether
+vcftools-ng retains or rejects each case.
 
 Exact mode reproduces observable Original output, including some Original
 quirks. Where Original produces corrupt or undefined output, vcftools-ng

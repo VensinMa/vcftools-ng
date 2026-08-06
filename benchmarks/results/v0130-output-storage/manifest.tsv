@@ -1,0 +1,40 @@
+key	value
+started	2026-08-05T21:41:32+08:00
+candidate	v0.13.0
+title	Output format and same-device storage matrix
+git_commit	cf9a6cdb12ad9d257f54752f0eeac6165670a306
+working_tree_sha256	f4b51473f5cee8e7c97ed2ac363013120213ff63c729109ef1b63ea0d314d464
+ng	/home/vensin/workspace/vcftools-ng/build-v0130/vcftools-ng
+ng_version	vcftools-ng 0.13.0
+ng_sha256	3fd8f4b75335cdd7b75ffb9d64da93e7801e104994d188e5d154657590f25327
+threads	1 2 4 8 12 16 24 28 32
+repeats	5
+execution	strictly serial
+cache_policy	OS cache not dropped; first repeat retained separately
+durability	application wall plus targeted sync of final output
+output_index	not built
+filters	--min-alleles 2 --max-alleles 2 --minGQ 10 --minQ 30 --min-meanDP 7 --max-missing 0.9 --maf 0.1 --recode-INFO-all
+expected_sites	11230392
+expected_kept_sites	5425725
+ssd_input	/home/vensin/workspace/Sweet_Osmanthus/05.variant_filter/02.vcftools_filter_snp_indel/412samples.SNP.biallelic.minGQ10.minQ30.meanDP6.maxmiss0.8.maf0.05.vcf.gz
+ssd_input_sha256	24d9dceeb6cf174c5112523cdc1488c55f92f8f5a484c89ac2f61807384313b4
+ssd_index	/home/vensin/workspace/Sweet_Osmanthus/05.variant_filter/02.vcftools_filter_snp_indel/412samples.SNP.biallelic.minGQ10.minQ30.meanDP6.maxmiss0.8.maf0.05.vcf.gz.tbi
+ssd_index_sha256	f2dd96154a2f75f1c8bd49acc005036785ea03d8ab1d373e2c0a655f89bff371
+hdd_input	/home/data/vcftools-ng-benchmark-v0130/input/osmanthus412.snps.vcf.gz
+hdd_input_policy	one-time copied, hash-validated, retained
+oracle	/home/vensin/workspace/vcftools-ng/benchmarks/results/final-full-v0121/golden/gzvcf.vcf
+oracle_sha256	7548416e01d4a318b81c5d1feb9429f60c7995205d66169242c3792af4c4fc14
+oracle_bytes	59434159204
+original_wall_s_context_only	2267.88
+original_rerun	no
+ssd_mount	/dev/nvme3n1p2 ext4 /
+ssd_rotational	0
+hdd_mount	/dev/sda1 ext4 /home/data
+hdd_rotational	1
+ssd_same_device	yes
+hdd_same_device	yes
+host	Ubuntu24
+kernel	Linux 6.14.0-37-generic x86_64 GNU/Linux
+cpu_model	Intel(R) Core(TM) i9-14900KF
+logical_cpus	32
+memory	125Gi

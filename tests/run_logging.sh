@@ -11,11 +11,12 @@ repository=$2
 fixture="$repository/tests/fixtures/fast-site-stats.vcf"
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
+bcftools_bin=${BCFTOOLS:-bcftools}
 
-bcftools view -Oz -o "$work/indexed.vcf.gz" "$fixture"
-bcftools index --tbi "$work/indexed.vcf.gz"
-bcftools view -Ob -o "$work/indexed.bcf" "$fixture"
-bcftools index --csi "$work/indexed.bcf"
+"$bcftools_bin" view -Oz -o "$work/indexed.vcf.gz" "$fixture"
+"$bcftools_bin" index --tbi "$work/indexed.vcf.gz"
+"$bcftools_bin" view -Ob -o "$work/indexed.bcf" "$fixture"
+"$bcftools_bin" index --csi "$work/indexed.bcf"
 
 assert_standard_log() {
     local log=$1
@@ -29,7 +30,7 @@ assert_standard_log() {
     grep -Fqx 'Index policy: automatic' "$log"
     grep -Fqx 'Existing sidecar: none' "$log"
     grep -Fqx 'Index validation: not applicable' "$log"
-    grep -Fqx 'Selected backend: stream' "$log"
+    grep -Fqx 'Selected backend: fast-filter-recode-plain' "$log"
     grep -Fqx 'Index used: no' "$log"
     grep -Fqx 'Requested threads: 1' "$log"
     grep -Fqx 'Effective threads: 1' "$log"
@@ -49,9 +50,11 @@ assert_standard_log() {
     --out "$work/default" \
     >"$work/default.stdout" 2>"$work/default.stderr"
 test -s "$work/default.log"
+test -s "$work/default.recode.vcf.gz"
+test ! -e "$work/default.recode.vcf"
 assert_standard_log "$work/default.log"
 cmp "$work/default.stderr" "$work/default.log"
-grep -Fqx "  Recode VCF: $work/default.recode.vcf" \
+grep -Fqx "  Recode BGZF VCF: $work/default.recode.vcf.gz" \
     "$work/default.log"
 grep -Eq '^  Output bytes: [0-9]+$' "$work/default.log"
 
@@ -63,7 +66,10 @@ printf 'stale log contents\n' >"$work/custom.log"
     >"$work/custom.stdout" 2>"$work/custom.stderr"
 test -s "$work/custom.log"
 test ! -e "$work/custom-prefix.log"
-! grep -Fq 'stale log contents' "$work/custom.log"
+if grep -Fq 'stale log contents' "$work/custom.log"; then
+    echo "Custom log was not overwritten" >&2
+    exit 1
+fi
 cmp "$work/custom.stderr" "$work/custom.log"
 grep -Fqx "Log file: $work/custom.log" "$work/custom.log"
 grep -Fqx 'Decision: CSI/TBI is not applicable to Plain VCF' \
@@ -78,7 +84,7 @@ grep -Fqx "Existing sidecar: $work/indexed.vcf.gz.tbi" \
     "$work/existing-tbi.log"
 grep -Fqx 'Index type: TBI' "$work/existing-tbi.log"
 grep -Fqx 'Decision: use existing index' "$work/existing-tbi.log"
-grep -Fqx 'Selected backend: indexed-regions' \
+grep -Fqx 'Selected backend: fast-filter-recode-indexed-bgzf' \
     "$work/existing-tbi.log"
 grep -Fqx 'Index used: yes' "$work/existing-tbi.log"
 
@@ -109,7 +115,8 @@ grep -Eq '^Index build time: [0-9.]+ seconds$' \
     "$work/auto-csi.log"
 grep -Fqx 'Index build result: PASS' "$work/auto-csi.log"
 grep -Fqx 'Index type: CSI' "$work/auto-csi.log"
-grep -Fqx 'Selected backend: indexed-regions' "$work/auto-csi.log"
+grep -Fqx 'Selected backend: fast-filter-recode-indexed-bgzf' \
+    "$work/auto-csi.log"
 grep -Fqx 'Index used: yes' "$work/auto-csi.log"
 
 "$ng" \
@@ -139,7 +146,10 @@ test -s "$work/stdout.log"
 cmp "$work/stdout.stderr" "$work/stdout.log"
 grep -Fqx '  Recode VCF: stdout' "$work/stdout.log"
 grep -Fq $'#CHROM\tPOS\tID\tREF\tALT' "$work/stdout.vcf"
-! grep -Fq 'Log format:' "$work/stdout.vcf"
+if grep -Fq 'Log format:' "$work/stdout.vcf"; then
+    echo "Log text contaminated VCF stdout" >&2
+    exit 1
+fi
 
 if "$ng" \
     --vcf "$fixture" --threads 1 --recode \
@@ -200,10 +210,10 @@ test "$(sha256sum "$fixture" | cut -d' ' -f1)" = "$input_hash_before"
 grep -Fq 'Log file must not overwrite an input file' \
     "$work/input-conflict.stderr"
 
-printf 'protected output sentinel\n' >"$work/output-conflict.recode.vcf"
+printf 'protected output sentinel\n' >"$work/output-conflict.recode.vcf.gz"
 if "$ng" \
     --vcf "$fixture" --threads 1 --recode \
-    --log-file "$work/output-conflict.recode.vcf" \
+    --log-file "$work/output-conflict.recode.vcf.gz" \
     --out "$work/output-conflict" \
     >"$work/output-conflict.stdout" \
     2>"$work/output-conflict.stderr"; then
@@ -211,7 +221,7 @@ if "$ng" \
     exit 1
 fi
 grep -Fqx 'protected output sentinel' \
-    "$work/output-conflict.recode.vcf"
+    "$work/output-conflict.recode.vcf.gz"
 grep -Fq 'Log file conflicts with output file' \
     "$work/output-conflict.stderr"
 

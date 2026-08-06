@@ -3,8 +3,9 @@
 Status: Plain-range and indexed-region adapters implemented in v0.11.0;
 automatic CSI construction implemented in v0.11.1; protected explicit index
 validation implemented in v0.11.2; direct text-to-count fusion implemented
-in v0.11.3 for Plain VCF and indexed BGZF VCF. Ordered BGZF blocks remain the
-next input-engine milestone.
+in v0.11.3 for Plain VCF and indexed BGZF VCF; the same direct text kernel
+extended to the seven-filter VCF-recode workload in the v0.13.0 candidate.
+Ordered BGZF blocks remain the next input-engine milestone.
 
 Reference reviewed: `VensinMa/vcf2phylip` commit
 `3a1d3ab24af2334bfa6bb61d5c3faaf45d5c4625`.
@@ -23,9 +24,12 @@ backend that exposes the greatest safe parallelism:
 | Local BGZF VCF/BCF without index | build CSI, then indexed regions | index construction followed by ordered coordinate spans | first run includes indexing; subsequent runs use parallel regions |
 | Ordinary gzip VCF | streaming fallback | bounded record batch | decompressor limited |
 
-The backend is an input concern. Filtering, shared GT/DP decoding, analysis
-payloads, ordered thinning, statistics, and writers continue to consume one
-common ordered record stream.
+The backend is an input concern. General filtering, shared GT/DP decoding,
+analysis payloads, ordered thinning, statistics, and writers consume one
+common ordered record stream. Eligible site-local Plain/BGZF workloads may
+fuse text parsing, filtering, statistics, and VCF reconstruction inside the
+ordered shard worker; unsupported options fall back before any output is
+published.
 
 ## What the vcf2phylip implementation demonstrates
 
@@ -48,7 +52,8 @@ Other transferable details are:
 
 - detection from file bytes rather than filename suffix;
 - scheduler and CPU-affinity-aware default worker discovery;
-- a total CPU budget split between decompression and parsing;
+- a shared input/compute/I/O worker budget split between decompression and
+  parsing;
 - several tasks per worker for load balancing;
 - bounded in-flight work and ordered result publication;
 - an automatic fallback when an index is stale or a direct backend fails.
@@ -226,19 +231,27 @@ its independent two-stream implementation.
 
 ## Scaling to hundreds of CPUs
 
-`--threads` is a total CPU budget. Automatic selection checks, in order:
+`--threads` supplies the shared input/compute/I/O worker budget. Automatic
+selection intersects every applicable limit rather than trusting only the
+first one found:
 
-1. an explicit user value;
-2. scheduler allocation such as `SLURM_CPUS_PER_TASK`, `PBS_NP`, `NSLOTS`,
+1. scheduler allocation such as `SLURM_CPUS_PER_TASK`, `PBS_NP`, `NSLOTS`,
    or `LSB_DJOB_NUMPROC`;
-3. process CPU affinity;
+2. process CPU affinity;
+3. cgroup v1/v2 CPU quota;
 4. online logical CPUs.
 
-The planner assigns that budget to reader/decompress, parse/compute, and
-compression lanes. It must not hard-cap total useful CPUs at 16 or 32.
-Concurrency is nevertheless bounded by measured storage throughput, shard
-count, memory budget, file-descriptor limit, and output bandwidth. Reporting
-both requested and effective stage concurrency makes such limits visible.
+When `--threads` is omitted, the smallest applicable limit is capped at 128.
+An explicit value is not subject to that automatic 128 ceiling, but it is
+still reduced to the detected allocation limit.
+
+The planner shares that budget between input/decompression and parse/compute
+lanes, then applies file-descriptor and storage constraints. Deterministic
+output compression retains its existing effective-thread worker policy, so
+`--threads` is not a promise about the exact instantaneous count of every
+short-lived process thread. Concurrency is also bounded by measured storage
+throughput, shard count, memory budget, and output bandwidth. Reporting both
+requested and effective stage concurrency makes such limits visible.
 
 Guidelines:
 
@@ -247,6 +260,12 @@ Guidelines:
 - allow more than 4,096 shards for very large files, but derive the cap from
   file size and memory rather than worker count alone;
 - reuse persistent HTSlib reader contexts instead of opening a file per task;
+- keep one persistent read-only descriptor per Plain VCF range worker and use
+  `pread` for every assigned aligned range;
+- compile immutable FORMAT/output requirements once per run and keep them out
+  of the per-record hot path;
+- batch accepted VCF lines at the ordered-commit seam and reuse worker-local
+  BGZF compression contexts without changing compressed bytes;
 - use worker-local scratch and mostly lock-free or sharded queues;
 - keep completed payloads compact and spill large ordered text/BCF segments
   when the memory budget is reached;
@@ -272,11 +291,20 @@ throughput gain.
 6. **Complete in v0.11.3 for unfiltered `--counts`:** direct aligned-range
    VCF parsing and direct ordered-tabix GT counting without intermediate
    `bcf1_t` records; CPU-affinity and file-descriptor constrained workers.
-7. Implement ordered BGZF block decompression and VCF/BCF record framing for
+7. **Complete in the v0.13.0 candidate:** compiled execution plans, fused
+   DP/filter sample scans, batch VCF ordered commit, persistent Plain VCF
+   descriptors, reusable deterministic BGZF compression contexts, an
+   input-heavy text-parser allocation within the strict total CPU budget,
+   and the seven high-frequency filters in the direct Plain/BGZF
+   site-statistics and VCF-recode kernel.
+8. **Complete in the v0.13.0 candidate:** replace complete in-memory indexed
+   `RecordShard` payloads with bounded incremental
+   `(shard_ordinal, chunk_ordinal)` publication.
+9. Implement ordered BGZF block decompression and VCF/BCF record framing for
    no-index input.
-8. Add cross-shard protocols for thinning and window statistics.
-9. Add LD/PCA/diff shard consumers.
-10. Profile and replace the single ordered committer with ordered segment
+10. Add cross-shard protocols for thinning and window statistics.
+11. Add LD/PCA/diff shard consumers.
+12. Profile and replace the single ordered committer with ordered segment
    publication where exactness permits.
 
 For every step, VCFtools 0.1.17 remains the oracle. During development the

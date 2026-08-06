@@ -1,8 +1,9 @@
 # vcftools-ng @VERSION@ portable Linux x86_64
 
-This archive is ready to run after extraction. It includes vcftools-ng,
-bcftools 1.23 for automatic CSI construction, HTSlib 1.23, and the required
-non-glibc runtime libraries.
+This archive is ready to run after extraction. `bin` contains only the public
+`vcftools-ng` launcher. Private bcftools 1.24 support for automatic CSI
+construction is stored under `libexec`; HTSlib 1.24 and the required non-glibc
+runtime libraries are also bundled.
 
 Minimum platform:
 

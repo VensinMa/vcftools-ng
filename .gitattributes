@@ -1,0 +1,4 @@
+tests/golden/** linguist-generated=true
+benchmarks/results/** linguist-generated=true
+*.fst linguist-generated=true
+*.Tajima.D linguist-generated=true

@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+        compiler: [gcc, clang]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bcftools libhts-dev liblapack-dev zlib1g-dev
+      - name: Select compiler
+        run: |
+          if [[ "${{ matrix.compiler }}" == clang ]]; then
+            echo CC=clang >>"$GITHUB_ENV"
+            echo CXX=clang++ >>"$GITHUB_ENV"
+          else
+            echo CC=gcc >>"$GITHUB_ENV"
+            echo CXX=g++ >>"$GITHUB_ENV"
+          fi
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --parallel 2
+      - name: Test committed fixtures
+        run: ctest --test-dir build --output-on-failure
+      - name: Verify standard installation
+        run: |
+          cmake --install build --prefix "$RUNNER_TEMP/vcftools-ng"
+          "$RUNNER_TEMP/vcftools-ng/bin/vcftools-ng" --version |
+            grep -F "vcftools-ng $(tr -d '[:space:]' < VERSION)"
+
+  sanitizers:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bcftools clang libhts-dev liblapack-dev zlib1g-dev
+      - name: Configure ASan and UBSan
+        env:
+          CC: clang
+          CXX: clang++
+        run: >-
+          cmake -S . -B build-sanitize
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'
+          -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined'
+      - name: Build
+        run: cmake --build build-sanitize --parallel 2
+      - name: Test committed fixtures
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --test-dir build-sanitize --output-on-failure
+
+  shellcheck:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+      - name: Check shell scripts
+        run: shellcheck tests/*.sh packaging/linux-x86_64/*.sh

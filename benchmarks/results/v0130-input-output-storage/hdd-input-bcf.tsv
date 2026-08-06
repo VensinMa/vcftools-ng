@@ -1,0 +1,10 @@
+key	value
+status	PASS
+validated	2026-08-05T22:42:09+08:00
+label	bcf
+source	/home/vensin/workspace/vcftools-ng/data/osmanthus412.snps.bcf
+source_bytes	22074294040
+source_sha256	dfba81b4ed44985eae27eb883a0bcb1df51486ea323074d654e128221047324d
+retained_hdd_file	/home/data/vcftools-ng-benchmark-v0130/input/osmanthus412.snps.bcf
+retained_hdd_sha256	dfba81b4ed44985eae27eb883a0bcb1df51486ea323074d654e128221047324d
+copy_policy	one-time; retained; never overwritten automatically

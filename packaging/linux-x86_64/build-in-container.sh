@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly version=0.12.4
-readonly htslib_version=1.23
-readonly bcftools_version=1.23
-readonly htslib_sha256=63927199ef9cea03096345b95d96cb600ae10385248b2ef670b0496c2ab7e4cd
-readonly bcftools_sha256=5acde0ac38f7981da1b89d8851a1a425d1c275e1eb76581925c04ca4252c0778
+version=$(tr -d '[:space:]' </source/VERSION)
+readonly version
+readonly htslib_version=1.24
+readonly bcftools_version=1.24
+readonly htslib_sha256=28a8de191381c7a97a35675ceac76fa1ea95e7b678d6a2e9d600a7874e4077de
+readonly bcftools_sha256=8caddc22610ee2851666047c859bb91da0c1e32d0c2ec553db6f153ad130e46f
 readonly archive_name="vcftools-ng-v${version}-linux-x86_64"
 readonly work_directory=/tmp/vcftools-ng-portable
 readonly dependency_prefix="${work_directory}/prefix"
@@ -23,6 +24,7 @@ yum install -y \
     zlib-devel \
     >/dev/null
 
+# shellcheck source=/dev/null
 source /opt/rh/devtoolset-11/enable
 export CC=gcc
 export CXX=g++
@@ -53,7 +55,12 @@ make install >/dev/null
 popd >/dev/null
 
 pushd "${work_directory}/bcftools-${bcftools_version}" >/dev/null
-./configure \
+# Keep the private helper relocatable even when it is invoked directly by a
+# package diagnostic instead of through bin/vcftools-ng. The doubled dollar is
+# consumed by make and the backslash preserves the remaining dollar for the
+# linker, producing a literal $ORIGIN/../lib runtime search path.
+# shellcheck disable=SC2016
+LDFLAGS='-Wl,-rpath,\$$ORIGIN/../lib' ./configure \
     --prefix="${dependency_prefix}" \
     --with-htslib="${dependency_prefix}" \
     --disable-bcftools-plugins \
@@ -67,20 +74,23 @@ cmake \
     -B "${work_directory}/build" \
     -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_TESTING=OFF \
+    -DCMAKE_INSTALL_PREFIX="${package_root}" \
+    -DCMAKE_INSTALL_BINDIR=libexec \
+    "-DCMAKE_INSTALL_RPATH=\$ORIGIN/../lib" \
     -DHTSLIB_ROOT="${dependency_prefix}" \
     >/dev/null
 cmake --build "${work_directory}/build" --parallel "$(nproc)" >/dev/null
-
-cp "${work_directory}/build/vcftools-ng" \
-    "${package_root}/libexec/vcftools-ng.bin"
+cmake --install "${work_directory}/build" >/dev/null
+mv "${package_root}/libexec/vcftools-ng" \
+   "${package_root}/libexec/vcftools-ng.bin"
 cp "${dependency_prefix}/bin/bcftools" \
     "${package_root}/libexec/bcftools.bin"
 cp /source/packaging/linux-x86_64/launcher.sh \
     "${package_root}/bin/vcftools-ng"
-cp /source/packaging/linux-x86_64/bcftools-launcher.sh \
-    "${package_root}/bin/bcftools"
 cp /source/packaging/linux-x86_64/README.portable.md \
     "${package_root}/README.md"
+cp /source/LICENSE "${package_root}/LICENSES/vcftools-ng-LICENSE"
+cp /source/NOTICE "${package_root}/NOTICE"
 cp "${work_directory}/htslib-${htslib_version}/LICENSE" \
     "${package_root}/LICENSES/HTSlib-LICENSE"
 cp "${work_directory}/bcftools-${bcftools_version}/LICENSE" \
@@ -88,7 +98,6 @@ cp "${work_directory}/bcftools-${bcftools_version}/LICENSE" \
 
 sed -i "s/@VERSION@/${version}/g" "${package_root}/README.md"
 chmod 0755 "${package_root}/bin/vcftools-ng" \
-    "${package_root}/bin/bcftools" \
     "${package_root}/libexec/bcftools.bin" \
     "${package_root}/libexec/vcftools-ng.bin"
 
@@ -163,7 +172,7 @@ find "${package_root}/lib" -type f -exec strip --strip-unneeded {} + \
     2>/dev/null || true
 
 "${package_root}/bin/vcftools-ng" --version
-"${package_root}/bin/bcftools" --version | head -n 2
+"${package_root}/libexec/bcftools.bin" --version | head -n 2
 
 rm -f "/output/${archive_name}.tar.gz" \
     "/output/${archive_name}.tar.gz.sha256"

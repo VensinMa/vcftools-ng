@@ -70,7 +70,8 @@ options=(
     --weir-fst-pop --fst-window-size --fst-window-step
     --geno-r2 --ld-window --ld-window-min --ld-window-bp
     --ld-window-bp-min --min-r2 --pca --pca-no-norm
-    --recode --recode-bcf --recode-vcf-gz --recode-INFO-all --stdout
+    --recode --recode-vcf --recode-bcf --recode-vcf-gz
+    --recode-INFO-all --stdout
     --diff --gzdiff --diff-bcf --diff-site --diff-indv
     --diff-site-discordance --diff-indv-discordance
     --chr --not-chr --from-bp --to-bp --positions --exclude-positions

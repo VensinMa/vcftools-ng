@@ -46,7 +46,7 @@ for threads in 8 16; do
         --bcf "$fixture" \
         --threads "$threads" \
         "${filters[@]}" \
-        --recode \
+        --recode-vcf \
         --recode-INFO-all \
         --out "$prefix"
     cmp "$golden" "$prefix.recode.vcf"

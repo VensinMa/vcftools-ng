@@ -2,8 +2,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <limits>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include "input_source.h"
 
@@ -17,10 +20,21 @@ struct FastSiteStatPlan {
     bool site_depth = false;
     bool site_mean_depth = false;
     bool site_quality = false;
+    bool recode = false;
+    bool recode_info_all = false;
+    std::function<void(std::string_view)> recode_sink;
+    int min_alleles = -1;
+    int max_alleles = std::numeric_limits<int>::max();
+    double min_quality = -1.0;
+    double min_genotype_quality = -1.0;
+    double min_mean_depth = -1.0;
+    double min_call_rate = 0.0;
+    double min_maf = -1.0;
 
     [[nodiscard]] bool counts_only() const {
         return counts && !freq && !freq2 && !missing_site &&
-               !site_depth && !site_mean_depth && !site_quality;
+               !site_depth && !site_mean_depth && !site_quality &&
+               !recode;
     }
 };
 

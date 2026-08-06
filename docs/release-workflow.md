@@ -32,8 +32,8 @@ Run only after explicit release authorization:
 3. Plain VCF;
 4. BCF using the default adaptive policy.
 
-The standard host matrix uses 1/2/4/8/16/32 threads, strict serial execution,
-and five vcftools-ng repeats. A retained Original oracle and timing are reused
+The standard host matrix uses 1/2/4/8/12/16/24/28/32 threads, strict serial
+execution, and at most three vcftools-ng repeats. A retained Original oracle and timing are reused
 without rerunning Original when its version, input hashes, workload, and
 compatibility contract are unchanged. The driver must validate every locked
 artifact first and stop rather than regenerate or overwrite it. If any of
@@ -46,8 +46,13 @@ in its scenario name: the default policy chooses the fastest known backend
 for the workload and the log records that choice.
 
 The first candidate repeat for every scenario/thread must pass byte comparison
-before repeats 2–5 begin. The release driver may additionally compare every
-repeat. Inputs, original indexes, actual golden outputs, and output hashes must
+before later repeats begin. A row whose first application wall time exceeds
+1,800 seconds runs once. Otherwise every row runs twice; when either of the
+first two runs exceeds 600 seconds and their symmetric difference is below
+10%, repeat three is skipped. Faster or more variable rows run three times.
+Every skip is machine-readable and summaries expose the actual run count. The
+release driver compares every completed repeat. Inputs, original indexes,
+actual golden outputs, and output hashes must
 remain available after the run. Large artifacts stay local; compact TSV,
 manifest, environment, and reproduction scripts are committed.
 
@@ -61,12 +66,12 @@ the full-data values as inherited and must not present them as new
 measurements.
 
 When the release owner explicitly chooses staged qualification, run the driver
-with `GATE_ONLY=1`. Publication may proceed only after all 24 first-repeat
+with `GATE_ONLY=1`. Publication may proceed only after all 108 first-repeat
 candidate gates pass. Documentation and Release notes must then label every
-value as single-run, state that repeats 2–5 are pending, and avoid five-run
-mean or monotonic-scaling claims. Resume later with `GATE_ONLY=0`; completed
+value as single-run, state that follow-up repeats are pending, and avoid
+multi-run mean or monotonic-scaling claims. Resume later with `GATE_ONLY=0`; completed
 Original and first-repeat records are hash-validated and skipped. Commit the
-five-run summary to master when it completes.
+final adaptive-repeat summary to master when it completes.
 
 ## 4. User-facing records
 

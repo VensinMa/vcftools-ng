@@ -25,11 +25,13 @@ Validate the archive in clean CentOS 7 and Ubuntu 20.04 containers:
 Artifacts are written to `dist/`:
 
 ```text
-vcftools-ng-v0.12.4-linux-x86_64.tar.gz
-vcftools-ng-v0.12.4-linux-x86_64.tar.gz.sha256
+vcftools-ng-vX.Y.Z-linux-x86_64.tar.gz
+vcftools-ng-vX.Y.Z-linux-x86_64.tar.gz.sha256
 ```
 
 The build installs the CentOS SCL GCC 11 toolchain, pins and verifies the
-HTSlib 1.23 and bcftools 1.23 source archives, builds vcftools-ng in the same
+HTSlib 1.24 and bcftools 1.24 source archives, builds vcftools-ng in the same
 container, recursively bundles non-glibc shared-library dependencies, strips
 release binaries, and emits a stable archive file order and metadata.
+Only `bin/vcftools-ng` is exposed as a user command; the bundled bcftools
+binary remains private under `libexec`.

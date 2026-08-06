@@ -24,13 +24,14 @@ otherwise, validation uses the real 2,300,000-record, 23-chromosome,
 | [v0.12.2](versions/v0.12.2.md) | Workload-adaptive indexing and exact recode scaling | 2267.88 | 73.93 | 52.05 | PASS |
 | [v0.12.3](versions/v0.12.3.md) | Comprehensive colored terminal help | inherited | inherited | inherited | PASS |
 | [v0.12.4](versions/v0.12.4.md) | Standard reproducible run logging | 392.73 | 15.72 | 10.63 | PASS |
+| [v0.13.0](versions/v0.13.0.md) | Transactional BGZF output and hot-path acceleration | 2267.88 | 44.09 | 28.50 | PASS (first-repeat release gate) |
 
 The workload in each row is the version's representative compatibility
 benchmark; workloads differ between rows. Consult the per-version page before
 comparing versions directly. v0.9.0 also reran the six-output sample workload
 at 3.11/3.13 seconds for 8/16 threads.
 
-## Cumulative supported surface in v0.12.4
+## Cumulative supported surface in v0.13.0
 
 - Inputs: VCF, BGZF VCF, BCF.
 - Outputs: `--freq`, `--freq2`, `--counts`, `--missing-site`, `--site-depth`,

@@ -65,7 +65,7 @@ for threads in 8 16; do
         --missing-site \
         --site-depth \
         --site-mean-depth \
-        --recode \
+        --recode-vcf \
         --recode-INFO-all \
         --out "$prefix"
     compare_outputs "$prefix"

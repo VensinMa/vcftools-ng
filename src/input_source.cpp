@@ -42,7 +42,8 @@ namespace {
 
 constexpr std::uint64_t kMib = 1024ULL * 1024ULL;
 constexpr std::uint64_t kMinimumPlainShardBytes = 4ULL * kMib;
-constexpr std::uint64_t kTargetPlainShardBytes = 64ULL * kMib;
+constexpr std::uint64_t kMinimumPlainTargetBytes = 32ULL * kMib;
+constexpr std::uint64_t kTargetPlainShardBytes = 256ULL * kMib;
 constexpr std::size_t kMaximumShards = 65536;
 
 [[noreturn]] void fail(const std::string& message) {
@@ -697,6 +698,24 @@ IndexBuildResult build_csi_index(
 
 unsigned descriptor_limited_input_threads(unsigned requested);
 
+std::optional<unsigned> stage_thread_override(
+    const char* variable) {
+    const char* text = std::getenv(variable);
+    if (text == nullptr) {
+        return std::nullopt;
+    }
+    errno = 0;
+    char* end = nullptr;
+    const unsigned long parsed = std::strtoul(text, &end, 10);
+    if (errno != 0 || end == text || *end != '\0' || parsed == 0 ||
+        parsed > std::numeric_limits<unsigned>::max()) {
+        fail(
+            std::string("Invalid development stage-thread override: ") +
+            variable);
+    }
+    return static_cast<unsigned>(parsed);
+}
+
 ResourcePlan plan_resources(
     unsigned requested_threads, bool parallel_input,
     bool compressed_stream, bool text_parsing = false,
@@ -711,18 +730,27 @@ ResourcePlan plan_resources(
         if (plan.rotational_storage &&
             !plan.page_cache_prefetched) {
             plan.input_threads = 1;
-            plan.compute_threads = plan.total_threads;
+            plan.compute_threads =
+                plan.total_threads > 1
+                    ? plan.total_threads - 1
+                    : 1;
         } else {
-            plan.input_threads = std::min(
-                plan.total_threads,
-                descriptor_limited_input_threads(
-                    plan.total_threads));
+            // VCF range workers also decompress and parse text.  The
+            // cross-thread sweep follows an approximately 80:20
+            // input-to-compute curve; ceil(total/5) keeps compute growth
+            // monotonic when extrapolated beyond the local 32-CPU host.
             plan.compute_threads =
                 text_parsing
                     ? std::max(
-                          1u, (plan.total_threads + 1u) / 2u)
-                    : std::max(
-                          1u, (plan.total_threads + 2u) / 3u);
+                          1u, (plan.total_threads + 4u) / 5u)
+                    : std::max(1u, plan.total_threads / 3u);
+            const unsigned input_budget =
+                plan.total_threads > 1
+                    ? plan.total_threads - plan.compute_threads
+                    : 1;
+            plan.input_threads = std::min(
+                input_budget,
+                descriptor_limited_input_threads(input_budget));
         }
     } else {
         plan.compute_threads = plan.total_threads;
@@ -730,9 +758,48 @@ ResourcePlan plan_resources(
     if (!parallel_input && compressed_stream &&
         plan.total_threads > 2) {
         plan.hts_io_threads = std::min(
-            8u, std::max(1u, plan.total_threads / 4u));
+            12u, static_cast<unsigned>(
+                     (2ULL * plan.total_threads + 4ULL) / 5ULL));
         plan.compute_threads = std::max(
             1u, plan.total_threads - plan.hts_io_threads);
+    }
+    const auto input_override = stage_thread_override(
+        "VCFTOOLS_NG_TEST_INPUT_THREADS");
+    const auto compute_override = stage_thread_override(
+        "VCFTOOLS_NG_TEST_COMPUTE_THREADS");
+    const auto hts_io_override = stage_thread_override(
+        "VCFTOOLS_NG_TEST_HTS_IO_THREADS");
+    const bool any_override = input_override || compute_override ||
+                              hts_io_override;
+    if (any_override &&
+        (!compute_override ||
+         input_override.has_value() == hts_io_override.has_value())) {
+        fail(
+            "Development stage overrides require compute plus exactly one "
+            "of input or HTSlib I/O threads");
+    }
+    if (input_override) {
+        if (!parallel_input ||
+            *input_override > plan.total_threads ||
+            *compute_override >
+                plan.total_threads - *input_override) {
+            fail("Invalid development input/compute thread split");
+        }
+        plan.input_threads = std::min(
+            *input_override,
+            descriptor_limited_input_threads(*input_override));
+        plan.hts_io_threads = 0;
+        plan.compute_threads = *compute_override;
+    } else if (hts_io_override) {
+        if (parallel_input || !compressed_stream ||
+            *hts_io_override > plan.total_threads ||
+            *compute_override >
+                plan.total_threads - *hts_io_override) {
+            fail("Invalid development HTSlib-I/O/compute thread split");
+        }
+        plan.input_threads = 0;
+        plan.hts_io_threads = *hts_io_override;
+        plan.compute_threads = *compute_override;
     }
     return plan;
 }
@@ -820,6 +887,7 @@ void log_sidecar_inspection(
 }
 
 unsigned descriptor_limited_input_threads(unsigned requested) {
+    requested = std::max(1u, requested);
     struct rlimit descriptor_limit {};
     if (::getrlimit(RLIMIT_NOFILE, &descriptor_limit) != 0 ||
         descriptor_limit.rlim_cur == RLIM_INFINITY) {
@@ -833,11 +901,11 @@ unsigned descriptor_limited_input_threads(unsigned requested) {
     const rlim_t available_workers =
         (descriptor_limit.rlim_cur - reserved_descriptors) /
         descriptors_per_input_worker;
-    return std::max(
-        1u,
-        static_cast<unsigned>(std::min<rlim_t>(
+    const unsigned descriptor_cap = static_cast<unsigned>(
+        std::min<rlim_t>(
             available_workers,
-            std::numeric_limits<unsigned>::max())));
+            std::numeric_limits<unsigned>::max()));
+    return std::max(1u, std::min(requested, descriptor_cap));
 }
 
 class StreamSource final : public OrderedShardSource {
@@ -924,8 +992,10 @@ struct ShardSpec {
     hts_pos_t position_end = HTS_POS_MAX;
 };
 
-struct RecordShard {
-    std::size_t ordinal = 0;
+struct RecordChunk {
+    std::size_t shard_ordinal = 0;
+    std::size_t chunk_ordinal = 0;
+    bool final = false;
     std::vector<RecordPtr> records;
 };
 
@@ -941,7 +1011,11 @@ public:
           maximum_ahead_(
               std::max<std::size_t>(
                   2, static_cast<std::size_t>(
-                         std::max(1u, resources_.input_threads)))) {}
+                         std::max(1u, resources_.input_threads)))),
+          maximum_completed_chunks_(
+              std::max<std::size_t>(
+                  8, static_cast<std::size_t>(
+                         std::max(1u, resources_.input_threads)) * 4)) {}
 
     ~ParallelShardSource() override {
         stop_workers();
@@ -956,32 +1030,41 @@ public:
         std::vector<RecordPtr> batch;
         batch.reserve(maximum_records);
         while (batch.size() < maximum_records) {
-            if (current_record_ < current_shard_.records.size()) {
+            if (current_record_ < current_chunk_.records.size()) {
                 batch.push_back(std::move(
-                    current_shard_.records[current_record_++]));
+                    current_chunk_.records[current_record_++]));
                 continue;
             }
-            current_shard_.records.clear();
+            current_chunk_.records.clear();
             current_record_ = 0;
 
             std::unique_lock lock(mutex_);
+            const auto expected = std::pair{
+                next_shard_to_consume_, next_chunk_to_consume_};
             completed_available_.wait(lock, [&] {
                 return cancelled_ || failure_ ||
-                       completed_.contains(next_to_consume_) ||
-                       next_to_consume_ == shards_.size();
+                       completed_.contains(expected) ||
+                       next_shard_to_consume_ == shards_.size();
             });
             if (failure_) {
                 std::rethrow_exception(failure_);
             }
-            if (cancelled_ || next_to_consume_ == shards_.size()) {
+            if (cancelled_ ||
+                next_shard_to_consume_ == shards_.size()) {
                 break;
             }
-            auto found = completed_.find(next_to_consume_);
-            current_shard_ = std::move(found->second);
+            auto found = completed_.find(expected);
+            current_chunk_ = std::move(found->second);
             completed_.erase(found);
-            ++next_to_consume_;
+            if (current_chunk_.final) {
+                ++next_shard_to_consume_;
+                next_chunk_to_consume_ = 0;
+            } else {
+                ++next_chunk_to_consume_;
+            }
             lock.unlock();
             assignment_available_.notify_all();
+            chunk_slot_available_.notify_all();
         }
         return batch;
     }
@@ -997,6 +1080,38 @@ public:
 protected:
     const SourceOptions& options() const noexcept {
         return options_;
+    }
+
+    std::size_t chunk_record_target() const noexcept {
+        return std::clamp<std::size_t>(
+            options_.target_batch_records / 4, 256, 1024);
+    }
+
+    void publish_chunk(RecordChunk chunk) {
+        const auto key = std::pair{
+            chunk.shard_ordinal, chunk.chunk_ordinal};
+        std::unique_lock lock(mutex_);
+        chunk_slot_available_.wait(lock, [&] {
+            const auto expected = std::pair{
+                next_shard_to_consume_, next_chunk_to_consume_};
+            return cancelled_ || failure_ ||
+                   completed_.size() < maximum_completed_chunks_ ||
+                   (key == expected && !completed_.contains(key));
+        });
+        if (failure_) {
+            std::rethrow_exception(failure_);
+        }
+        if (cancelled_) {
+            return;
+        }
+        const auto [position, inserted] =
+            completed_.emplace(key, std::move(chunk));
+        (void)position;
+        if (!inserted) {
+            fail("Duplicate ordered input chunk");
+        }
+        lock.unlock();
+        completed_available_.notify_all();
     }
 
     void start_workers() {
@@ -1017,6 +1132,7 @@ protected:
                     }
                     completed_available_.notify_all();
                     assignment_available_.notify_all();
+                    chunk_slot_available_.notify_all();
                 }
             });
         }
@@ -1029,6 +1145,7 @@ protected:
         }
         completed_available_.notify_all();
         assignment_available_.notify_all();
+        chunk_slot_available_.notify_all();
         for (auto& worker : workers_) {
             if (worker.joinable()) {
                 worker.join();
@@ -1037,7 +1154,7 @@ protected:
         workers_.clear();
     }
 
-    virtual RecordShard read_shard(
+    virtual void read_shard(
         const ShardSpec& shard, unsigned worker) = 0;
 
 private:
@@ -1050,7 +1167,8 @@ private:
                     return cancelled_ ||
                            (next_to_assign_ < shards_.size() &&
                             next_to_assign_ <
-                                next_to_consume_ + maximum_ahead_);
+                                next_shard_to_consume_ +
+                                    maximum_ahead_);
                 });
                 if (cancelled_) {
                     return;
@@ -1058,16 +1176,7 @@ private:
                 shard = shards_[next_to_assign_++];
             }
 
-            RecordShard result = read_shard(shard, worker);
-            {
-                std::lock_guard lock(mutex_);
-                if (cancelled_) {
-                    return;
-                }
-                completed_.emplace(
-                    result.ordinal, std::move(result));
-            }
-            completed_available_.notify_all();
+            read_shard(shard, worker);
         }
     }
 
@@ -1076,16 +1185,20 @@ private:
     std::vector<ShardSpec> shards_;
     ResourcePlan resources_;
     std::size_t maximum_ahead_;
+    std::size_t maximum_completed_chunks_;
     std::vector<std::thread> workers_;
     std::mutex mutex_;
     std::condition_variable completed_available_;
     std::condition_variable assignment_available_;
-    std::map<std::size_t, RecordShard> completed_;
+    std::condition_variable chunk_slot_available_;
+    std::map<std::pair<std::size_t, std::size_t>, RecordChunk>
+        completed_;
     std::size_t next_to_assign_ = 0;
-    std::size_t next_to_consume_ = 0;
+    std::size_t next_shard_to_consume_ = 0;
+    std::size_t next_chunk_to_consume_ = 0;
     bool cancelled_ = false;
     std::exception_ptr failure_;
-    RecordShard current_shard_;
+    RecordChunk current_chunk_;
     std::size_t current_record_ = 0;
 };
 
@@ -1147,14 +1260,14 @@ std::vector<ShardSpec> build_plain_shards(
     }
     const std::uint64_t data_bytes = file_size - data_start;
     const std::uint64_t target_shard_bytes = std::clamp<std::uint64_t>(
-        (256ULL * kMib) /
+        (2048ULL * kMib) /
             std::max<unsigned>(1, input_threads),
-        kMinimumPlainShardBytes,
+        kMinimumPlainTargetBytes,
         kTargetPlainShardBytes);
     const std::size_t by_threads =
         static_cast<std::size_t>(
             std::max(1u, input_threads)) *
-        8;
+        16;
     const std::size_t by_size = static_cast<std::size_t>(
         (data_bytes + target_shard_bytes - 1) /
         target_shard_bytes);
@@ -1209,6 +1322,13 @@ public:
         worker_contexts_.resize(resources.input_threads);
         for (auto& context : worker_contexts_) {
             context.header = duplicate_header(this->header());
+            context.descriptor =
+                ::open(options.path.c_str(), O_RDONLY);
+            if (context.descriptor < 0) {
+                fail(
+                    "Could not open plain VCF worker input: " +
+                    std::string(std::strerror(errno)));
+            }
         }
         start_workers();
     }
@@ -1229,19 +1349,33 @@ public:
 private:
     struct WorkerContext {
         HeaderPtr header;
+        int descriptor = -1;
         kstring_t line{0, 0, nullptr};
+        std::vector<char> read_buffer;
+        std::string partial_line;
 
         WorkerContext() = default;
         WorkerContext(WorkerContext&& other) noexcept
             : header(std::move(other.header)),
-              line(other.line) {
+              descriptor(other.descriptor),
+              line(other.line),
+              read_buffer(std::move(other.read_buffer)),
+              partial_line(std::move(other.partial_line)) {
+            other.descriptor = -1;
             other.line = {0, 0, nullptr};
         }
         WorkerContext& operator=(WorkerContext&& other) noexcept {
             if (this != &other) {
                 std::free(line.s);
+                if (descriptor >= 0) {
+                    ::close(descriptor);
+                }
                 header = std::move(other.header);
+                descriptor = other.descriptor;
                 line = other.line;
+                read_buffer = std::move(other.read_buffer);
+                partial_line = std::move(other.partial_line);
+                other.descriptor = -1;
                 other.line = {0, 0, nullptr};
             }
             return *this;
@@ -1250,87 +1384,134 @@ private:
         WorkerContext& operator=(const WorkerContext&) = delete;
         ~WorkerContext() {
             std::free(line.s);
+            if (descriptor >= 0) {
+                ::close(descriptor);
+            }
         }
     };
 
-    RecordShard read_shard(
+    void read_shard(
         const ShardSpec& shard, unsigned worker) override {
         auto& context = worker_contexts_[worker];
-        const std::uint64_t length =
+        const std::uint64_t shard_length =
             shard.byte_end - shard.byte_begin;
-        if (length >
-            static_cast<std::uint64_t>(
-                std::numeric_limits<std::size_t>::max())) {
-            fail("Plain VCF shard is too large for this platform");
-        }
-        std::string bytes(static_cast<std::size_t>(length), '\0');
-        const int descriptor =
-            ::open(options().path.c_str(), O_RDONLY);
-        if (descriptor < 0) {
-            fail(
-                "Could not open plain VCF shard: " +
-                std::string(std::strerror(errno)));
-        }
 #if defined(POSIX_FADV_SEQUENTIAL)
         (void)::posix_fadvise(
-            descriptor, static_cast<off_t>(shard.byte_begin),
-            static_cast<off_t>(length), POSIX_FADV_SEQUENTIAL);
+            context.descriptor, static_cast<off_t>(shard.byte_begin),
+            static_cast<off_t>(shard_length), POSIX_FADV_SEQUENTIAL);
 #endif
-        std::size_t read_total = 0;
-        while (read_total < bytes.size()) {
+        constexpr std::size_t read_block_size = 1U << 20;
+        if (context.read_buffer.size() != read_block_size) {
+            context.read_buffer.resize(read_block_size);
+        }
+        context.partial_line.clear();
+
+        const std::size_t record_target = chunk_record_target();
+        std::size_t chunk_ordinal = 0;
+        RecordChunk chunk{
+            .shard_ordinal = shard.ordinal,
+            .chunk_ordinal = chunk_ordinal,
+            .final = false,
+            .records = {},
+        };
+        chunk.records.reserve(record_target);
+
+        auto emit_record = [&](RecordPtr record) {
+            chunk.records.push_back(std::move(record));
+            if (chunk.records.size() == record_target) {
+                publish_chunk(std::move(chunk));
+                chunk = RecordChunk{
+                    .shard_ordinal = shard.ordinal,
+                    .chunk_ordinal = ++chunk_ordinal,
+                    .final = false,
+                    .records = {},
+                };
+                chunk.records.reserve(record_target);
+            }
+        };
+        auto parse_line = [&](const char* data,
+                              std::size_t length) {
+            if (length > 0 && data[length - 1] == '\r') {
+                --length;
+            }
+            if (length == 0) {
+                return;
+            }
+            context.line.l = 0;
+            if (kputsn(data, length, &context.line) < 0) {
+                fail("Could not allocate plain VCF parse buffer");
+            }
+            RecordPtr record(bcf_init());
+            if (!record ||
+                vcf_parse1(
+                    &context.line, context.header.get(),
+                    record.get()) != 0) {
+                fail(
+                    "Could not parse plain VCF record in shard " +
+                    std::to_string(shard.ordinal));
+            }
+            emit_record(std::move(record));
+        };
+
+        std::uint64_t read_total = 0;
+        while (read_total < shard_length) {
+            const std::size_t requested = static_cast<std::size_t>(
+                std::min<std::uint64_t>(
+                    context.read_buffer.size(),
+                    shard_length - read_total));
             const ssize_t count = ::pread(
-                descriptor, bytes.data() + read_total,
-                bytes.size() - read_total,
+                context.descriptor, context.read_buffer.data(),
+                requested,
                 static_cast<off_t>(
                     shard.byte_begin + read_total));
             if (count < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
                 const std::string error = std::strerror(errno);
-                ::close(descriptor);
                 fail("Could not read plain VCF shard: " + error);
             }
             if (count == 0) {
-                ::close(descriptor);
                 fail("Plain VCF ended inside an aligned shard");
             }
-            read_total += static_cast<std::size_t>(count);
-        }
-        ::close(descriptor);
+            read_total += static_cast<std::uint64_t>(count);
 
-        RecordShard result;
-        result.ordinal = shard.ordinal;
-        std::size_t begin = 0;
-        while (begin < bytes.size()) {
-            std::size_t end = bytes.find('\n', begin);
-            if (end == std::string::npos) {
-                end = bytes.size();
-            }
-            std::size_t length_without_eol = end - begin;
-            if (length_without_eol > 0 &&
-                bytes[begin + length_without_eol - 1] == '\r') {
-                --length_without_eol;
-            }
-            if (length_without_eol > 0) {
-                context.line.l = 0;
-                if (kputsn(
-                        bytes.data() + begin,
-                        length_without_eol,
-                        &context.line) < 0) {
-                    fail("Could not allocate plain VCF parse buffer");
+            const char* bytes = context.read_buffer.data();
+            std::size_t begin = 0;
+            const std::size_t available =
+                static_cast<std::size_t>(count);
+            while (begin < available) {
+                const void* newline = std::memchr(
+                    bytes + begin, '\n', available - begin);
+                if (newline == nullptr) {
+                    context.partial_line.append(
+                        bytes + begin, available - begin);
+                    break;
                 }
-                RecordPtr record(bcf_init());
-                if (!record ||
-                    vcf_parse1(
-                        &context.line, context.header.get(),
-                        record.get()) != 0) {
-                    fail(
-                        "Could not parse plain VCF record in shard " +
-                        std::to_string(shard.ordinal));
+                const auto* end = static_cast<const char*>(newline);
+                const std::size_t segment_length =
+                    static_cast<std::size_t>(end - (bytes + begin));
+                if (context.partial_line.empty()) {
+                    parse_line(bytes + begin, segment_length);
+                } else {
+                    context.partial_line.append(
+                        bytes + begin, segment_length);
+                    parse_line(
+                        context.partial_line.data(),
+                        context.partial_line.size());
+                    context.partial_line.clear();
                 }
-                result.records.push_back(std::move(record));
+                begin = static_cast<std::size_t>(end - bytes) + 1;
             }
-            begin = end == bytes.size() ? end : end + 1;
         }
-        return result;
+        if (!context.partial_line.empty()) {
+            parse_line(
+                context.partial_line.data(),
+                context.partial_line.size());
+            context.partial_line.clear();
+        }
+        chunk.final = true;
+        publish_chunk(std::move(chunk));
     }
 
     std::vector<WorkerContext> worker_contexts_;
@@ -1455,18 +1636,17 @@ IndexedLayout build_indexed_layout(
         }
         known_total_records += contig.mapped_records;
     }
+    const std::size_t minimum_record_target =
+        std::min<std::size_t>(
+            8192,
+            std::max<std::size_t>(
+                2048, options.target_batch_records));
     const std::size_t record_target =
-        std::max<std::size_t>(
-            64,
-            std::min<std::size_t>(
-                std::max<std::size_t>(
-                    64,
-                    8192 /
-                        std::max<unsigned>(
-                            1, input_threads)),
-                std::max<std::size_t>(
-                    256,
-                    options.target_batch_records / 2)));
+        std::clamp<std::size_t>(
+            65536 /
+                std::max<unsigned>(1, input_threads),
+            minimum_record_target,
+            8192);
     const std::size_t by_records =
         known_total_records == 0
             ? 0
@@ -1675,11 +1855,31 @@ private:
         }
     };
 
-    RecordShard read_shard(
+    void read_shard(
         const ShardSpec& shard, unsigned worker) override {
         auto& context = contexts_[worker];
-        RecordShard result;
-        result.ordinal = shard.ordinal;
+        const std::size_t record_target = chunk_record_target();
+        std::size_t chunk_ordinal = 0;
+        RecordChunk chunk{
+            .shard_ordinal = shard.ordinal,
+            .chunk_ordinal = chunk_ordinal,
+            .final = false,
+            .records = {},
+        };
+        chunk.records.reserve(record_target);
+        auto emit_record = [&](RecordPtr record) {
+            chunk.records.push_back(std::move(record));
+            if (chunk.records.size() == record_target) {
+                publish_chunk(std::move(chunk));
+                chunk = RecordChunk{
+                    .shard_ordinal = shard.ordinal,
+                    .chunk_ordinal = ++chunk_ordinal,
+                    .final = false,
+                    .records = {},
+                };
+                chunk.records.reserve(record_target);
+            }
+        };
         if (is_bcf_) {
             IteratorPtr iterator(bcf_itr_queryi(
                 context.bcf_index.get(), shard.index_tid,
@@ -1703,39 +1903,39 @@ private:
                 if (record->rid == shard.rid &&
                     record->pos >= shard.position_begin &&
                     record->pos < shard.position_end) {
-                    result.records.push_back(std::move(record));
+                    emit_record(std::move(record));
                 }
             }
-            return result;
-        }
-
-        IteratorPtr iterator(tbx_itr_queryi(
-            context.tbx_index.get(), shard.index_tid,
-            shard.position_begin, shard.position_end));
-        if (!iterator) {
-            fail(
-                "Could not query VCF indexed shard " +
-                std::to_string(shard.ordinal));
-        }
-        while (tbx_itr_next(
-                   context.input.get(), context.tbx_index.get(),
-                   iterator.get(), &context.line) >= 0) {
-            RecordPtr record(bcf_init());
-            if (!record ||
-                vcf_parse1(
-                    &context.line, context.header.get(),
-                    record.get()) != 0) {
+        } else {
+            IteratorPtr iterator(tbx_itr_queryi(
+                context.tbx_index.get(), shard.index_tid,
+                shard.position_begin, shard.position_end));
+            if (!iterator) {
                 fail(
-                    "Could not parse indexed VCF record in shard " +
+                    "Could not query VCF indexed shard " +
                     std::to_string(shard.ordinal));
             }
-            if (record->rid == shard.rid &&
-                record->pos >= shard.position_begin &&
-                record->pos < shard.position_end) {
-                result.records.push_back(std::move(record));
+            while (tbx_itr_next(
+                       context.input.get(), context.tbx_index.get(),
+                       iterator.get(), &context.line) >= 0) {
+                RecordPtr record(bcf_init());
+                if (!record ||
+                    vcf_parse1(
+                        &context.line, context.header.get(),
+                        record.get()) != 0) {
+                    fail(
+                        "Could not parse indexed VCF record in shard " +
+                        std::to_string(shard.ordinal));
+                }
+                if (record->rid == shard.rid &&
+                    record->pos >= shard.position_begin &&
+                    record->pos < shard.position_end) {
+                    emit_record(std::move(record));
+                }
             }
         }
-        return result;
+        chunk.final = true;
+        publish_chunk(std::move(chunk));
     }
 
     bool is_bcf_;
@@ -1827,6 +2027,19 @@ void RecordDeleter::operator()(bcf1_t* record) const noexcept {
 }
 
 AvailableThreads detect_available_threads() {
+    if (const char* injected =
+            std::getenv("VCFTOOLS_NG_TEST_AVAILABLE_THREADS");
+        injected != nullptr && *injected != '\0') {
+        char* end = nullptr;
+        const unsigned long parsed = std::strtoul(injected, &end, 10);
+        if (end != injected && *end == '\0' && parsed > 0 &&
+            parsed <= std::numeric_limits<unsigned>::max()) {
+            return {
+                static_cast<unsigned>(parsed),
+                "VCFTOOLS_NG_TEST_AVAILABLE_THREADS"};
+        }
+    }
+    std::vector<AvailableThreads> limits;
     constexpr const char* scheduler_variables[] = {
         "SLURM_CPUS_PER_TASK",
         "PBS_NP",
@@ -1842,8 +2055,7 @@ AvailableThreads detect_available_threads() {
         const unsigned long parsed = std::strtoul(value, &end, 10);
         if (end != value && *end == '\0' && parsed > 0 &&
             parsed <= std::numeric_limits<unsigned>::max()) {
-            return {
-                static_cast<unsigned>(parsed), variable};
+            limits.push_back({static_cast<unsigned>(parsed), variable});
         }
     }
 
@@ -1854,15 +2066,60 @@ AvailableThreads detect_available_threads() {
             0, sizeof(affinity), &affinity) == 0) {
         const int count = CPU_COUNT(&affinity);
         if (count > 0) {
-            return {
-                static_cast<unsigned>(count), "CPU affinity"};
+            limits.push_back(
+                {static_cast<unsigned>(count), "CPU affinity"});
         }
+    }
+
+    const auto quota_limit = []() -> std::optional<unsigned> {
+        const auto cpu_count_from_quota = [](
+            unsigned long long quota,
+            unsigned long long period) -> unsigned {
+            const unsigned long long quotient =
+                quota / period + (quota % period != 0 ? 1ULL : 0ULL);
+            return static_cast<unsigned>(std::clamp<unsigned long long>(
+                quotient, 1ULL,
+                std::numeric_limits<unsigned>::max()));
+        };
+        {
+            std::ifstream input("/sys/fs/cgroup/cpu.max");
+            std::string quota;
+            unsigned long long period = 0;
+            if (input >> quota >> period && quota != "max" && period > 0) {
+                char* end = nullptr;
+                const unsigned long long value =
+                    std::strtoull(quota.c_str(), &end, 10);
+                if (end != quota.c_str() && *end == '\0' && value > 0) {
+                    return cpu_count_from_quota(value, period);
+                }
+            }
+        }
+        std::ifstream quota_input(
+            "/sys/fs/cgroup/cpu/cpu.cfs_quota_us");
+        std::ifstream period_input(
+            "/sys/fs/cgroup/cpu/cpu.cfs_period_us");
+        long long quota = -1;
+        unsigned long long period = 0;
+        if (quota_input >> quota && period_input >> period &&
+            quota > 0 && period > 0) {
+            return cpu_count_from_quota(
+                static_cast<unsigned long long>(quota), period);
+        }
+        return std::nullopt;
+    }();
+    if (quota_limit.has_value()) {
+        limits.push_back({*quota_limit, "cgroup CPU quota"});
     }
 #endif
 
-    return {
+    limits.push_back({
         std::max(1u, std::thread::hardware_concurrency()),
-        "hardware_concurrency"};
+        "hardware_concurrency"});
+    return *std::min_element(
+        limits.begin(), limits.end(),
+        [](const AvailableThreads& left, const AvailableThreads& right) {
+            return left.count < right.count;
+        });
 }
 
 Backend parse_backend(const std::string& value) {

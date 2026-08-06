@@ -1,0 +1,10 @@
+key	value
+status	PASS
+validated	2026-08-05T22:39:18+08:00
+label	plain-vcf
+source	/home/vensin/workspace/vcftools-ng/data/osmanthus412.snps.vcf
+source_bytes	122911664549
+source_sha256	22e0589561425f700f691f458994710ebec6d615c17d790dd500ad1c131d981e
+retained_hdd_file	/home/data/vcftools-ng-benchmark-v0130/input/osmanthus412.snps.vcf
+retained_hdd_sha256	22e0589561425f700f691f458994710ebec6d615c17d790dd500ad1c131d981e
+copy_policy	one-time; retained; never overwritten automatically
