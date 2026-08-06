@@ -40,8 +40,9 @@ development version.
   v0.12.2 rather than rerun.
 - v0.13.0 completed a 108/108 first-repeat full-data release gate across four
   input scenarios, three same-device output/storage scenarios, and
-  1/2/4/8/12/16/24/28/32 threads. Follow-up adaptive repeats remain explicitly
-  pending; the first-repeat values are never labeled as means.
+  1/2/4/8/12/16/24/28/32 threads. The published matrix uses the validated
+  first repeat only; incomplete follow-up records are excluded and the values
+  are never labeled as means.
 
 ## Required record for every future version
 

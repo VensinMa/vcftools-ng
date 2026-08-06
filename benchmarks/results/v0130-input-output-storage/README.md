@@ -57,6 +57,20 @@ equivalent, but the output encoding and artifact size differ.
 | Plain VCF | 1076.97 | 823.98 | 826.74 | 869.95 | 883.69 | 909.75 | 997.62 | 1029.14 | 1059.79 |
 | BCF adaptive | 1065.09 | 514.18 | 265.73 | 160.99 | 123.46 | 98.92 | 84.01 | 80.37 | 81.93 |
 
+## Reference speedup over Original for same-HDD BGZF output
+
+| Input | 1 | 2 | 4 | 8 | 12 | 16 | 24 | 28 | 32 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| BGZF VCF + TBI | 1.72× | 4.33× | 8.37× | 14.84× | 19.61× | 23.86× | 31.05× | 31.35× | 31.73× |
+| BGZF VCF + automatic CSI | 1.85× | 3.62× | 6.95× | 10.80× | 12.99× | 15.04× | 17.48× | 17.38× | 17.60× |
+| Plain VCF | 1.94× | 2.54× | 2.53× | 2.41× | 2.37× | 2.30× | 2.10× | 2.03× | 1.97× |
+| BCF adaptive | 1.82× | 3.78× | 7.31× | 12.07× | 15.74× | 19.65× | 23.13× | 24.18× | 23.72× |
+
+These requested reference ratios divide the locked Original SSD plain-VCF
+time by the same-HDD vcftools-ng BGZF time. They therefore include both
+output-encoding and storage-device differences and are not a controlled
+same-device comparison.
+
 The 59.43 GB Plain VCF result compressed to a deterministic 10.20 GB BGZF
 VCF, an 82.8% size reduction. The Plain-VCF-on-HDD rows show the expected
 same-device I/O ceiling: reading the 122.91 GB uncompressed input and writing
@@ -74,8 +88,9 @@ rather than hidden because it defines the storage-dependent scaling boundary.
 
 The uncompressed ratios compare identical output encoding. The BGZF ratios
 compare end-to-end completion of the same filtering task against Original's
-plain-VCF output; VCFtools 0.1.17 has no `--recode-vcf-gz` option. No HDD
-speedup is reported because the locked Original baseline was measured on SSD.
+plain-VCF output; VCFtools 0.1.17 has no `--recode-vcf-gz` option. HDD ratios
+are reference values against the SSD Original baseline, not same-device
+measurements.
 
 ## Repeat policy and published run count
 

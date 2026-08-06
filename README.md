@@ -99,6 +99,52 @@ Rocky Linux, AlmaLinux, Ubuntu, and Debian releases on x86_64. No CMake,
 compiler, Conda environment, system HTSlib, or system bcftools is required.
 Keep the extracted `bin`, `lib`, and `libexec` directories together.
 
+## Release evolution and recommended use
+
+The table lists formal GitHub releases. Development-only versions remain in
+the technical archive and do not compete with the current usage guidance.
+
+| Release | Problem addressed | Key parameters or behavior | Recommended use |
+|---|---|---|---|
+| [v0.9.0](docs/versions/v0.9.0.md) | Established the first shared high-performance scan | Core site filters and statistics | Historical milestone; use v0.13.0 for new work |
+| [v0.11.2](docs/releases/v0.11.2.md) | Expanded compatibility and parallel input coverage | Individual/population statistics, LD/PCA, conversion, diff, automatic CSI | Historical compatibility milestone |
+| [v0.11.3](docs/releases/v0.11.3.md) | Removed low-core `--counts` regressions | Direct text-to-count fusion and adaptive input | Behavior is inherited by v0.13.0 |
+| [v0.12.1](docs/releases/v0.12.1.md) | Removed repeated site parsing and scaled exact recode | Fused site outputs, `--recode-vcf-gz` | Request multiple compatible site outputs in one run |
+| [v0.12.2](docs/releases/v0.12.2.md) | Replaced format-wide indexing with workload decisions | Adaptive `auto`; advanced `--input-backend`; removed `--no-auto-index` | Keep the default automatic backend |
+| [v0.12.3](docs/releases/v0.12.3.md) | Replaced the minimal terminal help | `--help`, `NO_COLOR`, `CLICOLOR_FORCE` | Check `--help` for combinations and suffixes |
+| [v0.12.4](docs/releases/v0.12.4.md) | Closed the missing run-log gap | Default `PREFIX.log`, `--log-file`, `--no-log-file` | Keep the default log for reproducibility |
+| [v0.13.0](docs/releases/v0.13.0.md) | Prevented large plain-VCF I/O pressure and partial publication | Transactional output; `--recode` defaults to BGZF; `--recode-vcf`; strict thread budget | Recommended release for all new runs |
+
+### Recommended v0.13.0 parameters
+
+- Leave `--input-backend auto` unchanged. It selects indexed BGZF regions,
+  aligned Plain VCF ranges, or streaming BCF according to the workload.
+- Omit `--threads` for resource-aware automatic selection, or set it to the
+  CPU allocation granted by the scheduler. Automatic selection is capped at
+  128; an explicit value still respects the effective allocation.
+- Use `--recode` for the default deterministic `.vcf.gz` result. Use
+  `--recode-vcf` only when an uncompressed VCF is genuinely required.
+- Add `--recode-INFO-all` when all input INFO annotations must be retained.
+  Keep the default `PREFIX.log` unless file logging is intentionally disabled.
+
+Filter thresholds are biological project decisions, not universal defaults.
+The following seven-filter command is the performance-tested release workload:
+
+```bash
+vcftools-ng --gzvcf input.vcf.gz --threads 24 \
+  --min-alleles 2 --max-alleles 2 --minGQ 10 --minQ 30 \
+  --min-meanDP 7 --max-missing 0.9 --maf 0.1 \
+  --recode --recode-INFO-all --out filtered
+```
+
+The result is `filtered.recode.vcf.gz` and the reproducibility record is
+`filtered.log`. Compatible statistics should be combined to share one scan:
+
+```bash
+vcftools-ng --gzvcf input.vcf.gz --threads 24 \
+  --freq --missing-site --site-mean-depth --out cohort
+```
+
 ## Version records
 
 Every development version has a local record of supported parameters,
@@ -179,20 +225,6 @@ standards-correct mode must be explicit and must not silently alter
 The separate [Original VCFtools 0.1.17 known-issues ledger](docs/original-vcftools-0.1.17-known-issues.md)
 keeps the trigger, observed output, policy, and regression evidence for every
 confirmed defect or surprising legacy behavior.
-
-## Build from source
-
-Source builds are intended for developers or platforms not covered by the
-portable archive. They require CMake, a C++20 compiler, HTSlib, LAPACK, zlib,
-and POSIX threads.
-
-```bash
-cmake -S . -B build \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DHTSLIB_ROOT=/path/to/htslib
-cmake --build build -j
-cmake --install build --prefix /path/to/install-prefix
-```
 
 ## Command-line help
 
@@ -395,12 +427,22 @@ End-to-end speedup over the Original VCFtools 0.1.17 plain-VCF workflow:
 | Plain VCF | 1076.97 | 823.98 | 826.74 | 869.95 | 883.69 | 909.75 | 997.62 | 1029.14 | 1059.79 |
 | BCF adaptive | 1065.09 | 514.18 | 265.73 | 160.99 | 123.46 | 98.92 | 84.01 | 80.37 | 81.93 |
 
+Reference speedup over the locked Original plain-VCF workflow:
+
+| Input path | 1 | 2 | 4 | 8 | 12 | 16 | 24 | 28 | 32 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| BGZF VCF + TBI | 1.72× | 4.33× | 8.37× | 14.84× | 19.61× | 23.86× | 31.05× | 31.35× | 31.73× |
+| BGZF VCF + automatic CSI | 1.85× | 3.62× | 6.95× | 10.80× | 12.99× | 15.04× | 17.48× | 17.38× | 17.60× |
+| Plain VCF | 1.94× | 2.54× | 2.53× | 2.41× | 2.37× | 2.30× | 2.10× | 2.03× | 1.97× |
+| BCF adaptive | 1.82× | 3.78× | 7.31× | 12.07× | 15.74× | 19.65× | 23.13× | 24.18× | 23.72× |
+
 The SSD BGZF ratios compare completion of the same filtering task, while the
 output encoding differs: Original writes plain VCF and vcftools-ng writes
 BGZF. Decompressed scientific content is equivalent. The 59.43 GB plain VCF
 is 10.20 GB as BGZF, an 82.8% reduction. Automatic-CSI rows include fresh
-index construction. HDD ratios are not reported because the retained Original
-baseline was measured on SSD; mixing devices would confound the comparison.
+index construction. The HDD table uses the same SSD Original baseline as a
+requested reference, so those ratios include both output encoding and storage
+device differences; they are not a controlled same-device comparison.
 Same-disk Plain VCF input shows an HDD I/O ceiling at higher concurrency, and
 that result is retained rather than hidden.
 
@@ -426,6 +468,20 @@ development gate are documented here:
 - [v0.12.4 technical record](docs/versions/v0.12.4.md)
 - [v0.12.4 logging-enabled development gate](benchmarks/results/development-v0124-logging-final/README.md)
 - [v0.13.0 input/output/storage release gate](benchmarks/results/v0130-input-output-storage/README.md)
+
+## Build from source
+
+Source builds are intended for developers or platforms not covered by the
+portable archive. They require CMake, a C++20 compiler, HTSlib, LAPACK, zlib,
+and POSIX threads.
+
+```bash
+cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DHTSLIB_ROOT=/path/to/htslib
+cmake --build build -j
+cmake --install build --prefix /path/to/install-prefix
+```
 
 ## Verify
 
