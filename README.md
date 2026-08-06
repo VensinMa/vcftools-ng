@@ -127,6 +127,23 @@ the technical archive and do not compete with the current usage guidance.
 - Add `--recode-INFO-all` when all input INFO annotations must be retained.
   Keep the default `PREFIX.log` unless file logging is intentionally disabled.
 
+> **Storage-aware output recommendation**
+>
+> - On a high-performance SSD/NVMe server with ample free space, use
+>   `--recode-vcf` when minimum wall time is the priority. It avoids output
+>   compression and was the fastest release-gate path, at the cost of a much
+>   larger uncompressed `.vcf` file.
+> - On a conventional or slower HDD server, use the default `--recode` (or the
+>   equivalent explicit `--recode-vcf-gz`) to write BGZF `.vcf.gz`. Prefer a
+>   BGZF-compressed input with a valid TBI/CSI index as well. Reducing both
+>   input and output bytes prevents large Plain VCF reads/writes from becoming
+>   the HDD bottleneck.
+>
+> In the release workload, the same scientific result occupied 59.43 GB as
+> Plain VCF and 10.20 GB as BGZF VCF. These are hardware-aware recommendations,
+> not universal guarantees; shared storage, filesystem caching, compression
+> ratio, and downstream access patterns can change the crossover point.
+
 Filter thresholds are biological project decisions, not universal defaults.
 The following seven-filter command is the performance-tested release workload:
 

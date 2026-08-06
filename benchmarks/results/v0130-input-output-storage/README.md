@@ -77,6 +77,21 @@ same-device I/O ceiling: reading the 122.91 GB uncompressed input and writing
 compressed output becomes slower at high concurrency. The result is retained
 rather than hidden because it defines the storage-dependent scaling boundary.
 
+## Storage-aware usage recommendation
+
+- For high-performance SSD/NVMe storage with ample capacity, `--recode-vcf`
+  is the preferred minimum-wall-time mode because it avoids output
+  compression. The tradeoff is the 59.43 GB Plain VCF artifact.
+- For conventional or slower HDD storage, keep the default `--recode` or use
+  the equivalent `--recode-vcf-gz`, and prefer BGZF VCF input with a valid
+  TBI/CSI index. The 10.20 GB BGZF result reduces output traffic by 82.8%,
+  while compressed indexed input avoids the severe same-disk Plain VCF I/O
+  ceiling visible above.
+
+This recommendation is specific to the measured workload and storage classes;
+filesystem caching, shared-storage contention, compression ratio, and later
+access patterns can move the crossover point.
+
 ## Speedup over Original for SSD Plain VCF output
 
 | Input | 1 | 2 | 4 | 8 | 12 | 16 | 24 | 28 | 32 |
