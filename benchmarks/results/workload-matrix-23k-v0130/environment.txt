@@ -1,0 +1,19 @@
+2026-08-06T12:47:08+08:00
+Linux Ubuntu24 6.14.0-37-generic #37~24.04.1-Ubuntu SMP PREEMPT_DYNAMIC Thu Nov 20 10:25:38 UTC 2 x86_64 x86_64 x86_64 GNU/Linux
+CPU(s):                                  32
+On-line CPU(s) list:                     0-31
+Model name:                              Intel(R) Core(TM) i9-14900KF
+Thread(s) per core:                      2
+Core(s) per socket:                      24
+Socket(s):                               1
+CPU(s) scaling MHz:                      69%
+/      /dev/nvme3n1p2 ext4   rw,relatime,stripe=64
+NAME    ROTA TYPE   SIZE MODEL
+nvme3n1    0 disk   1.8T WD_BLACK SN7100 2TB
+vcftools-ng 0.13.0
+VCFtools (0.1.17)
+bcftools 1.23
+Using htslib 1.23
+bgzip (htslib) 1.23.1
+6f495cd2499b29ac91061516aa2ce65b36a0e26fef2ba86e57f7d2ae6143afad  /home/vensin/software/vcftools-ng-v0.13.0-linux-x86_64/bin/vcftools-ng
+8950bcdc1900e6c86df93c39502d46752ec5bdaa01426b86f56cbe94c14fae15  /home/vensin/anaconda3/envs/vcftools/bin/vcftools

@@ -5,9 +5,17 @@ project_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source_vcf=${1:?source BGZF VCF required}
 output_prefix=${2:-"$project_root/tests/fixtures/osmanthus205.gatk.23chr_1k"}
 threads=${3:-32}
+records_per_contig=${RECORDS_PER_CONTIG:-1000}
+write_plain_vcf=${WRITE_PLAIN_VCF:-0}
 bcftools_bin=${BCFTOOLS:-bcftools}
 bgzip_bin=${BGZIP:-bgzip}
 tabix_bin=${TABIX:-tabix}
+
+if [[ ! $records_per_contig =~ ^[1-9][0-9]*$ ]]; then
+    printf 'RECORDS_PER_CONTIG must be a positive integer: %s\n' \
+        "$records_per_contig" >&2
+    exit 1
+fi
 
 if [[ ! -f $source_vcf ]]; then
     printf 'Source VCF does not exist: %s\n' "$source_vcf" >&2
@@ -47,16 +55,16 @@ set +e
 set +o pipefail
 tee -p >(sha256sum >"$source_sha") <"$source_vcf" |
     "$bgzip_bin" -dc |
-    awk -F '\t' '
+    awk -F '\t' -v limit="$records_per_contig" '
         /^#/ {
             print
             next
         }
-        $1 ~ /^Chr(0[1-9]|1[0-9]|2[0-3])$/ && count[$1] < 1000 {
+        $1 ~ /^Chr(0[1-9]|1[0-9]|2[0-3])$/ && count[$1] < limit {
             print
             count[$1]++
-            if (count[$1] == 1000) {
-                print "Extracted 1,000 records from " $1 > "/dev/stderr"
+            if (count[$1] == limit) {
+                print "Extracted " limit " records from " $1 > "/dev/stderr"
                 if ($1 == "Chr23")
                     exit
             }
@@ -76,11 +84,11 @@ if [[ ! -s $source_sha ]]; then
 fi
 
 counts="$work/counts.tsv"
-awk -F '\t' '!/^#/ {count[$1]++} END {
+awk -F '\t' -v limit="$records_per_contig" '!/^#/ {count[$1]++} END {
     for (chromosome = 1; chromosome <= 23; ++chromosome) {
         name = sprintf("Chr%02d", chromosome)
         print name "\t" count[name]
-        if (count[name] != 1000)
+        if (count[name] != limit)
             failed = 1
     }
     exit failed
@@ -89,7 +97,8 @@ record_count=$(awk '!/^#/ {count++} END {print count+0}' "$plain_vcf")
 sample_count=$(
     awk -F '\t' '/^#CHROM/ {print (NF > 9 ? NF - 9 : 0)}' "$plain_vcf"
 )
-if [[ $record_count != 23000 || $sample_count != 205 ]]; then
+expected_records=$((records_per_contig * 23))
+if [[ $record_count != "$expected_records" || $sample_count != 205 ]]; then
     printf 'Unexpected fixture shape: records=%s samples=%s\n' \
         "$record_count" "$sample_count" >&2
     exit 1
@@ -106,7 +115,8 @@ bcf="$work/subset.bcf"
 
 vcf_records=$("$bcftools_bin" index -n "$vcf_gz")
 bcf_records=$("$bcftools_bin" index -n "$bcf" 2>/dev/null)
-if [[ $vcf_records != 23000 || $bcf_records != 23000 ]]; then
+if [[ $vcf_records != "$expected_records" || \
+      $bcf_records != "$expected_records" ]]; then
     printf 'Index record-count mismatch: VCF=%s BCF=%s\n' \
         "$vcf_records" "$bcf_records" >&2
     exit 1
@@ -120,7 +130,8 @@ fixture_name=$(basename "$output_prefix")
     printf 'Source bytes: %s\n' "$(stat -c %s "$source_vcf")"
     printf 'Source mtime: %s\n' "$(stat -c %y "$source_vcf")"
     printf 'Source SHA-256: %s\n' "$(awk '{print $1}' "$source_sha")"
-    printf 'Selection: first 1,000 records from Chr01 through Chr23\n'
+    printf 'Selection: first %s records from Chr01 through Chr23\n' \
+        "$records_per_contig"
     printf 'Samples: %s\nRecords: %s\n' "$sample_count" "$record_count"
     printf 'Extraction preserves the source VCF header and selected text records.\n'
     printf '\nPer-contig records:\n'
@@ -144,6 +155,10 @@ mv "$vcf_gz.tbi" "$output_prefix.vcf.gz.tbi"
 mv "$bcf" "$output_prefix.bcf"
 mv "$bcf.csi" "$output_prefix.bcf.csi"
 mv "$provenance" "$output_prefix.provenance.txt"
+
+if [[ $write_plain_vcf == 1 ]]; then
+    "$bgzip_bin" -dc "$output_prefix.vcf.gz" >"$output_prefix.vcf"
+fi
 
 completed=true
 printf 'Created GATK compatibility fixture: %s\n' "$output_prefix"

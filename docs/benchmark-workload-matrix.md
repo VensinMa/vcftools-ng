@@ -6,7 +6,7 @@ Performance claims are workload-specific. A speedup measured for one output,
 filter set, input format, storage device, or selected-sample density must not
 be presented as a guarantee for every vcftools-ng command.
 
-## v0.13.0 scope
+## v0.13.1 scope
 
 The v0.13.0 direct text kernel is not limited to statistics. For eligible
 Plain or BGZF VCF input it fuses the common seven-filter workload with
@@ -16,11 +16,13 @@ site-local statistics and VCF recode. The eligible filters are
 `--counts`, `--missing-site`, `--site-depth`, `--site-mean-depth`, and
 `--site-quality`.
 
-Sample/site selection, FILTER/INFO/FT selection, unsupported filters, BCF,
-individual reductions, window statistics, FST, LD, PCA, and diff use the
-general compatibility pipeline. They can benefit from shared input,
-scheduling, and output improvements, but the fused-kernel speedup does not
-automatically apply to them.
+v0.13.1 additionally routes eligible Plain VCF position include/exclude,
+sample projection, window pi, Tajima's D, site FST, and window FST through the
+direct text family. Those paths share selected-sample GT decoding, compact
+per-site contributions, deterministic ordered reduction, and adaptive
+read-only mapped ranges. FILTER/INFO/FT selection, unsupported filters, BCF,
+individual reductions, LD, PCA, and diff continue to use the general
+compatibility pipeline.
 
 Every run log records `Execution kernel`, `Execution components`, input
 backend, thread allocation, and high-level stage times. These fields must be
@@ -52,10 +54,21 @@ current project configuration; changing it requires recording a new profile,
 not silently changing the benchmark.
 
 Development runs use 23,000 real records, threads `1 4 8 16 32`, and at most
-three repeats. Release-candidate runs use the standard 2,300,000-record real
-subset, threads `1 2 4 8 16 32`, and at least three repeats. The
+three repeats. v0.13.1 also locks a 230,000-record SSD/NVMe matrix for W03-W10
+so sub-second 23k startup noise is not presented as throughput. Larger
+release-candidate runs use the standard 2,300,000-record real subset, threads
+`1 2 4 8 16 32`, and at least three repeats. The
 11,230,392-record final gate uses four representative workloads: W02, W06,
 either W07 or W08, and W10.
+
+The reusable driver is
+[`benchmarks/run-workload-matrix.sh`](../benchmarks/run-workload-matrix.sh).
+Copy
+[`benchmarks/workload-matrix-profile.example.sh`](../benchmarks/workload-matrix-profile.example.sh)
+outside the repository and fill in the locked input, selection fixtures,
+population files, oracle directory, and result directory. The driver validates
+`ORACLE_ROOT/SHA256SUMS` before running and refuses to generate or replace an
+Original oracle.
 
 ## Exactness and baselines
 
@@ -86,3 +99,7 @@ The built-in timings are deliberately high-level and low overhead:
 Fine-grained parse, reducer, compression, and commit-wait attribution belongs
 in dedicated profiling builds. Per-record timers must not be enabled in
 release benchmarks because their overhead would distort the workload.
+
+The committed v0.13.1 matrix, compact timings, oracle/input hashes, and exact
+runner are in
+[`benchmarks/results/workload-matrix-230k-v0130/RESULTS.md`](../benchmarks/results/workload-matrix-230k-v0130/RESULTS.md).

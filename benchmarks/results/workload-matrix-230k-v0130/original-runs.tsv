@@ -1,0 +1,16 @@
+case	wall_s	user_s	system_s	cpu	peak_rss_kib
+W03_positions_1pct_sorted	1.00	0.71	0.28	99%	4812
+W03_positions_1pct_shuffled	0.98	0.71	0.27	100%	4724
+W03_positions_50pct_sorted	2.53	2.24	0.29	100%	9848
+W03_positions_50pct_shuffled	2.53	2.23	0.29	99%	9756
+W04_exclude_1pct_duplicates_absent	4.00	3.69	0.30	99%	4688
+W04_exclude_50pct_duplicates_absent	2.55	2.27	0.27	99%	10132
+W05_keep_25pct_counts	3.91	3.60	0.31	99%	4588
+W05_keep_50pct_counts	3.94	3.61	0.32	99%	4420
+W05_keep_100pct_counts	4.00	3.71	0.29	99%	4716
+W07_window_pi_overlap	4.16	3.87	0.28	99%	4692
+W07_window_pi_nonoverlap	4.06	3.80	0.26	99%	4684
+W08_tajima_100kb	4.03	3.75	0.28	100%	4764
+W09_site_fst_small_pair	4.09	3.76	0.32	99%	4304
+W09_site_fst_large_pair	4.55	4.22	0.32	99%	4420
+W10_window_fst_biallelic	4.55	4.23	0.31	99%	4488

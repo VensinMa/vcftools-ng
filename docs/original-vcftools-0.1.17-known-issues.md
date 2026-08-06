@@ -126,6 +126,26 @@ behavior is correct.”
   `tests/golden/gatk205-seven-filter.{counts,recode}.stderr`; the source and
   oracle identities are recorded in the fixture provenance file.
 
+### OVI-009 — Corrupt raw BCF recode with non-canonical FORMAT encodings
+
+- **Class:** confirmed unsafe Original defect; exact-compatibility gap found by
+  the v0.13.0 23k workload matrix.
+- **Trigger:** BCF input containing the legacy Character/String FORMAT
+  encodings covered by `osmanthus412.flags.23chr_1k.bcf`, followed by raw
+  `--recode-bcf --recode-INFO-all`; genotype masking is not required.
+- **Original behavior:** exits with status zero but emits an unreadable BCF.
+  HTSlib reports `Invalid FORMAT type 15` at `chr1:5330` and aborts with a BCF
+  read error. The reproducing Original 0.1.17 binary SHA-256 is
+  `8950bcdc1900e6c86df93c39502d46752ec5bdaa01426b86f56cbe94c14fae15`.
+- **vcftools-ng v0.13.0:** emits valid standards-readable BCF rather than the
+  corrupt Original bytes. This trigger must not be advertised as exact BCF
+  compatibility; a follow-up should either reject it in exact mode or expose
+  corrected output through an explicit non-exact mode.
+- **Benchmark decision:** W11 BCF uses the canonical normalized 23k BCF for
+  which Original and vcftools-ng outputs match byte for byte. The corrupt
+  trigger and smoke artifacts are retained locally under
+  `benchmarks/results/workload-matrix-23k-v0130/smoke-bcf-copy.*`.
+
 ## Candidate-entry template / 新条目模板
 
 ```text

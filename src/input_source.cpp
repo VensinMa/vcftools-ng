@@ -45,6 +45,7 @@ constexpr std::uint64_t kMinimumPlainShardBytes = 4ULL * kMib;
 constexpr std::uint64_t kMinimumPlainTargetBytes = 32ULL * kMib;
 constexpr std::uint64_t kTargetPlainShardBytes = 256ULL * kMib;
 constexpr std::size_t kMaximumShards = 65536;
+constexpr std::size_t kPlainStreamBufferBytes = 1ULL * 1024ULL * 1024ULL;
 
 [[noreturn]] void fail(const std::string& message) {
     throw std::runtime_error(message);
@@ -918,6 +919,12 @@ public:
         const bool compressed =
             format != nullptr &&
             format->compression != no_compression;
+        if (!compressed &&
+            hts_set_opt(
+                input_.get(), HTS_OPT_BLOCK_SIZE,
+                static_cast<int>(kPlainStreamBufferBytes)) != 0) {
+            fail("Could not enlarge the Plain VCF stream buffer: " + path_);
+        }
         resources_ = plan_resources(
             options.total_threads, false, compressed, false,
             detect_rotational_storage(path_));

@@ -1,0 +1,3 @@
+Input: benchmarks/results/workload-matrix-230k-v0130/osmanthus412.flags.23chr_10k.vcf
+Records: 230000
+Samples: 412

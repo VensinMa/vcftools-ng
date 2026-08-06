@@ -6,7 +6,7 @@
 存储设备或样本选择密度得到的加速比，不能表述为所有 vcftools-ng 命令的
 统一保证。
 
-## v0.13.0 的实际范围
+## v0.13.1 的实际范围
 
 v0.13.0 的直接文本内核并非只支持统计。对于满足条件的 Plain/BGZF VCF，
 它可以把七参数过滤、位点局部统计和 VCF 重编码融合到一次扫描。七个过滤
@@ -15,9 +15,11 @@ v0.13.0 的直接文本内核并非只支持统计。对于满足条件的 Plain
 `--freq`、`--freq2`、`--counts`、`--missing-site`、`--site-depth`、
 `--site-mean-depth` 和 `--site-quality`。
 
-样本/位点选择、FILTER/INFO/FT 选择、尚未融合的过滤、BCF、个体归约、
-窗口统计、FST、LD、PCA 和 diff 使用通用兼容流水线。它们可以受益于公共
-输入、调度和输出优化，但不能直接套用七参数融合内核的加速比。
+v0.13.1 进一步让满足条件的 Plain VCF 位点保留/剔除、样本投影、窗口 pi、
+Tajima's D、site FST 和 window FST 进入直接文本执行族。这些路径共享选中
+样本 GT 解码、紧凑逐位点贡献、确定性有序归约和自适应只读映射范围。
+FILTER/INFO/FT 选择、尚未融合的过滤、BCF、个体归约、LD、PCA 和 diff
+仍使用通用兼容流水线。
 
 每次运行日志记录 `Execution kernel`、`Execution components`、输入后端、
 线程分配和高层阶段耗时。基准结果必须同时记录这些字段，让退出 fast path
@@ -47,9 +49,19 @@ Tajima's D 使用 100 kb 窗口。该值来自当前项目配置；以后修改�
 新的 profile，不能静默改变固定基准。
 
 开发阶段使用 23,000 个真实位点，线程 `1 4 8 16 32`，最多重复三次。
-候选版本使用标准 2,300,000 位点真实子集，线程 `1 2 4 8 16 32`，至少
+v0.13.1 另行锁定 230,000 位点 SSD/NVMe W03-W10 矩阵，避免把23k中亚秒级
+启动噪声当作吞吐结论。更大候选版本使用标准 2,300,000 位点真实子集，
+线程 `1 2 4 8 16 32`，至少
 重复三次。11,230,392 位点最终门禁只选四类：W02、W06、W07/W08 之一和
 W10。
+
+可复用驱动是
+[`benchmarks/run-workload-matrix.sh`](../benchmarks/run-workload-matrix.sh)。
+把
+[`benchmarks/workload-matrix-profile.example.sh`](../benchmarks/workload-matrix-profile.example.sh)
+复制到仓库外，填写锁定输入、选择列表、群体文件、oracle 和结果目录。
+驱动在运行前校验 `ORACLE_ROOT/SHA256SUMS`，不会自动生成或覆盖 Original
+oracle。
 
 ## 一致性与固定基线
 
@@ -74,3 +86,6 @@ W10。
 
 解析、reducer、压缩和 ordered-commit 等待的细分归因应放在专门 profiling
 构建中。正式 Release 基准不能启用逐记录计时，否则计时开销会扭曲性能。
+
+v0.13.1 已提交矩阵、精简计时、oracle/输入哈希和固定runner见
+[`benchmarks/results/workload-matrix-230k-v0130/RESULTS.zh-CN.md`](../benchmarks/results/workload-matrix-230k-v0130/RESULTS.zh-CN.md)。

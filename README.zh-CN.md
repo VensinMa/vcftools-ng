@@ -5,7 +5,14 @@
 vcftools-ng 是 VCFtools 0.1.17 的实验性高性能、输出兼容后继实现。
 
 **最新正式版：**
-[v0.13.0 — 事务式 BGZF 输出与热路径加速](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.13.0)
+[v0.13.1 — 自适应零拷贝群体统计加速](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.13.1)
+
+v0.13.1 将精确兼容的直接文本内核扩展到位点保留/剔除、样本投影后的
+counts/重编码、窗口 pi、Tajima's D 和逐位点/窗口 FST。Plain VCF 在
+多线程以及 I/O 主导的单线程选择任务中采用自适应只读零拷贝范围。固定
+230,000 位点矩阵完成 225/225 逐字节门禁，32线程 W03-W10 相对 Original
+加速 8.17×–29.21×；完整 23,000 位点门禁完成 285/285，并包含独立 GATK
+多等位 FST 工作负载。
 
 v0.13.0 已加入科学输出事务式发布、日志与资源限制
 加固，并默认输出更节省磁盘的 BGZF VCF。新的 ordered pipeline 会在运行
@@ -51,31 +58,30 @@ vcftools-ng 使用自适应、有序的输入分片和有界流水线：
   `--site-depth`、`--site-mean-depth` 和 `--site-quality` 可以进入
   直接融合文本路径，避免构建中间 `bcf1_t`；
 - v0.13.0 将同一个直接文本内核扩展到 Plain/BGZF VCF 重编码，
-  七个常用过滤参数与统计、重编码可以共享一次扫描；不支持的过滤、选择、
-  输入格式或高级分析会在发布任何输出前自动回退到通用兼容流水线；
+  七个常用过滤参数与统计、重编码可以共享一次扫描；v0.13.1 进一步加入
+  位点/样本选择和紧凑的 pi、Tajima、FST 有序归约；不支持的过滤、输入
+  格式或分析会在发布任何输出前自动回退到通用兼容流水线；
 - 乱序 shard 的待提交输出带有背压，内存不会随剩余文件无限增长。
 
 ### 性能结论的适用范围
 
-加速比只对实际测试的工作负载成立。v0.13.0 直接内核的性能数据适用于文档
-指定的七参数位点统计/VCF 重编码组合，不能笼统外推到样本或位点选择、个体
-归约、窗口 pi、Tajima's D、FST、LD、PCA、diff 或所有存储系统。这些操作
-在已记录范围内仍保持精确兼容，也可能受益于公共流水线，但需要各自的扩展性
-实测。固定的开发、候选版本和完整数据证据规则见
+加速比只对实际测试的工作负载成立。v0.13.1 已为位点/样本选择、窗口 pi、
+Tajima's D 和 FST 增加单独的锁定矩阵，但不能外推到个体归约、LD、PCA、
+diff、所有输入格式或所有存储系统。固定的开发、候选版本和完整数据证据规则见
 [代表性工作负载基准矩阵](docs/benchmark-workload-matrix.zh-CN.md)。
 
 ## 推荐安装方式
 
 Linux x86_64 便携包解压后即可运行。`bin` 中只放 `vcftools-ng`；用于
-自动构建 CSI 的私有 bcftools 放在 `libexec`。v0.13.0 便携构建同时
+自动构建 CSI 的私有 bcftools 放在 `libexec`。v0.13.1 便携构建同时
 打包 bcftools 1.24、HTSlib 1.24 和所需的非 glibc 运行库：
 
 ```bash
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.13.0/vcftools-ng-v0.13.0-linux-x86_64.tar.gz
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.13.0/vcftools-ng-v0.13.0-linux-x86_64.tar.gz.sha256
-sha256sum -c vcftools-ng-v0.13.0-linux-x86_64.tar.gz.sha256
-tar -xzf vcftools-ng-v0.13.0-linux-x86_64.tar.gz
-./vcftools-ng-v0.13.0-linux-x86_64/bin/vcftools-ng --version
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.13.1/vcftools-ng-v0.13.1-linux-x86_64.tar.gz
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.13.1/vcftools-ng-v0.13.1-linux-x86_64.tar.gz.sha256
+sha256sum -c vcftools-ng-v0.13.1-linux-x86_64.tar.gz.sha256
+tar -xzf vcftools-ng-v0.13.1-linux-x86_64.tar.gz
+./vcftools-ng-v0.13.1-linux-x86_64/bin/vcftools-ng --version
 ```
 
 便携包面向 glibc 2.17 或更高版本，在 CentOS 7 兼容的
@@ -90,16 +96,17 @@ HTSlib 或系统 bcftools。解压后请保持 `bin`、`lib` 和 `libexec`
 
 | 版本 | 解决的问题 | 关键参数或行为 | 推荐方式 |
 |---|---|---|---|
-| [v0.9.0](docs/versions/v0.9.0.md) | 建立首个共享高性能扫描路径 | 核心位点过滤和统计 | 历史里程碑；新任务使用v0.13.0 |
+| [v0.9.0](docs/versions/v0.9.0.md) | 建立首个共享高性能扫描路径 | 核心位点过滤和统计 | 历史里程碑；新任务使用v0.13.1 |
 | [v0.11.2](docs/releases/v0.11.2.md) | 扩展兼容范围与并行输入 | 个体/群体统计、LD/PCA、转换、diff、自动CSI | 历史兼容里程碑 |
 | [v0.11.3](docs/releases/v0.11.3.md) | 修复低核心 `--counts` 回归 | 直接文本计数融合、自适应输入 | v0.13.0已经继承 |
 | [v0.12.1](docs/releases/v0.12.1.md) | 减少重复位点解析并扩展精确重编码 | 融合位点输出、`--recode-vcf-gz` | 可兼容统计应在一次运行中组合 |
 | [v0.12.2](docs/releases/v0.12.2.md) | 将按格式建索引改为按工作负载决策 | 默认自适应；高级 `--input-backend`；移除 `--no-auto-index` | 保持默认自动后端 |
 | [v0.12.3](docs/releases/v0.12.3.md) | 改进过于简略的终端帮助 | `--help`、`NO_COLOR`、`CLICOLOR_FORCE` | 用 `--help` 查询组合和后缀 |
 | [v0.12.4](docs/releases/v0.12.4.md) | 补齐标准运行日志 | 默认 `PREFIX.log`、`--log-file`、`--no-log-file` | 建议保留默认日志 |
-| [v0.13.0](docs/releases/v0.13.0.md) | 避免大体积普通VCF的I/O压力和部分结果发布 | 事务式输出；`--recode`默认BGZF；`--recode-vcf`；严格线程预算 | 所有新任务的推荐版本 |
+| [v0.13.0](docs/releases/v0.13.0.md) | 避免大体积普通VCF的I/O压力和部分结果发布 | 事务式输出；`--recode`默认BGZF；`--recode-vcf`；严格线程预算 | 已由v0.13.1继承 |
+| [v0.13.1](docs/releases/v0.13.1.md) | 消除常用选择和群体统计的通用流水线开销 | 直接位点/样本投影；pi/Tajima/FST归约；Plain VCF自适应零拷贝 | 所有新任务的推荐版本 |
 
-### v0.13.0 推荐参数
+### v0.13.1 推荐参数
 
 - 保持默认 `--input-backend auto`。程序会按工作负载选择BGZF索引区域、
   Plain VCF对齐范围或BCF流式读取。
@@ -358,6 +365,26 @@ BGZF/BCF区域查询才优先复用或构建索引；紧凑型全文件统计从
 已有索引，但不为单次扫描临时构建索引。`--no-auto-index` 已移除。
 `--input-backend stream|indexed` 仍可用于高级诊断和显式覆盖。
 
+## v0.13.1 选择与群体统计性能
+
+固定 SSD/NVMe 矩阵使用 230,000 个真实位点和 412 个样本。Original
+VCFtools 0.1.17 只运行一次并永久保留逐字节 oracle；vcftools-ng 在
+1/4/8/16/32线程各运行三次，下表为 wall time 中位数（秒）。225/225 个
+结果全部通过完整逐字节比较。
+
+| 工作负载 | Original | 1 | 4 | 8 | 16 | 32 | 32线程加速 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| W03 保留1%排序位点 | 1.00 | 0.26 | 0.15 | 0.14 | 0.13 | 0.12 | 8.33× |
+| W05 保留50%样本并counts | 3.94 | 1.61 | 0.45 | 0.27 | 0.22 | 0.15 | 26.27× |
+| W07 重叠窗口pi | 4.16 | 2.68 | 0.66 | 0.38 | 0.32 | 0.20 | 20.80× |
+| W09 大群体对site FST | 4.55 | 2.58 | 0.70 | 0.39 | 0.33 | 0.22 | 20.68× |
+| W10 二等位window FST | 4.55 | 2.60 | 0.71 | 0.41 | 0.33 | 0.21 | 21.67× |
+
+完整15个工作负载、输入/oracle哈希、CPU/RSS记录和固定runner见
+[v0.13.1 230k报告](benchmarks/results/workload-matrix-230k-v0130/RESULTS.zh-CN.md)。
+映射的Plain VCF页面属于可回收文件页，但Linux峰值RSS可能接近已访问的
+输入大小，因此仍需结合存储介质和内存压力解释。
+
 ## v0.13.0 完整数据第一轮性能
 
 全量发布工作负载使用七个真实项目过滤参数并保留全部 INFO。下表是32 CPU
@@ -458,6 +485,10 @@ ctest --test-dir build --output-on-failure
   [benchmarks/results/development-v0124-logging-final/README.md](benchmarks/results/development-v0124-logging-final/README.md)
 - v0.13.0 输入/输出/存储完整数据发布门禁：
   [benchmarks/results/v0130-input-output-storage/README.md](benchmarks/results/v0130-input-output-storage/README.md)
+- v0.13.1 技术记录：
+  [docs/versions/v0.13.1.md](docs/versions/v0.13.1.md)
+- v0.13.1 选择/群体统计矩阵：
+  [benchmarks/results/workload-matrix-230k-v0130/RESULTS.zh-CN.md](benchmarks/results/workload-matrix-230k-v0130/RESULTS.zh-CN.md)
 - 参数兼容矩阵：
   [docs/parameter-compatibility.md](docs/parameter-compatibility.md)
 - 版本历史：

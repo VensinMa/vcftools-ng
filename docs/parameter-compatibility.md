@@ -1,8 +1,7 @@
 # Parameter compatibility and optimization status
 
-This document describes the v0.13.0 source-candidate command-line surface.
-VCFtools 0.1.17 source and output files are the compatibility oracle. Release
-qualification for the candidate-only behavior is still pending.
+This document describes the v0.13.1 command-line surface. VCFtools 0.1.17
+source and output files are the compatibility oracle.
 
 The terms below are deliberately separate:
 
@@ -27,15 +26,15 @@ independent speedup for every possible combination.
 |---|---|---|
 | Site frequency, missingness, depth, and quality | `--freq`, `--freq2`, `--counts`, `--missing-site`, `--site-depth`, `--site-mean-depth`, `--site-quality` | Real 2.3-million-record complete-file goldens. The v0.11.4 fused BGZF path passed at 8/16 threads. Six outputs in one scan measured 38.68×/46.11× against six Original scans; `--freq2` measured 7.20×/8.55×. |
 | Individual and HWE statistics | `--depth`, `--missing-indv`, `--het`, `--hardy` | Real 2.3-million-record exact gates and individual/combined benchmarks in v0.10.0. |
-| Diversity and population statistics | `--site-pi`, `--window-pi`, `--window-pi-step`, `--TajimaD`, `--weir-fst-pop`, `--fst-window-size`, `--fst-window-step` | Real-data exact gates and π, Tajima's D, site/window FST benchmarks in v0.10.0. |
+| Diversity and population statistics | `--site-pi`, `--window-pi`, `--window-pi-step`, `--TajimaD`, `--weir-fst-pop`, `--fst-window-size`, `--fst-window-step` | v0.13.1 direct Plain VCF paths passed the 23k and 230k exact matrices at 1/4/8/16/32 threads. At 32 threads, window pi, Tajima's D, site FST, and window FST measured 20.15×–29.21× over Original in the locked 230k workloads. |
 | LD and PCA | `--geno-r2`, `--ld-window`, `--ld-window-min`, `--ld-window-bp`, `--ld-window-bp-min`, `--min-r2`, `--pca`, `--pca-no-norm` | Real-data exact gates and LD/PCA benchmarks in v0.10.0. |
-| VCF/BCF recode | `--recode`, `--recode-bcf`, `--recode-INFO-all`, `--stdout` | Complete VCF/BCF byte gates and conversion benchmarks. The v0.11.4 real seven-filter recode gate passed all three development scenarios at 1/2/4/8/16/32 threads. In the v0.13.0 candidate, file-based `--recode` changes only the container to BGZF; decompressed VCF bytes retain the Original-compatible path, while `--recode-vcf` selects a directly comparable plain file. Candidate release qualification is pending. `--recode --stdout` remains plain VCF. |
+| VCF/BCF recode | `--recode`, `--recode-bcf`, `--recode-INFO-all`, `--stdout` | Complete VCF/BCF byte gates and conversion benchmarks. File-based `--recode` changes only the container to BGZF; decompressed VCF bytes retain the Original-compatible path, while `--recode-vcf` selects a directly comparable plain file. v0.13.1 also gates selected-sample plus seven-filter direct BGZF recode. `--recode --stdout` remains plain VCF. |
 | Common numeric/site filters | `--min-alleles`, `--max-alleles`, `--remove-indels`, `--keep-only-indels`, `--minQ`, `--min-meanDP`, `--max-meanDP`, `--max-missing`, `--max-missing-count`, `--maf`, `--max-maf`, `--mac`, `--max-mac`, `--hwe` | Exact filtered statistics/recode gates and v0.2/v0.5/v0.11.4 real-data benchmarks. |
-| Chromosome, position, and interval filters | `--chr`, `--not-chr`, `--from-bp`, `--to-bp`, `--positions`, `--exclude-positions`, `--bed`, `--exclude-bed`, `--thin` | Complete-file exact gates and v0.3/v0.6/v0.7 benchmarks. |
+| Chromosome, position, and interval filters | `--chr`, `--not-chr`, `--from-bp`, `--to-bp`, `--positions`, `--exclude-positions`, `--bed`, `--exclude-bed`, `--thin` | Complete-file exact gates and v0.3/v0.6/v0.7 benchmarks. v0.13.1 additionally gives `--positions`/`--exclude-positions` a direct Plain VCF path; 1%/50%, sorted/shuffled, duplicate, and absent-position 230k fixtures passed byte gates and measured 8.17×–20.00× at 32 threads. |
 | Non-reference filters | `--non-ref-af`, `--max-non-ref-af`, `--non-ref-af-any`, `--max-non-ref-af-any`, `--non-ref-ac`, `--max-non-ref-ac`, `--non-ref-ac-any`, `--max-non-ref-ac-any` | Complete-file exact gates and v0.8 benchmark. |
 | FILTER/INFO Flag filters | `--keep-filtered`, `--remove-filtered`, `--remove-filtered-all`, `--keep-INFO`, `--remove-INFO` | Annotated real-data exact gate and v0.9 filtered-recode benchmark. `--keep-INFO`/`--remove-INFO` are Flag filters, matching this Original path. |
 | Genotype filters | `--minGQ`, `--minDP`, `--maxDP`, `--remove-filtered-geno`, `--remove-filtered-geno-all` | Exact GT-masking and FT gates; filtered recode/statistics benchmarks in v0.2, v0.9, and v0.11.4. |
-| Sample filters | `--keep`, `--remove`, `--indv`, `--remove-indv` | Six complete outputs passed the real-data gate; measured in v0.4 and v0.9. |
+| Sample filters | `--keep`, `--remove`, `--indv`, `--remove-indv` | Six complete outputs passed the original real-data gate. v0.13.1 direct sample projection passed 25%/50%/100% 230k counts gates; 32-thread speedup measured 21.05×–27.93×. Selected-sample plus seven-filter BGZF recode is covered by the 23k byte gate. |
 
 The Original input/output selectors `--vcf`, `--gzvcf`, `--bcf`, and `--out`
 are also supported. Correctly matched VCF, BGZF VCF, and BCF inputs feed the

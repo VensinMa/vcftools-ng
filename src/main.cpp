@@ -166,7 +166,10 @@ bool can_use_fused_site_stats(const Options& options) {
         options.output_missing_site ||
         options.output_site_depth ||
         options.output_site_mean_depth ||
-        options.output_site_quality;
+        options.output_site_quality ||
+        options.pi_window_size > 0 ||
+        options.tajima_window_size > 0 ||
+        !options.fst_population_files.empty();
     const bool recode_output =
         options.output_recode || options.output_recode_vcf_gz;
     const bool supported_outputs =
@@ -177,12 +180,6 @@ bool can_use_fused_site_stats(const Options& options) {
         !options.output_heterozygosity &&
         !options.output_hardy_weinberg &&
         !options.output_site_pi &&
-        options.pi_window_size == 0 &&
-        options.pi_window_step == 0 &&
-        options.tajima_window_size == 0 &&
-        options.fst_population_files.empty() &&
-        options.fst_window_size == 0 &&
-        options.fst_window_step == 0 &&
         !options.output_genotype_r2 &&
         options.ld_snp_window_size ==
             std::numeric_limits<int>::max() &&
@@ -198,13 +195,16 @@ bool can_use_fused_site_stats(const Options& options) {
         !options.output_diff_individuals_in_files &&
         !options.output_diff_site_discordance &&
         !options.output_diff_individual_discordance;
-    const bool no_selection =
+    const bool sample_selection_active =
+        !options.samples_to_keep.empty() ||
+        !options.samples_to_exclude.empty() ||
+        !options.sample_keep_files.empty() ||
+        !options.sample_exclude_files.empty();
+    const bool supported_selection =
         options.chromosomes_to_keep.empty() &&
         options.chromosomes_to_exclude.empty() &&
         options.start_position == -1 &&
         options.end_position == std::numeric_limits<int>::max() &&
-        options.positions_file.empty() &&
-        options.exclude_positions_file.empty() &&
         options.bed_file.empty() &&
         options.site_filters_to_keep.empty() &&
         options.site_filters_to_remove.empty() &&
@@ -213,10 +213,12 @@ bool can_use_fused_site_stats(const Options& options) {
         options.info_flags_to_remove.empty() &&
         options.genotype_filters_to_remove.empty() &&
         !options.remove_all_filtered_genotypes &&
-        options.samples_to_keep.empty() &&
-        options.samples_to_exclude.empty() &&
-        options.sample_keep_files.empty() &&
-        options.sample_exclude_files.empty();
+        (!recode_output ||
+         (!sample_selection_active &&
+          options.positions_file.empty() &&
+          options.exclude_positions_file.empty()) ||
+         vcftools_ng::input::describe_input_format(options.input) ==
+             "Plain VCF");
     const bool supported_numeric_filters =
         !options.remove_indels &&
         !options.keep_only_indels &&
@@ -244,10 +246,90 @@ bool can_use_fused_site_stats(const Options& options) {
         (options.threads <= 2 &&
          options.input_backend ==
              vcftools_ng::input::Backend::stream);
+    const bool advanced_backend_supported =
+        (options.pi_window_size == 0 &&
+         options.tajima_window_size == 0 &&
+         options.fst_population_files.empty()) ||
+        vcftools_ng::input::describe_input_format(options.input) ==
+            "Plain VCF";
     return supported_outputs &&
-           no_selection &&
+           supported_selection &&
            supported_numeric_filters &&
-           backend_allows_fused_stream;
+           backend_allows_fused_stream &&
+           advanced_backend_supported;
+}
+
+std::string join_execution_components(
+    const std::vector<std::string>& components) {
+    std::ostringstream joined;
+    for (std::size_t index = 0; index < components.size(); ++index) {
+        if (index != 0) {
+            joined << ',';
+        }
+        joined << components[index];
+    }
+    return joined.str();
+}
+
+std::string execution_components(const Options& options) {
+    std::vector<std::string> components;
+    if (options.output_freq || options.output_freq2 ||
+        options.output_counts || options.output_missing_site ||
+        options.output_site_depth || options.output_site_mean_depth ||
+        options.output_site_quality) {
+        components.emplace_back("site-statistics");
+    }
+    if (options.output_individual_depth ||
+        options.output_individual_missingness ||
+        options.output_heterozygosity) {
+        components.emplace_back("individual-reduction");
+    }
+    if (options.output_hardy_weinberg) {
+        components.emplace_back("hardy-weinberg");
+    }
+    if (options.output_site_pi) {
+        components.emplace_back("site-pi");
+    }
+    if (options.pi_window_size > 0) {
+        components.emplace_back("window-pi");
+    }
+    if (options.tajima_window_size > 0) {
+        components.emplace_back("tajima-d");
+    }
+    if (!options.fst_population_files.empty()) {
+        components.emplace_back(
+            options.fst_window_size > 0 ? "window-fst" : "site-fst");
+    }
+    if (options.output_genotype_r2) {
+        components.emplace_back("ld");
+    }
+    if (options.output_pca) {
+        components.emplace_back("pca");
+    }
+    if (options.output_recode || options.output_recode_vcf_gz) {
+        components.emplace_back("vcf-recode");
+    }
+    if (options.output_recode_bcf) {
+        components.emplace_back("bcf-recode");
+    }
+    if (!options.diff_input.empty()) {
+        components.emplace_back("two-file-diff");
+    }
+    if (components.empty()) {
+        components.emplace_back("filter-only");
+    }
+    return join_execution_components(components);
+}
+
+void log_stage_time(
+    const std::string& stage,
+    std::chrono::steady_clock::time_point start) {
+    const double seconds = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - start).count();
+    std::ostringstream formatted;
+    formatted << std::fixed << std::setprecision(3) << seconds;
+    std::cerr << "Stage time [" << stage << "]: "
+              << formatted.str() << " seconds\n";
 }
 
 [[noreturn]] void fail(const std::string& message) {
@@ -627,7 +709,8 @@ RUN LOGGING:
   Normal runs overwrite PREFIX.log by default. The terminal and file receive
   the same diagnostics. The log records command/environment metadata, input
   and output details, filters, adaptive index decisions, thread allocation,
-  sample/site counts, wall/CPU/RSS usage, warnings, errors, and exit status.
+  execution kernel/components, high-level stage times, sample/site counts,
+  wall/CPU/RSS usage, warnings, errors, and exit status.
   --log-file changes the path. --no-log-file disables only the file.
   VCF written by --recode --stdout remains isolated on stdout.
 
@@ -2602,27 +2685,16 @@ public:
             return false;
         }
 
-        const int reference_length = static_cast<int>(
-            std::max<hts_pos_t>(1, record->rlen));
         if (!options_.positions_file.empty()) {
-            bool found = false;
-            for (int offset = 0; offset < reference_length; ++offset) {
-                if (positions_to_keep_.contains(
-                        make_key(record->rid, position + offset))) {
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
+            if (!positions_to_keep_.contains(
+                    make_key(record->rid, position))) {
                 return false;
             }
         }
         if (!options_.exclude_positions_file.empty()) {
-            for (int offset = 0; offset < reference_length; ++offset) {
-                if (positions_to_exclude_.contains(
-                        make_key(record->rid, position + offset))) {
-                    return false;
-                }
+            if (positions_to_exclude_.contains(
+                    make_key(record->rid, position))) {
+                return false;
             }
         }
         if (!options_.bed_file.empty()) {
@@ -5965,6 +6037,10 @@ int run_diff(const Options& options) {
 
 int run(const Options& options) {
     if (!options.diff_input.empty()) {
+        std::cerr << "Execution kernel: two-file-diff\n"
+                  << "Execution components: "
+                  << execution_components(options) << "\n"
+                  << "Fused text fast path: not applicable\n";
         return run_diff(options);
     }
     if (can_use_fused_site_stats(options)) {
@@ -5975,6 +6051,18 @@ int run(const Options& options) {
             input_format == "Plain VCF" ||
             input_format == "BGZF VCF" ||
             input_format == "gzip-compressed VCF";
+        if (text_vcf) {
+            std::cerr
+                << "Execution kernel: "
+                << (options.output_recode ||
+                            options.output_recode_vcf_gz
+                        ? "fused-text-filter-recode"
+                        : "fused-text-site-statistics")
+                << "\n"
+                << "Execution components: "
+                << execution_components(options) << "\n"
+                << "Fused text fast path: selected\n";
+        }
         if (input_format == "Plain VCF" ||
             input_format == "gzip-compressed VCF") {
             std::cerr
@@ -6062,11 +6150,28 @@ int run(const Options& options) {
             .site_depth = options.output_site_depth,
             .site_mean_depth = options.output_site_mean_depth,
             .site_quality = options.output_site_quality,
+            .pi_window_size = options.pi_window_size,
+            .pi_window_step = options.pi_window_step,
+            .tajima_window_size = options.tajima_window_size,
+            .fst_population_files = options.fst_population_files,
+            .fst_window_size = options.fst_window_size,
+            .fst_window_step = options.fst_window_step,
             .recode =
                 options.output_recode ||
                 options.output_recode_vcf_gz,
             .recode_info_all = options.recode_info_all,
             .recode_sink = fast_recode_sink,
+            .positions_file = options.positions_file,
+            .exclude_positions_file =
+                options.exclude_positions_file,
+            .positions_to_keep = {},
+            .positions_to_exclude = {},
+            .samples_to_keep = options.samples_to_keep,
+            .samples_to_exclude = options.samples_to_exclude,
+            .sample_keep_files = options.sample_keep_files,
+            .sample_exclude_files =
+                options.sample_exclude_files,
+            .population_memberships = {},
             .min_alleles = options.min_alleles,
             .max_alleles = options.max_alleles,
             .min_quality = options.min_qual,
@@ -6075,9 +6180,13 @@ int run(const Options& options) {
             .min_call_rate = options.min_call_rate,
             .min_maf = options.min_maf,
         };
+        const auto fused_start = std::chrono::steady_clock::now();
         const auto fast = vcftools_ng::run_fast_text_site_stats(
             options.output_prefix, fast_options, fast_plan);
         if (fast.has_value()) {
+            log_stage_time("fused scan/filter/output", fused_start);
+            const auto finalization_start =
+                std::chrono::steady_clock::now();
             if (fast_recode_bgzf) {
                 fast_recode_bgzf->finish();
             }
@@ -6087,6 +6196,7 @@ int run(const Options& options) {
                     fast_recode_plain,
                     options.output_prefix + ".recode.vcf");
             }
+            log_stage_time("output finalization", finalization_start);
             const auto detected_threads =
                 vcftools_ng::input::detect_available_threads();
             std::cerr
@@ -6139,6 +6249,15 @@ int run(const Options& options) {
             return 0;
         }
     }
+    std::cerr << "Execution kernel: generic-ordered-pipeline\n"
+              << "Execution components: "
+              << execution_components(options) << "\n"
+              << "Fused text fast path: not selected\n"
+              << "Fast-path reason: the requested input, selection, "
+                 "filter, or analysis requires the general "
+                 "compatibility pipeline\n";
+    const auto input_planning_start =
+        std::chrono::steady_clock::now();
     vcftools_ng::input::SourceOptions source_options{
         .path = options.input,
         .requested_backend = options.input_backend,
@@ -6159,6 +6278,7 @@ int run(const Options& options) {
     };
     auto source =
         vcftools_ng::input::make_ordered_source(source_options);
+    log_stage_time("input/index planning", input_planning_start);
     bcf_hdr_t* header = source->header();
     validate_info_flag_filters(options, header);
     const auto detected_threads =
@@ -6196,16 +6316,24 @@ int run(const Options& options) {
               << source->planned_shards() << "\n"
               << "Batch size: " << options.batch_size << "\n";
 
+    const auto pipeline_setup_start =
+        std::chrono::steady_clock::now();
     SiteSelector selector(options, header);
     SampleSelection samples(options, header);
     std::cerr << "Selected samples: " << samples.count() << "\n";
     OrderedCommitter committer(
         options, samples.output_header(header), samples.active());
+    log_stage_time("pipeline setup", pipeline_setup_start);
     std::cerr << "Scheduler: bounded ordered pipeline (3 batches)\n";
+    const auto pipeline_start = std::chrono::steady_clock::now();
     const PipelineSummary summary = run_ordered_pipeline(
         options, selector, samples, header, *source,
         resources.compute_threads, committer);
+    log_stage_time("ordered input/compute/commit", pipeline_start);
+    const auto finalization_start =
+        std::chrono::steady_clock::now();
     committer.finish();
+    log_stage_time("output finalization", finalization_start);
 
     std::cerr << "After filtering, kept " << summary.kept << " out of "
               << summary.total

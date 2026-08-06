@@ -103,5 +103,34 @@ benchmarks/results/v0130-input-output-storage/logs/
 benchmarks/results/v0130-input-output-storage/runs/
 benchmarks/results/v0130-input-output-storage/smoke/
 
+# v0.13.1 workload matrices keep compact evidence in Git while multi-GB real
+# inputs, scientific outputs, per-run logs, and local A/B directories remain
+# reproducible local artifacts.
+benchmarks/results/workload-matrix-23k-v0130/**
+!benchmarks/results/workload-matrix-23k-v0130/INPUT_FIXTURES.sha256
+!benchmarks/results/workload-matrix-23k-v0130/environment.txt
+!benchmarks/results/workload-matrix-23k-v0130/final-mmap/
+benchmarks/results/workload-matrix-23k-v0130/final-mmap/**
+!benchmarks/results/workload-matrix-23k-v0130/final-mmap/runs.tsv
+
+benchmarks/results/workload-matrix-230k-v0130/**
+!benchmarks/results/workload-matrix-230k-v0130/FIXTURE_INFO.txt
+!benchmarks/results/workload-matrix-230k-v0130/input.sha256
+!benchmarks/results/workload-matrix-230k-v0130/original-runs.tsv
+!benchmarks/results/workload-matrix-230k-v0130/RESULTS.md
+!benchmarks/results/workload-matrix-230k-v0130/RESULTS.zh-CN.md
+!benchmarks/results/workload-matrix-230k-v0130/fixtures/
+benchmarks/results/workload-matrix-230k-v0130/fixtures/**
+!benchmarks/results/workload-matrix-230k-v0130/fixtures/SHA256SUMS
+!benchmarks/results/workload-matrix-230k-v0130/oracles/
+benchmarks/results/workload-matrix-230k-v0130/oracles/**
+!benchmarks/results/workload-matrix-230k-v0130/oracles/SHA256SUMS
+!benchmarks/results/workload-matrix-230k-v0130/baseline-current/
+benchmarks/results/workload-matrix-230k-v0130/baseline-current/**
+!benchmarks/results/workload-matrix-230k-v0130/baseline-current/runs.tsv
+!benchmarks/results/workload-matrix-230k-v0130/final-mmap/
+benchmarks/results/workload-matrix-230k-v0130/final-mmap/**
+!benchmarks/results/workload-matrix-230k-v0130/final-mmap/runs.tsv
+
 # Reproducible index-construction products are local benchmark artifacts.
 benchmarks/results/csi-index-build/*.csi

@@ -4,8 +4,16 @@
 
 Experimental high-performance, output-compatible successor to VCFtools 0.1.17.
 
-**Latest release:** [v0.13.0 — Transactional BGZF Output and Hot-Path
-Acceleration](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.13.0)
+**Latest release:** [v0.13.1 — Adaptive Zero-Copy Population
+Analytics](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.13.1)
+
+v0.13.1 extends the exact direct-text engine to position inclusion/exclusion,
+selected-sample counts and recode, window pi, Tajima's D, and site/window FST.
+Plain VCF now uses adaptive read-only zero-copy ranges for multi-thread work
+and for I/O-dominated one-thread selection. A locked 230,000-record matrix
+passed 225/225 byte gates and measured 8.17x-29.21x speedup over Original at
+32 threads across W03-W10; the complete 23,000-record gate passed 285/285,
+including an independent GATK multiallelic FST workload.
 
 v0.13.0 adds transactional scientific
 outputs, hardened logging and resource limits, and disk-safe BGZF VCF output
@@ -60,20 +68,20 @@ For eligible site-local work, an adaptive fused path avoids `bcf1_t`
 construction. It covers `--freq`, `--freq2`, `--counts`, `--missing-site`,
 `--site-depth`, `--site-mean-depth`, and `--site-quality`; v0.13.0 also
 applies the same direct kernel to Plain/BGZF VCF recode with
-the common seven-filter workload. Plain VCF workers parse aligned byte ranges
-directly, while indexed BGZF workers query ordered tabix regions. Recode and
-statistics can share one scan, and all worker output is bounded and committed
-in exact input order. Unsupported filters, selections, formats, and analyses
-automatically use the general compatibility pipeline.
+the common seven-filter workload. v0.13.1 adds direct position and sample
+selection plus compact ordered pi, Tajima, and FST reductions. Plain VCF
+workers use aligned read-only mapped ranges when profitable, while indexed
+BGZF workers query ordered tabix regions. Recode and statistics can share one
+scan, and all worker output is bounded and committed in exact input order.
+Unsupported filters, formats, and analyses automatically use the general
+compatibility pipeline.
 
 ### Performance claim scope
 
-Speedups are workload-specific. The v0.13.0 direct-kernel measurements apply
-to the documented seven-filter site-statistics/VCF-recode workloads; they are
-not a blanket speedup guarantee for sample or position selection, individual
-reductions, window pi, Tajima's D, FST, LD, PCA, diff, or every storage system.
-Those operations remain exact-compatible where documented and may benefit
-from the common pipeline, but require their own scaling measurements. See the
+Speedups are workload-specific. v0.13.1 adds separate locked measurements for
+position/sample selection, window pi, Tajima's D, and FST; those results must
+not be extrapolated to individual reductions, LD, PCA, diff, every input
+format, or every storage system. See the
 [representative workload benchmark matrix](docs/benchmark-workload-matrix.md)
 for the fixed development, release-candidate, and full-data evidence policy.
 
@@ -81,15 +89,15 @@ for the fixed development, release-candidate, and full-data evidence policy.
 
 The portable Linux x86_64 archive is ready to run after extraction. `bin`
 contains only `vcftools-ng`; private bcftools support for automatic CSI
-construction is kept under `libexec`. The v0.13.0 archive bundles bcftools
+construction is kept under `libexec`. The v0.13.1 archive bundles bcftools
 1.24, HTSlib 1.24, and the required non-glibc runtime libraries.
 
 ```bash
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.13.0/vcftools-ng-v0.13.0-linux-x86_64.tar.gz
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.13.0/vcftools-ng-v0.13.0-linux-x86_64.tar.gz.sha256
-sha256sum -c vcftools-ng-v0.13.0-linux-x86_64.tar.gz.sha256
-tar -xzf vcftools-ng-v0.13.0-linux-x86_64.tar.gz
-./vcftools-ng-v0.13.0-linux-x86_64/bin/vcftools-ng --version
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.13.1/vcftools-ng-v0.13.1-linux-x86_64.tar.gz
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.13.1/vcftools-ng-v0.13.1-linux-x86_64.tar.gz.sha256
+sha256sum -c vcftools-ng-v0.13.1-linux-x86_64.tar.gz.sha256
+tar -xzf vcftools-ng-v0.13.1-linux-x86_64.tar.gz
+./vcftools-ng-v0.13.1-linux-x86_64/bin/vcftools-ng --version
 ```
 
 The archive requires Linux x86_64 with glibc 2.17 or newer. It is built on a
@@ -106,16 +114,17 @@ the technical archive and do not compete with the current usage guidance.
 
 | Release | Problem addressed | Key parameters or behavior | Recommended use |
 |---|---|---|---|
-| [v0.9.0](docs/versions/v0.9.0.md) | Established the first shared high-performance scan | Core site filters and statistics | Historical milestone; use v0.13.0 for new work |
+| [v0.9.0](docs/versions/v0.9.0.md) | Established the first shared high-performance scan | Core site filters and statistics | Historical milestone; use v0.13.1 for new work |
 | [v0.11.2](docs/releases/v0.11.2.md) | Expanded compatibility and parallel input coverage | Individual/population statistics, LD/PCA, conversion, diff, automatic CSI | Historical compatibility milestone |
 | [v0.11.3](docs/releases/v0.11.3.md) | Removed low-core `--counts` regressions | Direct text-to-count fusion and adaptive input | Behavior is inherited by v0.13.0 |
 | [v0.12.1](docs/releases/v0.12.1.md) | Removed repeated site parsing and scaled exact recode | Fused site outputs, `--recode-vcf-gz` | Request multiple compatible site outputs in one run |
 | [v0.12.2](docs/releases/v0.12.2.md) | Replaced format-wide indexing with workload decisions | Adaptive `auto`; advanced `--input-backend`; removed `--no-auto-index` | Keep the default automatic backend |
 | [v0.12.3](docs/releases/v0.12.3.md) | Replaced the minimal terminal help | `--help`, `NO_COLOR`, `CLICOLOR_FORCE` | Check `--help` for combinations and suffixes |
 | [v0.12.4](docs/releases/v0.12.4.md) | Closed the missing run-log gap | Default `PREFIX.log`, `--log-file`, `--no-log-file` | Keep the default log for reproducibility |
-| [v0.13.0](docs/releases/v0.13.0.md) | Prevented large plain-VCF I/O pressure and partial publication | Transactional output; `--recode` defaults to BGZF; `--recode-vcf`; strict thread budget | Recommended release for all new runs |
+| [v0.13.0](docs/releases/v0.13.0.md) | Prevented large plain-VCF I/O pressure and partial publication | Transactional output; `--recode` defaults to BGZF; `--recode-vcf`; strict thread budget | Inherited by v0.13.1 |
+| [v0.13.1](docs/releases/v0.13.1.md) | Removed generic-pipeline overhead from common selection and population workloads | Direct positions/sample projection; pi/Tajima/FST reductions; adaptive zero-copy Plain VCF | Recommended release for all new runs |
 
-### Recommended v0.13.0 parameters
+### Recommended v0.13.1 parameters
 
 - Leave `--input-backend auto` unchanged. It selects indexed BGZF regions,
   aligned Plain VCF ranges, or streaming BCF according to the workload.
@@ -390,6 +399,27 @@ overwritten. `--input-backend stream|indexed` remains an advanced override,
 and `--bcftools FILE` selects the executable used when adaptive CSI
 construction is profitable.
 
+## v0.13.1 selection and population-statistics performance
+
+The locked SSD/NVMe matrix uses 230,000 real records and 412 samples. Original
+VCFtools 0.1.17 was measured once and its byte-identical oracles were retained;
+vcftools-ng ran three times at 1/4/8/16/32 threads and the table reports median
+wall seconds. All 225/225 outputs passed complete byte comparison.
+
+| Workload | Original | 1 | 4 | 8 | 16 | 32 | 32-thread speedup |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| W03 positions 1% sorted | 1.00 | 0.26 | 0.15 | 0.14 | 0.13 | 0.12 | 8.33x |
+| W05 keep 50% samples + counts | 3.94 | 1.61 | 0.45 | 0.27 | 0.22 | 0.15 | 26.27x |
+| W07 overlapping window pi | 4.16 | 2.68 | 0.66 | 0.38 | 0.32 | 0.20 | 20.80x |
+| W09 large-pair site FST | 4.55 | 2.58 | 0.70 | 0.39 | 0.33 | 0.22 | 20.68x |
+| W10 biallelic window FST | 4.55 | 2.60 | 0.71 | 0.41 | 0.33 | 0.21 | 21.67x |
+
+The full 15-workload table, input/oracle hashes, CPU/RSS records, and exact
+runner are in the [v0.13.1 230k report](benchmarks/results/workload-matrix-230k-v0130/RESULTS.md).
+Mapped Plain VCF pages are file-backed and reclaimable, but Linux peak RSS can
+approach the accessed input size; storage and memory pressure remain part of
+the workload-specific interpretation.
+
 ## v0.13.0 full-data first-repeat performance
 
 The release workload applies the seven real-project filters and preserves all
@@ -485,6 +515,8 @@ development gate are documented here:
 - [v0.12.4 technical record](docs/versions/v0.12.4.md)
 - [v0.12.4 logging-enabled development gate](benchmarks/results/development-v0124-logging-final/README.md)
 - [v0.13.0 input/output/storage release gate](benchmarks/results/v0130-input-output-storage/README.md)
+- [v0.13.1 technical record](docs/versions/v0.13.1.md)
+- [v0.13.1 selection/population matrix](benchmarks/results/workload-matrix-230k-v0130/RESULTS.md)
 
 ## Build from source
 

@@ -7,6 +7,14 @@ bgzip_bin=${BGZIP:-/home/vensin/anaconda3/envs/hifiasm/bin/bgzip}
 tabix_bin=${TABIX:-/home/vensin/anaconda3/envs/hifiasm/bin/tabix}
 source_bcf=${1:-"$project_root/tests/fixtures/osmanthus412.23chr_100k.bcf"}
 output_prefix=${2:-"$project_root/tests/fixtures/osmanthus412.flags.23chr_1k"}
+records_per_contig=${RECORDS_PER_CONTIG:-1000}
+write_plain_vcf=${WRITE_PLAIN_VCF:-0}
+
+if [[ ! $records_per_contig =~ ^[1-9][0-9]*$ ]]; then
+    printf 'RECORDS_PER_CONTIG must be a positive integer: %s\n' \
+        "$records_per_contig" >&2
+    exit 1
+fi
 
 mkdir -p "$project_root/tests/output"
 work_dir=$(mktemp -d "$project_root/tests/output/flagged-fixture.XXXXXX")
@@ -14,12 +22,12 @@ trap 'rm -rf -- "$work_dir"' EXIT
 
 positions="$work_dir/positions.txt"
 "$bcftools_bin" query -f '%CHROM\t%POS\n' "$source_bcf" |
-    awk '
+    awk -v limit="$records_per_contig" '
         $1 != chromosome {
             chromosome = $1
             count = 0
         }
-        count < 1000 {
+        count < limit {
             print
             count++
         }
@@ -114,5 +122,14 @@ annotation_vcf="$work_dir/annotation.vcf"
     -o "$output_prefix.vcf.gz" \
     "$output_prefix.bcf"
 "$tabix_bin" -f -p vcf "$output_prefix.vcf.gz"
+
+if [[ $write_plain_vcf == 1 ]]; then
+    if [[ -e $output_prefix.vcf ]]; then
+        printf 'Refusing to replace existing fixture artifact: %s\n' \
+            "$output_prefix.vcf" >&2
+        exit 1
+    fi
+    "$bgzip_bin" -dc "$output_prefix.vcf.gz" >"$output_prefix.vcf"
+fi
 
 "$bcftools_bin" index -n "$output_prefix.bcf"

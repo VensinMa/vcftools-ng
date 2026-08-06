@@ -30,6 +30,9 @@ assert_standard_log() {
     grep -Fqx 'Index policy: automatic' "$log"
     grep -Fqx 'Existing sidecar: none' "$log"
     grep -Fqx 'Index validation: not applicable' "$log"
+    grep -Fqx 'Execution kernel: fused-text-filter-recode' "$log"
+    grep -Fqx 'Execution components: vcf-recode' "$log"
+    grep -Fqx 'Fused text fast path: selected' "$log"
     grep -Fqx 'Selected backend: fast-filter-recode-plain' "$log"
     grep -Fqx 'Index used: no' "$log"
     grep -Fqx 'Requested threads: 1' "$log"
@@ -43,6 +46,12 @@ assert_standard_log() {
     grep -Eq '^System CPU time: [0-9.]+ seconds$' "$log"
     grep -Eq '^Average CPU: [0-9.]+%$' "$log"
     grep -Eq '^Peak RSS: [0-9]+ KiB$' "$log"
+    grep -Eq \
+        '^Stage time \[fused scan/filter/output\]: [0-9.]+ seconds$' \
+        "$log"
+    grep -Eq \
+        '^Stage time \[output finalization\]: [0-9.]+ seconds$' \
+        "$log"
 }
 
 "$ng" \
@@ -75,6 +84,9 @@ grep -Fqx "Log file: $work/custom.log" "$work/custom.log"
 grep -Fqx 'Decision: CSI/TBI is not applicable to Plain VCF' \
     "$work/custom.log"
 grep -Fqx 'Selected backend: fast-counts-plain' "$work/custom.log"
+grep -Fqx 'Execution kernel: fused-text-site-statistics' \
+    "$work/custom.log"
+grep -Fqx 'Execution components: site-statistics' "$work/custom.log"
 
 "$ng" \
     --gzvcf "$work/indexed.vcf.gz" --threads 2 --recode \
@@ -100,6 +112,15 @@ grep -Fqx \
     "$work/bcf-stream.log"
 grep -Fqx 'Selected backend: stream' "$work/bcf-stream.log"
 grep -Fqx 'Index used: no' "$work/bcf-stream.log"
+grep -Fqx 'Execution kernel: generic-ordered-pipeline' \
+    "$work/bcf-stream.log"
+grep -Fqx 'Execution components: vcf-recode' "$work/bcf-stream.log"
+grep -Fqx 'Fused text fast path: not selected' "$work/bcf-stream.log"
+grep -Eq '^Stage time \[input/index planning\]: [0-9.]+ seconds$' \
+    "$work/bcf-stream.log"
+grep -Eq \
+    '^Stage time \[ordered input/compute/commit\]: [0-9.]+ seconds$' \
+    "$work/bcf-stream.log"
 test -s "$work/indexed.bcf.csi"
 
 cp "$work/indexed.vcf.gz" "$work/auto.vcf.gz"

@@ -43,6 +43,11 @@ development version.
   1/2/4/8/12/16/24/28/32 threads. The published matrix uses the validated
   first repeat only; incomplete follow-up records are excluded and the values
   are never labeled as means.
+- v0.13.1 adds a locked 230,000-record matrix for position/sample selection,
+  window pi, Tajima's D, and FST. Its 225/225 performance runs and 285/285
+  23,000-record development runs are byte-identical to retained Original
+  oracles. The v0.13.0 full-data recode matrix remains historical evidence and
+  is not relabeled as a v0.13.1 measurement.
 
 ## Required record for every future version
 

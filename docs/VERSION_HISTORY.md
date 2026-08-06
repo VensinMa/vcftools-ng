@@ -25,13 +25,14 @@ otherwise, validation uses the real 2,300,000-record, 23-chromosome,
 | [v0.12.3](versions/v0.12.3.md) | Comprehensive colored terminal help | inherited | inherited | inherited | PASS |
 | [v0.12.4](versions/v0.12.4.md) | Standard reproducible run logging | 392.73 | 15.72 | 10.63 | PASS |
 | [v0.13.0](versions/v0.13.0.md) | Transactional BGZF output and hot-path acceleration | 2267.88 | 44.09 | 28.50 | PASS (first-repeat release gate) |
+| [v0.13.1](versions/v0.13.1.md) | Adaptive zero-copy selection and population analytics | 4.16 | 0.38 | 0.32 | PASS (230k locked matrix) |
 
 The workload in each row is the version's representative compatibility
 benchmark; workloads differ between rows. Consult the per-version page before
 comparing versions directly. v0.9.0 also reran the six-output sample workload
 at 3.11/3.13 seconds for 8/16 threads.
 
-## Cumulative supported surface in v0.13.0
+## Cumulative supported surface in v0.13.1
 
 - Inputs: VCF, BGZF VCF, BCF.
 - Outputs: `--freq`, `--freq2`, `--counts`, `--missing-site`, `--site-depth`,
@@ -63,6 +64,9 @@ at 3.11/3.13 seconds for 8/16 threads.
   BGZF uses ordered tabix windows; requested concurrency is capped by CPU
   affinity and the file-descriptor budget. Worker output has bounded
   backpressure and recode workers use independent HTSlib output headers.
+  v0.13.1 additionally covers direct position include/exclude, sample
+  projection, window pi, Tajima's D, and site/window FST on eligible Plain VCF
+  workloads, with adaptive read-only mapped ranges at profitable concurrency.
 
 v0.12.2 passed a full-data, seven-filter exact-recode matrix inherited by
 v0.12.3, whose runtime execution paths are unchanged:
