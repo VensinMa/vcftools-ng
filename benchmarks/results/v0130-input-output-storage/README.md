@@ -1,7 +1,7 @@
 # v0.13.0 full-data input/output/storage release gate
 
-Status: **first-repeat release gate PASS (108/108); follow-up repeats are in
-progress**.
+Status: **single-repeat release gate PASS (108/108); published timings use
+the validated first repeat only**.
 
 This gate used all 11,230,392 records and retained 5,425,725 records with the
 seven-filter workload recorded in `manifest.tsv`. Original VCFtools 0.1.17 was
@@ -63,14 +63,16 @@ These ratios compare equivalent uncompressed VCF scientific output. The BGZF
 tables instead report absolute time and same-row scaling because Original
 VCFtools 0.1.17 has no `--recode-vcf-gz` output option.
 
-## Repeat policy
+## Repeat policy and published run count
 
 The release driver runs at most three repeats. A row whose first application
 wall time exceeds 1,800 seconds runs once. Otherwise it runs twice; if either
 run exceeds 600 seconds and the symmetric difference is below 10%, repeat
 three is skipped. All faster or more variable rows run three times. Each skip
 is retained as a machine-readable record, and the summary reports the actual
-run count.
+run count. For the final v0.13.0 publication, optional follow-up repeats were
+stopped and excluded; every table in this report therefore uses the validated
+first repeat (`runs=1`) consistently.
 
 Reproduce with:
 

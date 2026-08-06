@@ -15,8 +15,9 @@ blobs, reuses per-worker BGZF compression state, and keeps Plain VCF worker
 descriptors open across aligned ranges. Text input receives an adaptive
 input-heavy share of the strict total thread budget. The portable build is
 locked to bcftools 1.24 and HTSlib 1.24. Its complete first-repeat full-data
-release gate passed 108/108 configurations; follow-up repeats remain in
-progress and are not represented as completed means.
+release gate passed 108/108 configurations. The published v0.13.0 benchmark
+uses this validated first repeat only; incomplete follow-up records are
+excluded from all reported timings.
 
 Scientific artifacts are now written beside their destination under private
 staging names, checked through flush and close, and published only after every
@@ -64,6 +65,17 @@ directly, while indexed BGZF workers query ordered tabix regions. Recode and
 statistics can share one scan, and all worker output is bounded and committed
 in exact input order. Unsupported filters, selections, formats, and analyses
 automatically use the general compatibility pipeline.
+
+### Performance claim scope
+
+Speedups are workload-specific. The v0.13.0 direct-kernel measurements apply
+to the documented seven-filter site-statistics/VCF-recode workloads; they are
+not a blanket speedup guarantee for sample or position selection, individual
+reductions, window pi, Tajima's D, FST, LD, PCA, diff, or every storage system.
+Those operations remain exact-compatible where documented and may benefit
+from the common pipeline, but require their own scaling measurements. See the
+[representative workload benchmark matrix](docs/benchmark-workload-matrix.md)
+for the fixed development, release-candidate, and full-data evidence policy.
 
 ## Install (recommended)
 

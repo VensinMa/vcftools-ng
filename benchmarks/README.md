@@ -9,6 +9,13 @@ that it selects the streaming backend.
 The complete four-scenario matrix is reserved for an explicitly authorized
 release candidate: BGZF+TBI, BGZF+automatic-CSI, Plain VCF, and adaptive BCF.
 
+The storage/input matrix is only one benchmark family. The fixed
+[representative workload matrix](../docs/benchmark-workload-matrix.md)
+separately covers site/sample selection, individual reductions, window pi,
+Tajima's D, FST, multiallelic processing, and output-intensive recode. Results
+from the fused seven-filter workload must not be generalized to those other
+computation shapes without their own measurements.
+
 ## Policy
 
 Until the implementation reaches a mature compatibility milestone, benchmarks
