@@ -231,8 +231,9 @@ diagnostics continue to stderr and the log file.
 The log records the complete command, working directory, timestamps, input
 format/size/storage, detected sidecars and validation, adaptive index decision
 and reason, index-build threads/time, selected backend, stage thread
-allocation, outputs, filters, sample/site counts, output sizes, wall and CPU
-time, peak RSS, warnings/errors, and final exit status. An existing valid
+allocation, execution kernel/components, high-level stage times, outputs,
+filters, sample/site counts, output sizes, wall and CPU time, peak RSS,
+warnings/errors, and final exit status. An existing valid
 CSI/TBI is reported even when the adaptive policy deliberately leaves it
 unused; it is never removed or overwritten.
 
@@ -340,35 +341,68 @@ overwritten. `--input-backend stream|indexed` remains an advanced override,
 and `--bcftools FILE` selects the executable used when adaptive CSI
 construction is profitable.
 
-## Inherited v0.12.2 full-data five-repeat performance
+## v0.13.0 full-data first-repeat performance
 
-The release workload applies seven real-project filters and writes a complete
-VCF with all INFO fields. Values are mean wall-clock seconds from five
-strictly serial vcftools-ng repeats on the 32-CPU host. Original values are
-the hash-locked single-run v0.12.1 baselines and were not rerun. v0.12.4
-inherits this matrix because its standard logging work does not change the
-scientific execution paths or output bytes.
+The release workload applies the seven real-project filters and preserves all
+INFO fields. Values are application wall seconds from the validated first
+repeat on the 32-CPU host; they are single measurements, not multi-run means.
+Original values are the hash-locked v0.12.1 baselines and were not rerun.
+Across four inputs, three output/storage modes, and nine thread counts, all
+108/108 v0.13.0 outputs passed complete-content validation.
 
-| Input path | Original | 1 thread | 2 threads | 4 threads | 8 threads | 16 threads | 32 threads |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| BGZF VCF + TBI | 2267.88 | 309.28 | 204.91 | 112.35 | 73.93 | 52.05 | 42.32 |
-| BGZF VCF + automatic CSI | 2267.88 | 308.21 | 281.03 | 167.50 | 128.60 | 107.16 | 99.59 |
-| Plain VCF | 2092.91 | 285.45 | 285.22 | 89.31 | 63.71 | 47.84 | 50.61 |
-| BCF adaptive stream | 1943.47 | 325.66 | 164.14 | 110.57 | 57.26 | 41.30 | 40.20 |
+### SSD uncompressed VCF output (`--recode-vcf`)
 
-Speedup over VCFtools 0.1.17:
+| Input path | Original | 1 | 2 | 4 | 8 | 12 | 16 | 24 | 28 | 32 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| BGZF VCF + TBI | 2267.88 | 243.46 | 166.44 | 85.78 | 44.09 | 34.27 | 28.50 | 27.69 | 29.28 | 28.50 |
+| BGZF VCF + automatic CSI | 2267.88 | 241.42 | 264.60 | 140.10 | 100.80 | 91.84 | 85.66 | 82.55 | 87.44 | 85.75 |
+| Plain VCF | 2092.91 | 241.25 | 126.93 | 69.34 | 42.25 | 41.53 | 41.99 | 40.01 | 40.39 | 40.70 |
+| BCF adaptive | 1943.47 | 317.31 | 159.73 | 160.44 | 82.43 | 48.10 | 43.13 | 35.91 | 35.65 | 37.02 |
 
-| Input path | 1 thread | 2 threads | 4 threads | 8 threads | 16 threads | 32 threads |
-|---|---:|---:|---:|---:|---:|---:|
-| BGZF VCF + TBI | 7.33× | 11.07× | 20.19× | 30.68× | 43.57× | 53.59× |
-| BGZF VCF + automatic CSI | 7.36× | 8.07× | 13.54× | 17.63× | 21.16× | 22.77× |
-| Plain VCF | 7.33× | 7.34× | 23.44× | 32.85× | 43.75× | 41.35× |
-| BCF adaptive stream | 5.97× | 11.84× | 17.58× | 33.94× | 47.05× | 48.35× |
+Speedup over VCFtools 0.1.17 for equivalent uncompressed VCF output:
 
-All 120 outputs were byte-identical. Automatic-CSI rows include fresh CSI
-construction in every repeat. The observed mean speedup range was
-5.97×–53.59×. The BCF adaptive path avoids indexed full-file traversal at
-every tested thread count; selective region queries still use CSI.
+| Input path | 1 | 2 | 4 | 8 | 12 | 16 | 24 | 28 | 32 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| BGZF VCF + TBI | 9.32× | 13.63× | 26.44× | 51.44× | 66.18× | 79.57× | 81.90× | 77.45× | 79.57× |
+| BGZF VCF + automatic CSI | 9.39× | 8.57× | 16.19× | 22.50× | 24.69× | 26.48× | 27.47× | 25.94× | 26.45× |
+| Plain VCF | 8.68× | 16.49× | 30.18× | 49.54× | 50.39× | 49.84× | 52.30× | 51.81× | 51.42× |
+| BCF adaptive | 6.12× | 12.17× | 12.11× | 23.58× | 40.40× | 45.06× | 54.12× | 54.52× | 52.50× |
+
+### SSD BGZF VCF output (`--recode` or `--recode-vcf-gz`)
+
+| Input path | 1 | 2 | 4 | 8 | 12 | 16 | 24 | 28 | 32 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| BGZF VCF + TBI | 1229.88 | 528.12 | 270.56 | 150.06 | 114.85 | 91.27 | 72.80 | 72.04 | 71.30 |
+| BGZF VCF + automatic CSI | 1221.37 | 622.72 | 324.19 | 205.69 | 171.43 | 149.57 | 128.60 | 127.71 | 128.74 |
+| Plain VCF | 1018.63 | 509.09 | 257.79 | 134.33 | 104.59 | 87.78 | 66.65 | 67.24 | 67.14 |
+| BCF adaptive | 1019.48 | 511.56 | 265.43 | 160.21 | 123.11 | 98.45 | 83.54 | 80.16 | 81.39 |
+
+End-to-end speedup over the Original VCFtools 0.1.17 plain-VCF workflow:
+
+| Input path | 1 | 2 | 4 | 8 | 12 | 16 | 24 | 28 | 32 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| BGZF VCF + TBI | 1.84× | 4.29× | 8.38× | 15.11× | 19.75× | 24.85× | 31.15× | 31.48× | 31.81× |
+| BGZF VCF + automatic CSI | 1.86× | 3.64× | 7.00× | 11.03× | 13.23× | 15.16× | 17.64× | 17.76× | 17.62× |
+| Plain VCF | 2.05× | 4.11× | 8.12× | 15.58× | 20.01× | 23.84× | 31.40× | 31.13× | 31.17× |
+| BCF adaptive | 1.91× | 3.80× | 7.32× | 12.13× | 15.79× | 19.74× | 23.26× | 24.24× | 23.88× |
+
+### Same-HDD input and BGZF VCF output
+
+| Input path | 1 | 2 | 4 | 8 | 12 | 16 | 24 | 28 | 32 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| BGZF VCF + TBI | 1322.12 | 524.01 | 270.81 | 152.87 | 115.65 | 95.05 | 73.03 | 72.35 | 71.47 |
+| BGZF VCF + automatic CSI | 1225.84 | 626.17 | 326.51 | 209.94 | 174.60 | 150.75 | 129.77 | 130.50 | 128.87 |
+| Plain VCF | 1076.97 | 823.98 | 826.74 | 869.95 | 883.69 | 909.75 | 997.62 | 1029.14 | 1059.79 |
+| BCF adaptive | 1065.09 | 514.18 | 265.73 | 160.99 | 123.46 | 98.92 | 84.01 | 80.37 | 81.93 |
+
+The SSD BGZF ratios compare completion of the same filtering task, while the
+output encoding differs: Original writes plain VCF and vcftools-ng writes
+BGZF. Decompressed scientific content is equivalent. The 59.43 GB plain VCF
+is 10.20 GB as BGZF, an 82.8% reduction. Automatic-CSI rows include fresh
+index construction. HDD ratios are not reported because the retained Original
+baseline was measured on SSD; mixing devices would confound the comparison.
+Same-disk Plain VCF input shows an HDD I/O ceiling at higher concurrency, and
+that result is retained rather than hidden.
 
 Plain VCF cannot use CSI/TBI because those formats store BGZF virtual
 offsets. It remains on the parallel aligned-byte-range adapter and never

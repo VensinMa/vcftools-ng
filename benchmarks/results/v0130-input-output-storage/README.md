@@ -35,6 +35,19 @@ CPU utilization, peak RSS, output bytes, backend, and exactness.
 | Plain VCF | 1018.63 | 509.09 | 257.79 | 134.33 | 104.59 | 87.78 | 66.65 | 67.24 | 67.14 |
 | BCF adaptive | 1019.48 | 511.56 | 265.43 | 160.21 | 123.11 | 98.45 | 83.54 | 80.16 | 81.39 |
 
+## Speedup over Original for SSD BGZF VCF output
+
+| Input | 1 | 2 | 4 | 8 | 12 | 16 | 24 | 28 | 32 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| BGZF VCF + TBI | 1.84× | 4.29× | 8.38× | 15.11× | 19.75× | 24.85× | 31.15× | 31.48× | 31.81× |
+| BGZF VCF + automatic CSI | 1.86× | 3.64× | 7.00× | 11.03× | 13.23× | 15.16× | 17.64× | 17.76× | 17.62× |
+| Plain VCF | 2.05× | 4.11× | 8.12× | 15.58× | 20.01× | 23.84× | 31.40× | 31.13× | 31.17× |
+| BCF adaptive | 1.91× | 3.80× | 7.32× | 12.13× | 15.79× | 19.74× | 23.26× | 24.24× | 23.88× |
+
+These ratios use the locked Original plain-VCF wall time as the end-to-end
+workflow baseline. The filtering task and decompressed scientific content are
+equivalent, but the output encoding and artifact size differ.
+
 ## Same-HDD input and BGZF VCF output
 
 | Input | 1 | 2 | 4 | 8 | 12 | 16 | 24 | 28 | 32 |
@@ -59,9 +72,10 @@ rather than hidden because it defines the storage-dependent scaling boundary.
 | Plain VCF | 8.68× | 16.49× | 30.18× | 49.54× | 50.39× | 49.84× | 52.30× | 51.81× | 51.42× |
 | BCF adaptive | 6.12× | 12.17× | 12.11× | 23.58× | 40.40× | 45.06× | 54.12× | 54.52× | 52.50× |
 
-These ratios compare equivalent uncompressed VCF scientific output. The BGZF
-tables instead report absolute time and same-row scaling because Original
-VCFtools 0.1.17 has no `--recode-vcf-gz` output option.
+The uncompressed ratios compare identical output encoding. The BGZF ratios
+compare end-to-end completion of the same filtering task against Original's
+plain-VCF output; VCFtools 0.1.17 has no `--recode-vcf-gz` option. No HDD
+speedup is reported because the locked Original baseline was measured on SSD.
 
 ## Repeat policy and published run count
 
