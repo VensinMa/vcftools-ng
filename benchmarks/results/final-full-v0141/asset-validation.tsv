@@ -1,0 +1,9 @@
+asset	path	bytes	sha256	status
+bgzf	/home/vensin/workspace/Sweet_Osmanthus/05.variant_filter/02.vcftools_filter_snp_indel/412samples.SNP.biallelic.minGQ10.minQ30.meanDP6.maxmiss0.8.maf0.05.vcf.gz	18940264903	24d9dceeb6cf174c5112523cdc1488c55f92f8f5a484c89ac2f61807384313b4	PASS
+bgzf_tbi	/home/vensin/workspace/Sweet_Osmanthus/05.variant_filter/02.vcftools_filter_snp_indel/412samples.SNP.biallelic.minGQ10.minQ30.meanDP6.maxmiss0.8.maf0.05.vcf.gz.tbi	539057	f2dd96154a2f75f1c8bd49acc005036785ea03d8ab1d373e2c0a655f89bff371	PASS
+plain	/home/vensin/workspace/vcftools-ng/data/osmanthus412.snps.vcf	122911664549	22e0589561425f700f691f458994710ebec6d615c17d790dd500ad1c131d981e	PASS
+bcf	/home/vensin/workspace/vcftools-ng/data/osmanthus412.snps.bcf	22074294040	dfba81b4ed44985eae27eb883a0bcb1df51486ea323074d654e128221047324d	PASS
+bcf_csi	/home/vensin/workspace/vcftools-ng/data/osmanthus412.snps.bcf.csi	481397	8b82bbae9a6977f67d122abd936a89a1cc01ab0b3869f522b53490bd39312a31	PASS
+oracle_gzvcf	/home/vensin/workspace/vcftools-ng/benchmarks/results/final-full-v0121/golden/gzvcf.vcf	59434159204	7548416e01d4a318b81c5d1feb9429f60c7995205d66169242c3792af4c4fc14	PASS
+oracle_vcf	/home/vensin/workspace/vcftools-ng/benchmarks/results/final-full-v0121/golden/vcf.vcf	59434159621	d4f2a15e8c5ad0cc12abf4a3ab308bb48f22adf8ec13776d72ceeaa1f8d402b8	PASS
+oracle_bcf	/home/vensin/workspace/vcftools-ng/benchmarks/results/final-full-v0121/golden/bcf.vcf	57211771106	dde9edd98d5d05aa885e0e2f78a9696cfe0802c472d4dfd81ccffb49339107f3	PASS

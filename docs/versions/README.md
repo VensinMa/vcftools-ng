@@ -48,6 +48,15 @@ development version.
   23,000-record development runs are byte-identical to retained Original
   oracles. The v0.13.0 full-data recode matrix remains historical evidence and
   is not relabeled as a v0.13.1 measurement.
+- v0.13.2 adds a fixed 23,000-record nine-family gate and locked 230,000-record
+  A/B records for fused production filters, FILTER/INFO/FT, no-index BGZF, LD,
+  exact PCA, and indexed BCF diff. It does not infer a new full-data result.
+- v0.14.1 incorporates that development candidate, adds an immutable
+  capability plan and the final correctness/memory/post-scan work, then passes
+  a 36/36 first-repeat complete-data release gate across four input scenarios
+  and nine thread counts. The v0.12.1 Original timings and scientific goldens
+  are reused only after complete size/SHA-256 validation; Original is not
+  rerun. Follow-up repeats remain separate from the publication gate.
 
 ## Required record for every future version
 
@@ -73,6 +82,8 @@ measurements are mandatory in the same benchmark report.
 - Human-readable index: `docs/VERSION_HISTORY.md`
 - Machine-readable benchmark table: `docs/versions/benchmarks.tsv`
 - Per-version records: `docs/versions/v*.md`
+- v0.14.1 implementation and decision audit:
+  `docs/versions/v0.14.1-resume-plan.md`
 - New-version template: `docs/versions/TEMPLATE.md`
 - Raw timing files: `benchmarks/results/*.time.txt`
 - Detailed benchmark narrative: `benchmarks/README.md`

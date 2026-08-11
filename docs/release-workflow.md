@@ -66,12 +66,19 @@ the full-data values as inherited and must not present them as new
 measurements.
 
 When the release owner explicitly chooses staged qualification, run the driver
-with `GATE_ONLY=1`. Publication may proceed only after all 108 first-repeat
-candidate gates pass. Documentation and Release notes must then label every
+with `GATE_ONLY=1`. Publication may proceed only after all first-repeat
+candidate gates pass (36 for the standard four-scenario, nine-thread matrix).
+Documentation and Release notes must then label every
 value as single-run, state that follow-up repeats are pending, and avoid
 multi-run mean or monotonic-scaling claims. Resume later with `GATE_ONLY=0`; completed
 Original and first-repeat records are hash-validated and skipped. Commit the
 final adaptive-repeat summary to master when it completes.
+
+The v0.14.1 implementation of this contract is
+`benchmarks/run-v0141-full-release-matrix.sh`. It hard-validates the complete
+input/index and Original-golden sizes and SHA-256 identities, separates the
+program log from captured stderr, asserts the selected adaptive backend, and
+removes each large candidate output only after its byte gate passes.
 
 ## 4. User-facing records
 

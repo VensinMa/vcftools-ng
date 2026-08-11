@@ -4,8 +4,11 @@ Status: Plain-range and indexed-region adapters implemented in v0.11.0;
 automatic CSI construction implemented in v0.11.1; protected explicit index
 validation implemented in v0.11.2; direct text-to-count fusion implemented
 in v0.11.3 for Plain VCF and indexed BGZF VCF; the same direct text kernel
-extended to the seven-filter VCF-recode workload in the v0.13.0 candidate.
-Ordered BGZF blocks remain the next input-engine milestone.
+extended to the seven-filter VCF-recode workload in v0.13.0. v0.14.1 shares
+the strict stream-resource planner, failure propagation,
+cancellation, reusable worker scratch, and parsed-record layout across the
+eligible text paths. Ordered BGZF blocks remain a profile-gated future input
+milestone rather than a release requirement.
 
 Reference reviewed: `VensinMa/vcf2phylip` commit
 `3a1d3ab24af2334bfa6bb61d5c3faaf45d5c4625`.
@@ -20,16 +23,20 @@ backend that exposes the greatest safe parallelism:
 |---|---|---|---|
 | Plain VCF | aligned byte ranges | complete-line byte span | storage and parse limited |
 | BGZF VCF + TBI/CSI | indexed regions | ordered coordinate span | decompression and parse parallel |
-| BCF + CSI | indexed regions | ordered coordinate span | decompression and BCF decode parallel |
-| Local BGZF VCF/BCF without index | build CSI, then indexed regions | index construction followed by ordered coordinate spans | first run includes indexing; subsequent runs use parallel regions |
+| BCF full scan | ordered stream by default | bounded record batch | sequential BCF decode is usually fastest for full recode |
+| Local BGZF VCF without index | adaptive stream or atomic CSI build | bounded batch or ordered coordinate span | depends on thread count and whether index cost is amortized |
+| Selective BGZF VCF/BCF query | reuse or build a validated index | ordered coordinate span | avoids decoding unrelated regions |
 | Ordinary gzip VCF | streaming fallback | bounded record batch | decompressor limited |
 
 The backend is an input concern. General filtering, shared GT/DP decoding,
 analysis payloads, ordered thinning, statistics, and writers consume one
-common ordered record stream. Eligible site-local Plain/BGZF workloads may
-fuse text parsing, filtering, statistics, and VCF reconstruction inside the
-ordered shard worker; unsupported options fall back before any output is
-published.
+common ordered-record contract. This is deliberately a semantic contract,
+not one compulsory in-memory representation. Plain mmap/pread spans, indexed
+region chunks, and streamed BGZF batches retain their storage-native ownership
+so that abstraction does not introduce a copy into a queue of owned strings.
+Eligible site-local Plain/BGZF workloads may fuse text parsing, filtering,
+statistics, and VCF reconstruction inside the ordered shard worker;
+unsupported options fall back before any output is published.
 
 ## What the vcf2phylip implementation demonstrates
 
@@ -62,15 +69,17 @@ The Python process pool, one `tabix` subprocess per region, and per-region
 temporary matrix files are implementation choices, not designs to copy into
 the C++ engine.
 
-## Current vcftools-ng bottleneck
+## Historical bottleneck motivating the adapters
 
-v0.10 opens one HTSlib stream, gives HTSlib at most four I/O threads, and has
-one thread repeatedly call `bcf_read`. Compute slices can overlap that reader,
-but VCF text parsing and record duplication still pass through the single
-reader. Full-file BCF also uses this path; only a single selected BCF
-chromosome can currently use an index iterator.
+v0.10 opened one HTSlib stream, gave HTSlib at most four I/O threads, and had
+one thread repeatedly calling `bcf_read`. Compute slices could overlap that
+reader, but VCF text parsing and record duplication still passed through the
+single reader. Full-file BCF also used this path; only a single selected BCF
+chromosome could use an index iterator.
 
-Consequently:
+The later direct text adapters removed this ceiling for eligible Plain and
+indexed BGZF workloads. The same pattern remains relevant when profiling a
+fallback that still uses the generic stream. Historically, the symptoms were:
 
 - BGZF VCF remains dominated by serial text parsing;
 - BCF and inexpensive statistics flatten when the reader or ordered committer
@@ -81,7 +90,7 @@ Consequently:
 
 ## Common ordered-shard contract
 
-Every direct backend produces `RecordShard` objects:
+Every direct backend satisfies the following logical `RecordShard` contract:
 
 ```text
 RecordShard
@@ -93,10 +102,32 @@ RecordShard
   boundary metadata    data needed by thin/window/LD reducers
 ```
 
-The coordinator may execute shards out of order, but exposes them to ordered
-consumers by `ordinal`. Memory is bounded by a byte budget, not only a fixed
-number of batches. A slow early shard applies backpressure instead of allowing
-hundreds of later shards to accumulate in RAM.
+The contract does not require every backend to materialize that illustrative
+structure. Plain input can expose non-owning views into mmap/pread storage;
+indexed input can incrementally publish bounded region chunks; streamed input
+can transfer ownership of bounded batches. The coordinator may execute shards
+out of order, but exposes them to ordered consumers by `ordinal`. Memory is
+bounded by a byte budget, not only a fixed number of batches. A slow early
+shard applies backpressure instead of allowing hundreds of later shards to
+accumulate in RAM.
+
+The shared seam is responsible for:
+
+- stable shard and chunk ordinals;
+- one total CPU budget for reader, HTSlib I/O, and compute workers;
+- bounded admission/backpressure;
+- cancellation that wakes every reader, worker, and ordered waiter;
+- first-failure propagation after all owned threads are joined;
+- common stage-concurrency and shard metrics.
+
+Backend implementations remain responsible for storage-specific byte/record
+ownership and lifetime. A future refactor must demonstrate that it preserves
+the zero-copy Plain path and bounded indexed publication before replacing the
+current implementations.
+
+Field requirements, kernel eligibility, and fallback logging are compiled by
+the shared capability plan described in
+[`query-plan.md`](query-plan.md).
 
 Exact mode must preserve:
 
@@ -203,6 +234,15 @@ decompression and record ownership must be separate steps. This backend is
 the no-index fallback for genuine BGZF. Ordinary gzip cannot use it because
 its Deflate stream has no independent BGZF block boundaries.
 
+The current ordered HTSlib fallback still has one record feeder. Once that
+feeder is saturated, waking more parse workers reduces throughput. v0.14.1
+therefore caps fused compressed-stream compute workers at
+four for GT-only/recode work and six when DP, GQ, FT, frequency, or mean-depth
+logic is active. The cap is intersected with the strict total-thread plan, so
+requests of 1-8 threads are unchanged. On the locked 230k no-index BGZF, this
+reduced 16/32-thread W01 wall time by 7.83%/7.16% and W02 by 6.98%/5.48%.
+Indexed-region and Plain backends do not use this ceiling.
+
 ### Ordinary gzip
 
 Use the fastest available streaming decompressor and overlap it with parsing,
@@ -300,32 +340,42 @@ throughput gain.
 8. **Complete in the v0.13.0 candidate:** replace complete in-memory indexed
    `RecordShard` payloads with bounded incremental
    `(shard_ordinal, chunk_ordinal)` publication.
-9. Implement ordered BGZF block decompression and VCF/BCF record framing for
-   no-index input.
-10. Add cross-shard protocols for thinning and window statistics.
-11. Add LD/PCA/diff shard consumers.
-12. Profile and replace the single ordered committer with ordered segment
-   publication where exactness permits.
+9. **Complete in v0.14.1:** one strict stream CPU planner that
+   accounts for the reader and HTSlib workers; a true serial one-thread path;
+   common cancellation/failure gates; one parsed fixed-column/sample layout;
+   worker-local reusable scratch; and precompiled small-population roles.
+10. **Design decision locked in v0.14.1:** unify the semantic
+    ordered-shard seam without forcing storage-native zero-copy adapters into
+    one owned-string queue.
+11. Build one immutable capability/query plan for field requirements, fused
+    eligibility, fallback reason, and logging.
+12. Profile before implementing ordered BGZF block framing, adaptive batches,
+    analysis lanes, LD cache blocking, SIMD, or further ordered-commit work.
 
-For every step, VCFtools 0.1.17 remains the oracle. During development the
-real 2.3-million-record subset is compared byte for byte. Routine local
-scaling tests stop at the machine's 32 available CPUs. The complete
-11.23-million-record benchmark is reserved for a later final-stage gate.
+For every scientific-output step, VCFtools 0.1.17 remains the oracle. Routine
+development starts with generated fixtures and the two real 23k fixtures.
+The 230k input is used for stabilized performance A/B; the 2.3-million-record
+subset is an 8/16-thread late exact gate. Local scaling stops at the machine's
+32 available CPUs. The complete 11.23-million-record benchmark is reserved
+for a later final-stage gate after explicit approval.
 
 ## Benchmark matrix
 
-Required input cases:
+Primary performance input cases:
 
 - BGZF VCF with TBI;
 - the same BGZF bytes through a path with no index;
 - uncompressed VCF;
-- BCF with CSI;
-- the same BCF bytes through a path with no index.
+
+BCF remains in compatibility and release gates, but is not the primary target
+for text-parser optimization.
 
 Each report contains original VCFtools 0.1.17, vcftools-ng at every requested
 thread count, wall/user/system time, CPU percentage, maximum RSS, speedup,
 record count, byte-comparison status, selected backend, effective stage
 concurrency, storage type, cold/warm cache state, and repetitions.
 
-The development default remains 8 and 16 threads. Release-candidate local
-scaling uses `1,2,4,8,16,32`, bounded by the process CPU affinity.
+Early performance A/B uses `1,8,16,32`; stabilized planner scaling uses
+`1,2,4,8,12,16,24,28,32`, bounded by process CPU affinity. Original and its
+golden artifacts are reused during development rather than rerun for every
+candidate.

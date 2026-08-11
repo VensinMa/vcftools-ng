@@ -49,6 +49,8 @@ tests/golden/flags-ft-all.frq.count
 tests/golden/flags-ft-all.lmiss
 tests/golden/flags-site-remove-all.frq.count
 tests/golden/*.recode.vcf
+!tests/golden/polyploid-site-only.recode.vcf
+!tests/golden/polyploid-positions.recode.vcf
 tests/golden/gatk205-*
 
 # Locally generated v0.10 full-subset goldens are verified through
@@ -90,6 +92,16 @@ benchmarks/results/final-full-v0122/logs/
 benchmarks/results/final-full-v0122/runs/
 benchmarks/results/final-full-v0122/scratch/
 
+# v0.14.1 full-data qualification keeps compact, hash-locked evidence in Git.
+# The retained Original goldens, per-run diagnostics, and 57-59 GB scratch
+# outputs remain local and are referenced by the committed manifest.
+benchmarks/results/final-full-v0141/gates/
+benchmarks/results/final-full-v0141/golden/
+benchmarks/results/final-full-v0141/logs/
+benchmarks/results/final-full-v0141/runs/
+benchmarks/results/final-full-v0141/scratch/
+benchmarks/results/final-full-v0141-aborted-*/
+
 # v0.13.0 output-format/storage matrix retains compact reports in Git while
 # large scientific artifacts and per-run diagnostics remain local.
 benchmarks/results/v0130-output-storage/gates/
@@ -112,6 +124,12 @@ benchmarks/results/workload-matrix-23k-v0130/**
 !benchmarks/results/workload-matrix-23k-v0130/final-mmap/
 benchmarks/results/workload-matrix-23k-v0130/final-mmap/**
 !benchmarks/results/workload-matrix-23k-v0130/final-mmap/runs.tsv
+!benchmarks/results/workload-matrix-23k-v0130/v0132-ld-bitset-pair-dense/
+benchmarks/results/workload-matrix-23k-v0130/v0132-ld-bitset-pair-dense/**
+!benchmarks/results/workload-matrix-23k-v0130/v0132-ld-bitset-pair-dense/runs.tsv
+!benchmarks/results/workload-matrix-23k-v0130/v0132-final-candidate-gate/
+benchmarks/results/workload-matrix-23k-v0130/v0132-final-candidate-gate/**
+!benchmarks/results/workload-matrix-23k-v0130/v0132-final-candidate-gate/runs.tsv
 
 benchmarks/results/workload-matrix-230k-v0130/**
 !benchmarks/results/workload-matrix-230k-v0130/FIXTURE_INFO.txt
@@ -128,6 +146,41 @@ benchmarks/results/workload-matrix-230k-v0130/oracles/**
 !benchmarks/results/workload-matrix-230k-v0130/baseline-current/
 benchmarks/results/workload-matrix-230k-v0130/baseline-current/**
 !benchmarks/results/workload-matrix-230k-v0130/baseline-current/runs.tsv
+
+# v0.13.2 keeps compact exact-gate and A/B summaries in Git. Inputs, locked
+# scientific oracles, generated outputs, and per-run logs remain local.
+benchmarks/results/v0132-development-gate/**
+!benchmarks/results/v0132-development-gate/README.md
+!benchmarks/results/v0132-development-gate/environment.txt
+!benchmarks/results/v0132-development-gate/runs.tsv
+!benchmarks/results/v0132-development-gate/oracles/
+benchmarks/results/v0132-development-gate/oracles/**
+!benchmarks/results/v0132-development-gate/oracles/SHA256SUMS
+benchmarks/results/v0132-indexed-diff-ab/**
+!benchmarks/results/v0132-indexed-diff-ab/runs.tsv
+benchmarks/results/v0132-ld-bitset-ab/**
+!benchmarks/results/v0132-ld-bitset-ab/runs.tsv
+!benchmarks/results/workload-matrix-230k-v0130/v0132-p0-ab/
+benchmarks/results/workload-matrix-230k-v0130/v0132-p0-ab/**
+!benchmarks/results/workload-matrix-230k-v0130/v0132-p0-ab/runs.tsv
+!benchmarks/results/workload-matrix-230k-v0130/v0132-filter-ft-ab/
+benchmarks/results/workload-matrix-230k-v0130/v0132-filter-ft-ab/**
+!benchmarks/results/workload-matrix-230k-v0130/v0132-filter-ft-ab/runs.tsv
+!benchmarks/results/workload-matrix-230k-v0130/v0132-bgzf-noindex-pipeline-ab/
+benchmarks/results/workload-matrix-230k-v0130/v0132-bgzf-noindex-pipeline-ab/**
+!benchmarks/results/workload-matrix-230k-v0130/v0132-bgzf-noindex-pipeline-ab/runs.tsv
+!benchmarks/results/workload-matrix-230k-v0130/v0132-pgo-ab/
+benchmarks/results/workload-matrix-230k-v0130/v0132-pgo-ab/**
+!benchmarks/results/workload-matrix-230k-v0130/v0132-pgo-ab/runs.tsv
+!benchmarks/results/workload-matrix-230k-v0130/v0132-lto-ab/
+benchmarks/results/workload-matrix-230k-v0130/v0132-lto-ab/**
+!benchmarks/results/workload-matrix-230k-v0130/v0132-lto-ab/runs.tsv
+!benchmarks/results/workload-matrix-230k-v0130/v0132-reducer-ab-old/
+benchmarks/results/workload-matrix-230k-v0130/v0132-reducer-ab-old/**
+!benchmarks/results/workload-matrix-230k-v0130/v0132-reducer-ab-old/runs.tsv
+!benchmarks/results/workload-matrix-230k-v0130/v0132-reducer-ab-new/
+benchmarks/results/workload-matrix-230k-v0130/v0132-reducer-ab-new/**
+!benchmarks/results/workload-matrix-230k-v0130/v0132-reducer-ab-new/runs.tsv
 !benchmarks/results/workload-matrix-230k-v0130/final-mmap/
 benchmarks/results/workload-matrix-230k-v0130/final-mmap/**
 !benchmarks/results/workload-matrix-230k-v0130/final-mmap/runs.tsv

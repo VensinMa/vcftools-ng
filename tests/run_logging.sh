@@ -87,6 +87,7 @@ grep -Fqx 'Selected backend: fast-counts-plain' "$work/custom.log"
 grep -Fqx 'Execution kernel: fused-text-site-statistics' \
     "$work/custom.log"
 grep -Fqx 'Execution components: site-statistics' "$work/custom.log"
+grep -Fqx 'Decode fields: GT' "$work/custom.log"
 
 "$ng" \
     --gzvcf "$work/indexed.vcf.gz" --threads 2 --recode \
@@ -115,7 +116,11 @@ grep -Fqx 'Index used: no' "$work/bcf-stream.log"
 grep -Fqx 'Execution kernel: generic-ordered-pipeline' \
     "$work/bcf-stream.log"
 grep -Fqx 'Execution components: vcf-recode' "$work/bcf-stream.log"
+grep -Fqx 'Decode fields: none' "$work/bcf-stream.log"
 grep -Fqx 'Fused text fast path: not selected' "$work/bcf-stream.log"
+grep -Fqx \
+    'Fast-path reason: the fused parser supports text VCF input; detected BCF' \
+    "$work/bcf-stream.log"
 grep -Eq '^Stage time \[input/index planning\]: [0-9.]+ seconds$' \
     "$work/bcf-stream.log"
 grep -Eq \

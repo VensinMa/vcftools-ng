@@ -44,6 +44,18 @@ for threads in 1 8 32; do
         "$work/vcf-t$threads.stderr"
 done
 
+for parser in generic specialized; do
+    VCFTOOLS_NG_TEST_PARSER=$parser \
+        "$ng" --gzvcf "$fixture" --threads 8 \
+        "${filters[@]}" --counts --no-log-file \
+        --out "$work/parser-$parser" \
+        >/dev/null 2>"$work/parser-$parser.stderr"
+    cmp "$golden_prefix.counts.frq.count" \
+        "$work/parser-$parser.frq.count"
+done
+cmp "$work/parser-generic.frq.count" \
+    "$work/parser-specialized.frq.count"
+
 "$ng" --gzvcf "$fixture" --threads 8 \
     "${filters[@]}" --recode --recode-INFO-all \
     --no-log-file --out "$work/bgzf" \

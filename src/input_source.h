@@ -44,6 +44,11 @@ struct ResourcePlan {
     bool page_cache_prefetched = false;
 };
 
+// Shared resource planner for ordered Plain/gzip/BGZF stream readers. The
+// input reader and HTSlib workers are included in the total CPU budget.
+ResourcePlan plan_stream_resources(
+    unsigned total_threads, bool compressed);
+
 struct SourceOptions {
     std::string path;
     Backend requested_backend = Backend::automatic;

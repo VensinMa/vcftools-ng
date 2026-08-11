@@ -6,7 +6,7 @@ Performance claims are workload-specific. A speedup measured for one output,
 filter set, input format, storage device, or selected-sample density must not
 be presented as a guarantee for every vcftools-ng command.
 
-## v0.13.1 scope
+## v0.14.1 scope
 
 The v0.13.0 direct text kernel is not limited to statistics. For eligible
 Plain or BGZF VCF input it fuses the common seven-filter workload with
@@ -20,9 +20,16 @@ v0.13.1 additionally routes eligible Plain VCF position include/exclude,
 sample projection, window pi, Tajima's D, site FST, and window FST through the
 direct text family. Those paths share selected-sample GT decoding, compact
 per-site contributions, deterministic ordered reduction, and adaptive
-read-only mapped ranges. FILTER/INFO/FT selection, unsupported filters, BCF,
-individual reductions, LD, PCA, and diff continue to use the general
-compatibility pipeline.
+read-only mapped ranges. v0.13.2 extends that family to the ten-filter
+production combination, FILTER/INFO/FT, and shared site pi. No-index BGZF gets
+bounded decompression and compute overlap; eligible LD, exact PCA, and indexed
+BCF discordance get dedicated kernels. Unsupported shapes still use the
+general compatibility pipeline.
+
+v0.14.1 compiles every invocation into one immutable capability plan, removes
+unused FORMAT-field work from GT-only analyses, specializes deterministic LD
+and PCA post-scan storage, and hardens malformed-input/failure/ploidy
+boundaries. It incorporates the unreleased v0.13.2 work above.
 
 Every run log records `Execution kernel`, `Execution components`, input
 backend, thread allocation, and high-level stage times. These fields must be
@@ -54,12 +61,14 @@ current project configuration; changing it requires recording a new profile,
 not silently changing the benchmark.
 
 Development runs use 23,000 real records, threads `1 4 8 16 32`, and at most
-three repeats. v0.13.1 also locks a 230,000-record SSD/NVMe matrix for W03-W10
+three repeats. v0.13.1 locks a 230,000-record SSD/NVMe matrix for W03-W10;
+v0.13.2 adds stable 230k A/B cases for its new kernels
 so sub-second 23k startup noise is not presented as throughput. Larger
-release-candidate runs use the standard 2,300,000-record real subset, threads
-`1 2 4 8 16 32`, and at least three repeats. The
-11,230,392-record final gate uses four representative workloads: W02, W06,
-either W07 or W08, and W10.
+release-candidate runs use the standard 2,300,000-record real subset. The
+v0.14.1 stabilized local scaling set is `1 2 4 8 12 16 24 28 32`. Its
+11,230,392-record release gate applies the exact seven-filter recode workload
+to four representative input scenarios (BGZF+TBI, BGZF+automatic CSI, Plain
+VCF, and adaptive-stream BCF) at the same nine thread counts.
 
 The reusable driver is
 [`benchmarks/run-workload-matrix.sh`](../benchmarks/run-workload-matrix.sh).
@@ -103,3 +112,8 @@ release benchmarks because their overhead would distort the workload.
 The committed v0.13.1 matrix, compact timings, oracle/input hashes, and exact
 runner are in
 [`benchmarks/results/workload-matrix-230k-v0130/RESULTS.md`](../benchmarks/results/workload-matrix-230k-v0130/RESULTS.md).
+The v0.13.2 nine-family exact gate, oracle hashes, and A/B summary are in
+[`benchmarks/results/v0132-development-gate/README.md`](../benchmarks/results/v0132-development-gate/README.md).
+The v0.14.1 complete-data release driver and compact result are
+[`benchmarks/run-v0141-full-release-matrix.sh`](../benchmarks/run-v0141-full-release-matrix.sh)
+and `benchmarks/results/final-full-v0141/`.

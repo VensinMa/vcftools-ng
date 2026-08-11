@@ -38,6 +38,27 @@
 #include <unistd.h>
 
 namespace vcftools_ng::input {
+
+ResourcePlan plan_stream_resources(
+    unsigned total_threads, bool compressed) {
+    ResourcePlan plan;
+    plan.total_threads = std::max(1u, total_threads);
+    if (plan.total_threads == 1) {
+        // The caller executes read, compute, and commit serially.
+        plan.input_threads = 1;
+        plan.compute_threads = 0;
+        return plan;
+    }
+    plan.input_threads = 1;
+    plan.hts_io_threads =
+        compressed && plan.total_threads > 2
+            ? std::min(3u, plan.total_threads - 2)
+            : 0;
+    plan.compute_threads =
+        plan.total_threads - plan.input_threads - plan.hts_io_threads;
+    return plan;
+}
+
 namespace {
 
 constexpr std::uint64_t kMib = 1024ULL * 1024ULL;
@@ -754,15 +775,11 @@ ResourcePlan plan_resources(
                 descriptor_limited_input_threads(input_budget));
         }
     } else {
-        plan.compute_threads = plan.total_threads;
-    }
-    if (!parallel_input && compressed_stream &&
-        plan.total_threads > 2) {
-        plan.hts_io_threads = std::min(
-            12u, static_cast<unsigned>(
-                     (2ULL * plan.total_threads + 4ULL) / 5ULL));
-        plan.compute_threads = std::max(
-            1u, plan.total_threads - plan.hts_io_threads);
+        const ResourcePlan stream = plan_stream_resources(
+            plan.total_threads, compressed_stream);
+        plan.input_threads = stream.input_threads;
+        plan.hts_io_threads = stream.hts_io_threads;
+        plan.compute_threads = stream.compute_threads;
     }
     const auto input_override = stage_thread_override(
         "VCFTOOLS_NG_TEST_INPUT_THREADS");
@@ -951,8 +968,15 @@ public:
             if (!record) {
                 fail("Could not allocate HTSlib input record");
             }
-            if (bcf_read(input_.get(), header_.get(), record.get()) != 0) {
+            const int status =
+                bcf_read(input_.get(), header_.get(), record.get());
+            if (status == -1) {
                 break;
+            }
+            if (status < -1) {
+                fail(
+                    "HTSlib reported a truncated, malformed, or unreadable "
+                    "variant stream: " + path_);
             }
             records.push_back(std::move(record));
         }
@@ -1904,8 +1928,13 @@ private:
                 const int status = bcf_itr_next(
                     context.input.get(), iterator.get(),
                     record.get());
-                if (status < 0) {
+                if (status == -1) {
                     break;
+                }
+                if (status < -1) {
+                    fail(
+                        "HTSlib failed while reading indexed BCF shard " +
+                        std::to_string(shard.ordinal));
                 }
                 if (record->rid == shard.rid &&
                     record->pos >= shard.position_begin &&
@@ -1922,9 +1951,10 @@ private:
                     "Could not query VCF indexed shard " +
                     std::to_string(shard.ordinal));
             }
-            while (tbx_itr_next(
-                       context.input.get(), context.tbx_index.get(),
-                       iterator.get(), &context.line) >= 0) {
+            int status = 0;
+            while ((status = tbx_itr_next(
+                        context.input.get(), context.tbx_index.get(),
+                        iterator.get(), &context.line)) >= 0) {
                 RecordPtr record(bcf_init());
                 if (!record ||
                     vcf_parse1(
@@ -1939,6 +1969,11 @@ private:
                     record->pos < shard.position_end) {
                     emit_record(std::move(record));
                 }
+            }
+            if (status < -1) {
+                fail(
+                    "HTSlib failed while reading indexed VCF shard " +
+                    std::to_string(shard.ordinal));
             }
         }
         chunk.final = true;
@@ -2297,14 +2332,20 @@ std::unique_ptr<OrderedShardSource> make_ordered_source(
         format.compression == bgzf;
     const std::optional<bool> rotational =
         detect_rotational_storage(options.path);
+    const bool plain_header_has_contigs =
+        !is_plain_vcf || header->n[BCF_DT_CTG] > 0;
     const bool automatic_plain_ranges_worthwhile =
-        options.parallel_safe && options.total_threads >= 3;
+        options.parallel_safe && options.total_threads >= 3 &&
+        plain_header_has_contigs;
     const AdaptiveIndexPolicy index_policy =
         is_plain_vcf &&
                 options.requested_backend == Backend::automatic
             ? AdaptiveIndexPolicy{
                   false, false,
-                  automatic_plain_ranges_worthwhile
+                  !plain_header_has_contigs
+                      ? "adaptive policy: Plain VCF without declared "
+                        "contigs requires an ordered HTSlib stream"
+                  : automatic_plain_ranges_worthwhile
                       ? "adaptive policy: Plain VCF at three or more "
                         "threads favors aligned ranges"
                       : "adaptive policy: low-thread Plain VCF favors "
@@ -2431,6 +2472,13 @@ std::unique_ptr<OrderedShardSource> make_ordered_source(
     }
     if (selected == Backend::plain_ranges && !is_plain_vcf) {
         fail("--input-backend plain requires uncompressed VCF input");
+    }
+    if (selected == Backend::plain_ranges &&
+        !plain_header_has_contigs) {
+        fail(
+            "--input-backend plain requires ##contig declarations for "
+            "every chromosome; use --input-backend stream for a VCF "
+            "without declared contigs");
     }
     if (selected == Backend::indexed_regions && !is_indexable) {
         if (!auto_index_failure.empty()) {

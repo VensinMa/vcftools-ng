@@ -1,0 +1,13 @@
+version	threads	wall_s	rss_kib	backend
+old	1	30.11	7440	stream
+new	1	30.09	7040	stream
+old	2	30.12	7408	stream
+new	2	15.83	75000	indexed-contig-parallel
+old	4	9.00	8460	stream
+new	4	7.97	86496	indexed-contig-parallel
+old	8	8.93	9968	stream
+new	8	4.08	113920	indexed-contig-parallel
+old	16	9.05	9964	stream
+new	16	2.74	134824	indexed-contig-parallel
+old	32	8.94	9712	stream
+new	32	2.00	121288	indexed-contig-parallel

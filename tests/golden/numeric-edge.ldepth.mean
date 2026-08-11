@@ -1,0 +1,5 @@
+CHROM	POS	MEAN_DEPTH	VAR_DEPTH
+chr1	1	-nan	-nan
+chr1	2	5	-nan
+chr1	3	100000	-1.71799e+10
+chr1	4	6	2

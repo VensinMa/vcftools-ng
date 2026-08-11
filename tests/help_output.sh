@@ -65,6 +65,7 @@ options=(
     --log-file --no-log-file --threads
     --batch-size --compat --input-backend --bcftools
     --freq --freq2 --counts --missing-site --site-depth --site-mean-depth
+    --corrected-depth-arithmetic
     --depth --missing-indv --het --hardy --site-quality
     --site-pi --window-pi --window-pi-step --TajimaD
     --weir-fst-pop --fst-window-size --fst-window-step

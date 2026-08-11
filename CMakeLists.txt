@@ -8,6 +8,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(HTSLIB_ROOT "" CACHE PATH "HTSlib installation or build directory")
+option(VCFTOOLS_NG_ENABLE_IPO "Enable supported release IPO/LTO" ON)
+set(VCFTOOLS_NG_PGO "OFF" CACHE STRING "PGO mode: OFF, GENERATE, or USE")
+set_property(CACHE VCFTOOLS_NG_PGO PROPERTY STRINGS OFF GENERATE USE)
+set(VCFTOOLS_NG_PGO_DIR "${CMAKE_BINARY_DIR}/pgo" CACHE PATH
+    "Directory containing compiler profile data")
 
 find_path(
   HTSLIB_INCLUDE_DIR
@@ -38,6 +43,7 @@ configure_file(
 
 add_executable(
   vcftools-ng
+  src/exact_hwe.cpp
   src/fast_counts.cpp
   src/input_source.cpp
   src/main.cpp
@@ -60,6 +66,51 @@ target_link_libraries(
     ZLIB::ZLIB
 )
 target_compile_options(vcftools-ng PRIVATE -Wall -Wextra -Wpedantic)
+
+if(VCFTOOLS_NG_ENABLE_IPO)
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT VCFTOOLS_NG_IPO_SUPPORTED
+                      OUTPUT VCFTOOLS_NG_IPO_ERROR)
+  if(VCFTOOLS_NG_IPO_SUPPORTED)
+    set_property(TARGET vcftools-ng PROPERTY
+                 INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+    set_property(TARGET vcftools-ng PROPERTY
+                 INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO TRUE)
+    set_property(TARGET vcftools-ng PROPERTY
+                 INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL TRUE)
+  else()
+    message(STATUS "IPO/LTO disabled: ${VCFTOOLS_NG_IPO_ERROR}")
+  endif()
+endif()
+
+string(TOUPPER "${VCFTOOLS_NG_PGO}" VCFTOOLS_NG_PGO_MODE)
+if(NOT VCFTOOLS_NG_PGO_MODE MATCHES "^(OFF|GENERATE|USE)$")
+  message(FATAL_ERROR "VCFTOOLS_NG_PGO must be OFF, GENERATE, or USE")
+endif()
+if(NOT VCFTOOLS_NG_PGO_MODE STREQUAL "OFF")
+  file(MAKE_DIRECTORY "${VCFTOOLS_NG_PGO_DIR}")
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    if(VCFTOOLS_NG_PGO_MODE STREQUAL "GENERATE")
+      set(VCFTOOLS_NG_PGO_FLAGS "-fprofile-generate=${VCFTOOLS_NG_PGO_DIR}")
+    else()
+      set(VCFTOOLS_NG_PGO_FLAGS
+          "-fprofile-use=${VCFTOOLS_NG_PGO_DIR}" -fprofile-correction)
+    endif()
+  elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    if(VCFTOOLS_NG_PGO_MODE STREQUAL "GENERATE")
+      set(VCFTOOLS_NG_PGO_FLAGS
+          "-fprofile-instr-generate=${VCFTOOLS_NG_PGO_DIR}/default-%p.profraw")
+    else()
+      set(VCFTOOLS_NG_PGO_FLAGS
+          "-fprofile-instr-use=${VCFTOOLS_NG_PGO_DIR}/merged.profdata")
+    endif()
+  else()
+    message(FATAL_ERROR
+            "PGO is currently supported only with GCC and Clang")
+  endif()
+  target_compile_options(vcftools-ng PRIVATE ${VCFTOOLS_NG_PGO_FLAGS})
+  target_link_options(vcftools-ng PRIVATE ${VCFTOOLS_NG_PGO_FLAGS})
+endif()
 
 get_filename_component(HTSLIB_LIBRARY_DIR "${HTSLIB_LIBRARY}" DIRECTORY)
 set_target_properties(
@@ -109,6 +160,19 @@ if(BUILD_TESTING)
       "$<TARGET_FILE:vcftools-ng>"
       "${CMAKE_CURRENT_SOURCE_DIR}"
   )
+
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/osmanthus205.gatk.23chr_1k.vcf.gz"
+     AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/osmanthus205.gatk.23chr_1k.bcf")
+    add_test(
+      NAME gatk_fixture_compatibility
+      COMMAND
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/gatk_fixture_compatibility.sh"
+        "$<TARGET_FILE:vcftools-ng>"
+        "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+  else()
+    message(STATUS "GATK 23k fixtures absent: GATK compatibility test is disabled")
+  endif()
 
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/osmanthus412.23chr_100k.bcf")
     add_test(

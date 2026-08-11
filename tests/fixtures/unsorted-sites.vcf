@@ -1,0 +1,10 @@
+##fileformat=VCFv4.2
+##contig=<ID=chr1,length=1000>
+##contig=<ID=chr2,length=1000>
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	S1	S2	S3	S4
+chr1	100	.	A	G	30	PASS	.	GT	0/0	0/1	1/1	0/1
+chr1	300	.	A	G	30	PASS	.	GT	0/0	0/0	0/1	1/1
+chr1	200	.	A	G	30	PASS	.	GT	0/1	0/1	1/1	1/1
+chr2	100	.	C	T	30	PASS	.	GT	0/0	0/1	0/1	1/1
+chr1	400	.	A	G	30	PASS	.	GT	0/0	0/1	0/1	1/1

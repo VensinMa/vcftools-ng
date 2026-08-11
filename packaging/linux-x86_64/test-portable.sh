@@ -78,7 +78,7 @@ cp /fixtures/osmanthus412.flags.23chr_1k.vcf.gz /work/input.vcf.gz
 [[ -s /work/out.log ]]
 grep -Fqx 'Log format: vcftools-ng-text-v1' /work/out.log
 grep -Fqx 'Exit status: success' /work/out.log
-grep -Fqx 'Selected backend: indexed-regions' /work/out.log
+grep -Fqx 'Selected backend: fast-filter-recode-indexed-bgzf' /work/out.log
 gzip -dc /work/out.recode.vcf.gz >/work/out.recode.vcf
 cmp /golden/flags-site-info.recode.vcf /work/out.recode.vcf
 printf 'PORTABLE_PASS %s\n' "$(

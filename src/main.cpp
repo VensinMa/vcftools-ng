@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <bit>
+#include <cerrno>
 #include <cmath>
 #include <condition_variable>
 #include <chrono>
@@ -25,6 +27,7 @@
 #include <memory>
 #include <mutex>
 #include <numeric>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -37,12 +40,19 @@
 #include <unistd.h>
 
 #include "fast_counts.h"
+#include "exact_hwe.h"
 #include "input_source.h"
+#include "numeric_semantics.h"
+#include "ordered_semantics.h"
 #include "output_transaction.h"
 #include "run_logger.h"
 #include "version.h"
 
 namespace {
+
+using vcftools_ng::ExactHweProbabilities;
+using vcftools_ng::exact_hwe_probabilities;
+using vcftools_ng::exact_hwe_pvalue;
 
 constexpr const char* kVersion = VCFTOOLS_NG_VERSION;
 constexpr unsigned kAutomaticThreadCap = 128;
@@ -76,6 +86,7 @@ struct Options {
     bool output_missing_site = false;
     bool output_site_depth = false;
     bool output_site_mean_depth = false;
+    bool corrected_depth_arithmetic = false;
     bool output_individual_depth = false;
     bool output_individual_missingness = false;
     bool output_heterozygosity = false;
@@ -118,12 +129,12 @@ struct Options {
     std::string exclude_positions_file;
     std::string bed_file;
     bool bed_exclude = false;
-    std::set<std::string> site_filters_to_keep;
-    std::set<std::string> site_filters_to_remove;
+    std::set<std::string, std::less<>> site_filters_to_keep;
+    std::set<std::string, std::less<>> site_filters_to_remove;
     bool remove_all_filtered_sites = false;
-    std::set<std::string> info_flags_to_keep;
-    std::set<std::string> info_flags_to_remove;
-    std::set<std::string> genotype_filters_to_remove;
+    std::set<std::string, std::less<>> info_flags_to_keep;
+    std::set<std::string, std::less<>> info_flags_to_remove;
+    std::set<std::string, std::less<>> genotype_filters_to_remove;
     bool remove_all_filtered_genotypes = false;
     std::set<std::string> samples_to_keep;
     std::set<std::string> samples_to_exclude;
@@ -158,28 +169,124 @@ struct Options {
     int max_non_ref_ac_any = std::numeric_limits<int>::max();
 };
 
-bool can_use_fused_site_stats(const Options& options) {
-    const bool any_site_stat =
-        options.output_freq ||
-        options.output_freq2 ||
-        options.output_counts ||
-        options.output_missing_site ||
-        options.output_site_depth ||
-        options.output_site_mean_depth ||
-        options.output_site_quality ||
-        options.pi_window_size > 0 ||
+struct QueryPlan {
+    bool frequency_filter_active = false;
+    bool genotype_filter_active = false;
+    bool mean_depth_filter_active = false;
+    bool need_gt = false;
+    bool need_dp = false;
+    bool need_gq = false;
+    bool need_ft = false;
+    bool need_chromosome = false;
+    bool need_allele_strings = false;
+    bool need_quality = false;
+    bool need_recode = false;
+    bool any_site_stat = false;
+    bool fused_recode = false;
+    bool fused_eligible = false;
+    std::string input_format;
+    std::string fallback_reason;
+};
+
+QueryPlan compile_query_plan(const Options& options) {
+    QueryPlan plan;
+    plan.input_format =
+        vcftools_ng::input::describe_input_format(options.input);
+    plan.frequency_filter_active =
+        options.min_maf > 0.0 || options.max_maf < 1.0 ||
+        options.min_non_ref_af > 0.0 ||
+        options.max_non_ref_af < 1.0 ||
+        options.min_non_ref_af_any > 0.0 ||
+        options.max_non_ref_af_any < 1.0 ||
+        options.min_non_ref_ac > 0 ||
+        options.max_non_ref_ac != std::numeric_limits<int>::max() ||
+        options.min_non_ref_ac_any > 0 ||
+        options.max_non_ref_ac_any !=
+            std::numeric_limits<int>::max() ||
+        options.min_mac > 0 ||
+        options.max_mac != std::numeric_limits<int>::max() ||
+        options.min_hwe > 0.0 || options.min_call_rate > 0.0 ||
+        options.max_missing_count != std::numeric_limits<int>::max();
+    plan.genotype_filter_active =
+        options.min_gq > 0.0 || options.min_dp > 0 ||
+        options.max_dp != std::numeric_limits<int>::max() ||
+        options.remove_all_filtered_genotypes ||
+        !options.genotype_filters_to_remove.empty();
+    plan.mean_depth_filter_active =
+        options.min_mean_dp > 0.0 ||
+        options.max_mean_dp != std::numeric_limits<double>::max();
+    plan.need_recode =
+        options.output_recode || options.output_recode_bcf ||
+        options.output_recode_vcf_gz;
+    plan.need_gt =
+        options.output_freq || options.output_freq2 ||
+        options.output_counts || options.output_missing_site ||
+        options.output_individual_missingness ||
+        options.output_heterozygosity ||
+        options.output_hardy_weinberg || options.output_site_pi ||
+        options.pi_window_size > 0 || options.tajima_window_size > 0 ||
+        !options.fst_population_files.empty() ||
+        options.output_genotype_r2 || options.output_pca ||
+        plan.frequency_filter_active ||
+        (plan.need_recode && plan.genotype_filter_active);
+    plan.need_dp =
+        options.output_site_depth || options.output_site_mean_depth ||
+        options.output_individual_depth ||
+        plan.mean_depth_filter_active || options.min_dp > 0 ||
+        options.max_dp != std::numeric_limits<int>::max();
+    plan.need_gq = options.min_gq > 0.0;
+    plan.need_ft =
+        options.remove_all_filtered_genotypes ||
+        !options.genotype_filters_to_remove.empty();
+    plan.need_chromosome =
+        options.thin_distance > 0 || options.output_freq ||
+        options.output_freq2 || options.output_counts ||
+        options.output_missing_site || options.output_site_depth ||
+        options.output_site_mean_depth || options.output_site_quality ||
+        options.output_site_pi || options.pi_window_size > 0 ||
         options.tajima_window_size > 0 ||
+        !options.fst_population_files.empty() ||
+        options.output_genotype_r2 || options.output_pca ||
+        options.output_hardy_weinberg;
+    plan.need_allele_strings =
+        options.output_freq || options.output_counts;
+    plan.need_quality = options.output_site_quality;
+    plan.any_site_stat =
+        options.output_freq || options.output_freq2 ||
+        options.output_counts || options.output_missing_site ||
+        options.output_site_depth || options.output_site_mean_depth ||
+        options.output_site_quality || options.output_site_pi ||
+        options.pi_window_size > 0 || options.tajima_window_size > 0 ||
         !options.fst_population_files.empty();
-    const bool recode_output =
+    plan.fused_recode =
         options.output_recode || options.output_recode_vcf_gz;
+    plan.fused_eligible = true;
+    const auto reject = [&](std::string reason) {
+        if (plan.fused_eligible) {
+            plan.fused_eligible = false;
+            plan.fallback_reason = std::move(reason);
+        }
+    };
+
+    const bool text_input =
+        plan.input_format == "Plain VCF" ||
+        plan.input_format == "BGZF VCF" ||
+        plan.input_format == "gzip-compressed VCF";
+    if (!text_input) {
+        reject("the fused parser supports text VCF input; detected " +
+               plan.input_format);
+    }
+    if (!plan.any_site_stat && !plan.fused_recode) {
+        reject("no fused site-statistics or VCF recode output was requested");
+    }
+    if (options.recode_info_all && !plan.fused_recode) {
+        reject("--recode-INFO-all requires a VCF recode output");
+    }
     const bool supported_outputs =
-        (any_site_stat || recode_output) &&
-        (!options.recode_info_all || recode_output) &&
         !options.output_individual_depth &&
         !options.output_individual_missingness &&
         !options.output_heterozygosity &&
         !options.output_hardy_weinberg &&
-        !options.output_site_pi &&
         !options.output_genotype_r2 &&
         options.ld_snp_window_size ==
             std::numeric_limits<int>::max() &&
@@ -195,6 +302,10 @@ bool can_use_fused_site_stats(const Options& options) {
         !options.output_diff_individuals_in_files &&
         !options.output_diff_site_discordance &&
         !options.output_diff_individual_discordance;
+    if (!supported_outputs) {
+        reject("one or more requested analyses require the general "
+               "compatibility pipeline");
+    }
     const bool sample_selection_active =
         !options.samples_to_keep.empty() ||
         !options.samples_to_exclude.empty() ||
@@ -206,57 +317,42 @@ bool can_use_fused_site_stats(const Options& options) {
         options.start_position == -1 &&
         options.end_position == std::numeric_limits<int>::max() &&
         options.bed_file.empty() &&
-        options.site_filters_to_keep.empty() &&
-        options.site_filters_to_remove.empty() &&
-        !options.remove_all_filtered_sites &&
-        options.info_flags_to_keep.empty() &&
-        options.info_flags_to_remove.empty() &&
-        options.genotype_filters_to_remove.empty() &&
-        !options.remove_all_filtered_genotypes &&
-        (!recode_output ||
+        (!plan.fused_recode ||
          (!sample_selection_active &&
           options.positions_file.empty() &&
           options.exclude_positions_file.empty()) ||
-         vcftools_ng::input::describe_input_format(options.input) ==
-             "Plain VCF");
-    const bool supported_numeric_filters =
-        !options.remove_indels &&
-        !options.keep_only_indels &&
-        options.min_dp == -1 &&
-        options.max_dp == std::numeric_limits<int>::max() &&
-        options.max_mean_dp == std::numeric_limits<double>::max() &&
-        options.max_missing_count == std::numeric_limits<int>::max() &&
-        options.max_maf == std::numeric_limits<double>::max() &&
-        options.min_mac == -1 &&
-        options.max_mac == std::numeric_limits<int>::max() &&
-        options.min_hwe == -1.0 &&
-        options.thin_distance == -1 &&
-        options.min_non_ref_af == -1.0 &&
-        options.max_non_ref_af == std::numeric_limits<double>::max() &&
-        options.min_non_ref_af_any == -1.0 &&
-        options.max_non_ref_af_any ==
-            std::numeric_limits<double>::max() &&
-        options.min_non_ref_ac == -1 &&
-        options.max_non_ref_ac == std::numeric_limits<int>::max() &&
-        options.min_non_ref_ac_any == -1 &&
-        options.max_non_ref_ac_any == std::numeric_limits<int>::max();
+         plan.input_format == "Plain VCF");
+    if (!supported_selection) {
+        reject("the requested region, BED, position, or sample selection is "
+               "not supported by this fused input backend");
+    }
+    if (options.thin_distance != -1) {
+        reject("--thin requires ordered cross-record state in the general "
+               "compatibility pipeline");
+    }
     const bool backend_allows_fused_stream =
         options.input_backend ==
             vcftools_ng::input::Backend::automatic ||
         (options.threads <= 2 &&
          options.input_backend ==
              vcftools_ng::input::Backend::stream);
+    if (!backend_allows_fused_stream) {
+        reject("the explicitly selected input backend is incompatible with "
+               "the fused text kernel at this thread count");
+    }
     const bool advanced_backend_supported =
         (options.pi_window_size == 0 &&
          options.tajima_window_size == 0 &&
          options.fst_population_files.empty()) ||
-        vcftools_ng::input::describe_input_format(options.input) ==
-            "Plain VCF";
-    return supported_outputs &&
-           supported_selection &&
-           supported_numeric_filters &&
-           backend_allows_fused_stream &&
-           advanced_backend_supported;
+        plan.input_format == "Plain VCF";
+    if (!advanced_backend_supported) {
+        reject("window pi, Tajima's D, and FST currently require the fused "
+               "Plain VCF backend");
+    }
+    if (plan.fused_eligible) {
+        plan.fallback_reason.clear();
+    }
+    return plan;
 }
 
 std::string join_execution_components(
@@ -321,6 +417,38 @@ std::string execution_components(const Options& options) {
     return join_execution_components(components);
 }
 
+std::string fused_text_parser_policy() {
+    const char* raw = std::getenv("VCFTOOLS_NG_TEST_PARSER");
+    if (raw == nullptr || *raw == '\0' ||
+        std::string_view(raw) == "auto") {
+        return "adaptive specialized with generic fallback";
+    }
+    if (std::string_view(raw) == "generic") {
+        return "generic forced by test override";
+    }
+    if (std::string_view(raw) == "specialized") {
+        return "specialized preferred by test override";
+    }
+    return "invalid test override (will be rejected)";
+}
+
+std::string query_decode_fields(const QueryPlan& plan) {
+    std::vector<std::string> fields;
+    if (plan.need_gt) {
+        fields.emplace_back("GT");
+    }
+    if (plan.need_dp) {
+        fields.emplace_back("DP");
+    }
+    if (plan.need_gq) {
+        fields.emplace_back("GQ");
+    }
+    if (plan.need_ft) {
+        fields.emplace_back("FT");
+    }
+    return fields.empty() ? "none" : join_execution_components(fields);
+}
+
 void log_stage_time(
     const std::string& stage,
     std::chrono::steady_clock::time_point start) {
@@ -334,6 +462,21 @@ void log_stage_time(
 
 [[noreturn]] void fail(const std::string& message) {
     throw std::runtime_error(message);
+}
+
+std::optional<std::uint64_t> test_fail_after(
+    const char* variable) {
+    const char* text = std::getenv(variable);
+    if (text == nullptr || *text == '\0' || std::strcmp(text, "0") == 0) {
+        return std::nullopt;
+    }
+    char* end = nullptr;
+    errno = 0;
+    const unsigned long long parsed = std::strtoull(text, &end, 10);
+    if (errno != 0 || end == text || *end != '\0' || parsed == 0) {
+        fail(std::string("Invalid test fault-injection value: ") + variable);
+    }
+    return static_cast<std::uint64_t>(parsed);
 }
 
 bool input_is_bcf(const std::string& path);
@@ -728,6 +871,9 @@ SITE STATISTICS OUTPUT:
   --missing-site               Per-site missingness (.lmiss)
   --site-depth                 Per-site total-depth statistics (.ldepth)
   --site-mean-depth            Per-site mean depth (.ldepth.mean)
+  --corrected-depth-arithmetic Use checked 64-bit sums for the two site-depth
+                               outputs instead of Original's 32-bit wrapping
+                               (explicit vcftools-ng non-exact extension)
   --site-quality               Per-site QUAL value (.lqual)
   --hardy                      Per-site Hardy-Weinberg statistics (.hwe)
 
@@ -932,6 +1078,8 @@ Options parse_options(int argc, char** argv) {
             options.output_site_depth = true;
         } else if (arg == "--site-mean-depth") {
             options.output_site_mean_depth = true;
+        } else if (arg == "--corrected-depth-arithmetic") {
+            options.corrected_depth_arithmetic = true;
         } else if (arg == "--depth") {
             options.output_individual_depth = true;
         } else if (arg == "--missing-indv") {
@@ -1155,6 +1303,13 @@ Options parse_options(int argc, char** argv) {
     }
     if (options.no_log_file && !options.log_file.empty()) {
         fail("--log-file and --no-log-file cannot be combined");
+    }
+    if (options.corrected_depth_arithmetic &&
+        !options.output_site_depth &&
+        !options.output_site_mean_depth) {
+        fail(
+            "--corrected-depth-arithmetic requires --site-depth or "
+            "--site-mean-depth");
     }
     if (options.default_recode_requested) {
         if (options.output_stdout) {
@@ -1641,6 +1796,9 @@ std::vector<std::string> active_output_options(
     flag(options.output_missing_site, "--missing-site");
     flag(options.output_site_depth, "--site-depth");
     flag(options.output_site_mean_depth, "--site-mean-depth");
+    flag(
+        options.corrected_depth_arithmetic,
+        "--corrected-depth-arithmetic (vcftools-ng non-exact extension)");
     flag(options.output_individual_depth, "--depth");
     flag(options.output_individual_missingness, "--missing-indv");
     flag(options.output_heterozygosity, "--het");
@@ -2077,6 +2235,10 @@ public:
         if (!output_) {
             fail("Could not open BGZF output: " + path);
         }
+        fail_compressor_after_jobs_ = test_fail_after(
+            "VCFTOOLS_NG_TEST_FAIL_COMPRESSOR_AFTER_JOBS");
+        fail_writer_after_blocks_ = test_fail_after(
+            "VCFTOOLS_NG_TEST_FAIL_WRITER_AFTER_BLOCKS");
         const unsigned worker_count =
             std::max(1u, compression_threads);
         try {
@@ -2282,6 +2444,12 @@ private:
                     job = std::move(pending_.front());
                     pending_.pop_front();
                 }
+                if (fail_compressor_after_jobs_ &&
+                    completed_compression_jobs_.fetch_add(
+                        1, std::memory_order_relaxed) >=
+                        *fail_compressor_after_jobs_) {
+                    fail("Injected BGZF compressor failure");
+                }
                 auto compressed = compress_block(job.input, context);
                 {
                     std::lock_guard lock(mutex_);
@@ -2298,6 +2466,7 @@ private:
     void ordered_writer() {
         try {
             std::size_t next = 0;
+            std::size_t written_blocks = 0;
             while (true) {
                 std::vector<uint8_t> block;
                 {
@@ -2320,12 +2489,17 @@ private:
                     ++next;
                 }
                 slot_available_.notify_one();
+                if (fail_writer_after_blocks_ &&
+                    written_blocks >= *fail_writer_after_blocks_) {
+                    fail("Injected BGZF writer failure");
+                }
                 output_.write(
                     reinterpret_cast<const char*>(block.data()),
                     static_cast<std::streamsize>(block.size()));
                 if (!output_) {
                     fail("Could not write deterministic BGZF block");
                 }
+                ++written_blocks;
             }
         } catch (...) {
             record_failure(std::current_exception());
@@ -2400,6 +2574,9 @@ private:
     std::vector<std::thread> workers_;
     std::thread writer_;
     std::exception_ptr failure_;
+    std::optional<std::uint64_t> fail_compressor_after_jobs_;
+    std::optional<std::uint64_t> fail_writer_after_blocks_;
+    std::atomic<std::uint64_t> completed_compression_jobs_{0};
     std::size_t next_job_id_ = 0;
     std::size_t total_jobs_ = 0;
     std::size_t in_flight_ = 0;
@@ -2734,7 +2911,8 @@ private:
             fail("Could not open positions file: " + path);
         }
         kstring_t line{0, 0, nullptr};
-        while (hts_getline(input.get(), '\n', &line) >= 0) {
+        int status = 0;
+        while ((status = hts_getline(input.get(), '\n', &line)) >= 0) {
             if (line.l == 0 || line.s[0] == '#') {
                 continue;
             }
@@ -2750,6 +2928,10 @@ private:
             if (rid >= 0) {
                 output.insert(make_key(rid, position));
             }
+        }
+        if (status < -1) {
+            std::free(line.s);
+            fail("Could not completely read positions file: " + path);
         }
         std::free(line.s);
     }
@@ -2921,9 +3103,7 @@ struct SiteResult {
     uint32_t n_data = 0;
     uint32_t n_genotype_filtered = 0;
     uint32_t n_missing = 0;
-    uint32_t sum_depth = 0;
-    uint32_t sumsq_depth = 0;
-    uint32_t depth_count = 0;
+    vcftools_ng::DepthAccumulator depth_sums;
     double quality = -1.0;
     bool fully_diploid = true;
     bool heterozygosity_eligible = false;
@@ -3118,7 +3298,8 @@ void validate_info_flag_filters(const Options& options, bcf_hdr_t* header) {
 }
 
 bool genotype_filter_matches(
-    std::string_view value, const std::set<std::string>& filters,
+    std::string_view value,
+    const std::set<std::string, std::less<>>& filters,
     bool remove_all) {
     std::string_view first;
     bool have_first = false;
@@ -3134,7 +3315,7 @@ bool genotype_filter_matches(
                 first = token;
                 have_first = true;
             }
-            if (!remove_all && filters.contains(std::string(token))) {
+            if (!remove_all && filters.contains(token)) {
                 return true;
             }
         }
@@ -3157,103 +3338,6 @@ bool is_legacy_indel(const bcf1_t* record) {
         }
     }
     return false;
-}
-
-struct ExactHweProbabilities {
-    double two_sided = 1.0;
-    double heterozygote_deficit = 1.0;
-    double heterozygote_excess = 1.0;
-};
-
-ExactHweProbabilities exact_hwe_probabilities(
-    int observed_hets, int observed_hom_ref, int observed_hom_alt) {
-    ExactHweProbabilities result;
-    if (observed_hom_ref + observed_hom_alt + observed_hets == 0) {
-        return result;
-    }
-
-    const int observed_hom_common =
-        std::max(observed_hom_ref, observed_hom_alt);
-    const int observed_hom_rare =
-        std::min(observed_hom_ref, observed_hom_alt);
-    const int rare_copies = 2 * observed_hom_rare + observed_hets;
-    const int genotypes =
-        observed_hets + observed_hom_common + observed_hom_rare;
-
-    std::vector<double> heterozygote_probabilities(
-        static_cast<std::size_t>(rare_copies + 1), 0.0);
-    int midpoint =
-        rare_copies * (2 * genotypes - rare_copies) / (2 * genotypes);
-    if ((rare_copies & 1) ^ (midpoint & 1)) {
-        ++midpoint;
-    }
-
-    int current_hets = midpoint;
-    int current_hom_rare = (rare_copies - midpoint) / 2;
-    int current_hom_common =
-        genotypes - current_hets - current_hom_rare;
-    heterozygote_probabilities[midpoint] = 1.0;
-    double sum = 1.0;
-
-    for (current_hets = midpoint; current_hets > 1; current_hets -= 2) {
-        heterozygote_probabilities[current_hets - 2] =
-            heterozygote_probabilities[current_hets] * current_hets *
-            (current_hets - 1.0) /
-            (4.0 * (current_hom_rare + 1.0) *
-             (current_hom_common + 1.0));
-        sum += heterozygote_probabilities[current_hets - 2];
-        ++current_hom_rare;
-        ++current_hom_common;
-    }
-
-    current_hets = midpoint;
-    current_hom_rare = (rare_copies - midpoint) / 2;
-    current_hom_common =
-        genotypes - current_hets - current_hom_rare;
-    for (current_hets = midpoint; current_hets <= rare_copies - 2;
-         current_hets += 2) {
-        heterozygote_probabilities[current_hets + 2] =
-            heterozygote_probabilities[current_hets] * 4.0 *
-            current_hom_rare * current_hom_common /
-            ((current_hets + 2.0) * (current_hets + 1.0));
-        sum += heterozygote_probabilities[current_hets + 2];
-        --current_hom_rare;
-        --current_hom_common;
-    }
-
-    for (double& probability : heterozygote_probabilities) {
-        probability /= sum;
-    }
-
-    result.heterozygote_excess =
-        heterozygote_probabilities[observed_hets];
-    for (int index = observed_hets + 1; index <= rare_copies; ++index) {
-        result.heterozygote_excess +=
-            heterozygote_probabilities[index];
-    }
-    result.heterozygote_deficit =
-        heterozygote_probabilities[observed_hets];
-    for (int index = observed_hets - 1; index >= 0; --index) {
-        result.heterozygote_deficit +=
-            heterozygote_probabilities[index];
-    }
-
-    result.two_sided = 0.0;
-    for (const double probability : heterozygote_probabilities) {
-        if (probability <=
-            heterozygote_probabilities[observed_hets]) {
-            result.two_sided += probability;
-        }
-    }
-    result.two_sided = std::min(result.two_sided, 1.0);
-    return result;
-}
-
-double exact_hwe_pvalue(int observed_hets, int observed_hom_ref,
-                        int observed_hom_alt) {
-    return exact_hwe_probabilities(
-               observed_hets, observed_hom_ref, observed_hom_alt)
-        .two_sided;
 }
 
 struct FstContribution {
@@ -3711,86 +3795,8 @@ void clear_info_fields(bcf_hdr_t* header, bcf1_t* record) {
     }
 }
 
-struct ExecutionPlan {
-    bool frequency_filter_active = false;
-    bool genotype_filter_active = false;
-    bool mean_depth_filter_active = false;
-    bool need_gt = false;
-    bool need_dp = false;
-    bool need_gq = false;
-    bool need_ft = false;
-    bool need_chromosome = false;
-    bool need_allele_strings = false;
-    bool need_quality = false;
-    bool need_recode = false;
-};
-
-ExecutionPlan compile_execution_plan(const Options& options) {
-    ExecutionPlan plan;
-    plan.frequency_filter_active =
-        options.min_maf > 0.0 || options.max_maf < 1.0 ||
-        options.min_non_ref_af > 0.0 ||
-        options.max_non_ref_af < 1.0 ||
-        options.min_non_ref_af_any > 0.0 ||
-        options.max_non_ref_af_any < 1.0 ||
-        options.min_non_ref_ac > 0 ||
-        options.max_non_ref_ac != std::numeric_limits<int>::max() ||
-        options.min_non_ref_ac_any > 0 ||
-        options.max_non_ref_ac_any !=
-            std::numeric_limits<int>::max() ||
-        options.min_mac > 0 ||
-        options.max_mac != std::numeric_limits<int>::max() ||
-        options.min_hwe > 0.0 || options.min_call_rate > 0.0 ||
-        options.max_missing_count != std::numeric_limits<int>::max();
-    plan.genotype_filter_active =
-        options.min_gq > 0.0 || options.min_dp > 0 ||
-        options.max_dp != std::numeric_limits<int>::max() ||
-        options.remove_all_filtered_genotypes ||
-        !options.genotype_filters_to_remove.empty();
-    plan.mean_depth_filter_active =
-        options.min_mean_dp > 0.0 ||
-        options.max_mean_dp != std::numeric_limits<double>::max();
-    plan.need_recode =
-        options.output_recode || options.output_recode_bcf ||
-        options.output_recode_vcf_gz;
-    plan.need_gt =
-        options.output_freq || options.output_freq2 ||
-        options.output_counts || options.output_missing_site ||
-        options.output_individual_missingness ||
-        options.output_heterozygosity ||
-        options.output_hardy_weinberg || options.output_site_pi ||
-        options.pi_window_size > 0 || options.tajima_window_size > 0 ||
-        !options.fst_population_files.empty() ||
-        options.output_genotype_r2 || options.output_pca ||
-        plan.frequency_filter_active ||
-        (plan.need_recode && plan.genotype_filter_active);
-    plan.need_dp =
-        options.output_site_depth || options.output_site_mean_depth ||
-        options.output_individual_depth ||
-        plan.mean_depth_filter_active || options.min_dp > 0 ||
-        options.max_dp != std::numeric_limits<int>::max();
-    plan.need_gq = options.min_gq > 0.0;
-    plan.need_ft =
-        options.remove_all_filtered_genotypes ||
-        !options.genotype_filters_to_remove.empty();
-    plan.need_chromosome =
-        options.thin_distance > 0 || options.output_freq ||
-        options.output_freq2 || options.output_counts ||
-        options.output_missing_site || options.output_site_depth ||
-        options.output_site_mean_depth || options.output_site_quality ||
-        options.output_site_pi || options.pi_window_size > 0 ||
-        options.tajima_window_size > 0 ||
-        !options.fst_population_files.empty() ||
-        options.output_genotype_r2 || options.output_pca ||
-        options.output_hardy_weinberg;
-    plan.need_allele_strings =
-        options.output_freq || options.output_counts;
-    plan.need_quality = options.output_site_quality;
-    return plan;
-}
-
 SiteResult process_site(const Options& options,
-                        const ExecutionPlan& plan,
+                        const QueryPlan& plan,
                         const SiteSelector& selector,
                         const SampleSelection& samples,
                         bcf_hdr_t* header,
@@ -3922,10 +3928,7 @@ SiteResult process_site(const Options& options,
             if (individual_depth != nullptr) {
                 individual_depth[selected_index] = depth;
             }
-            result.sum_depth += static_cast<uint32_t>(depth);
-            result.sumsq_depth +=
-                static_cast<uint32_t>(depth * depth);
-            ++result.depth_count;
+            result.depth_sums.add(static_cast<std::uint32_t>(depth));
         }
         if (!plan.need_gt) {
             continue;
@@ -3938,6 +3941,14 @@ SiteResult process_site(const Options& options,
                 break;
             }
             ++actual_ploidy;
+        }
+        if (actual_ploidy > 2) {
+            fail(
+                "Polyploid genotype is not supported by "
+                "VCFtools compatibility mode at " +
+                std::string(
+                    bcf_hdr_id2name(header, record->rid)) +
+                ":" + std::to_string(record->pos + 1));
         }
         total_ploidy_for_filter += actual_ploidy;
 
@@ -3965,6 +3976,18 @@ SiteResult process_site(const Options& options,
             if (allele >= 0 && allele < record->n_allele) {
                 ++result.allele_counts[allele];
                 ++result.non_missing_chromosomes;
+            }
+        }
+        if (options.output_missing_site && legacy_copies >= 2) {
+            const int32_t second = scratch.gt[base + 1];
+            if (bcf_gt_is_missing(second) &&
+                bcf_gt_is_phased(second)) {
+                // Original's .lmiss writer interprets a phased missing
+                // second allele as its haploid sentinel (OVI-011). Keep the
+                // quirk local to site-missingness counters: filters and
+                // allele counts above retain the actual diploid encoding.
+                --result.n_data;
+                --result.n_missing;
             }
         }
 
@@ -4118,7 +4141,17 @@ SiteResult process_site(const Options& options,
     }
 
     if (plan.need_chromosome) {
-        result.chrom = bcf_hdr_id2name(header, record->rid);
+        const char* chromosome =
+            record->rid >= 0
+                ? bcf_hdr_id2name(header, record->rid)
+                : nullptr;
+        if (chromosome == nullptr) {
+            fail(
+                "Variant chromosome is absent from the parsed VCF/BCF "
+                "header; use the ordered stream backend or add complete "
+                "##contig declarations");
+        }
+        result.chrom = chromosome;
         result.pos = record->pos + 1;
     }
     if (plan.need_quality) {
@@ -4392,6 +4425,12 @@ public:
         if (!result.kept) {
             return;
         }
+        if (options_.pi_window_size > 0 ||
+            options_.tajima_window_size > 0 ||
+            options_.fst_window_size > 0 ||
+            options_.output_genotype_r2) {
+            ordered_sites_.observe(result.chrom, result.pos);
+        }
         if (options_.output_freq || options_.output_freq2) {
             freq_ << result.chrom << '\t' << result.pos << '\t'
                   << result.allele_counts.size() << '\t'
@@ -4429,17 +4468,32 @@ public:
         }
         if (options_.output_site_depth) {
             depth_ << result.chrom << '\t' << result.pos << '\t'
-                   << result.sum_depth << '\t' << result.sumsq_depth << '\n';
+                   << (options_.corrected_depth_arithmetic
+                           ? result.depth_sums.corrected_sum()
+                           : result.depth_sums.legacy_sum())
+                   << '\t'
+                   << (options_.corrected_depth_arithmetic
+                           ? result.depth_sums.corrected_sumsq()
+                           : result.depth_sums.legacy_sumsq())
+                   << '\n';
         }
         if (options_.output_site_mean_depth) {
-            const double mean =
-                result.sum_depth / static_cast<double>(result.depth_count);
+            const double sum = options_.corrected_depth_arithmetic
+                                   ? static_cast<double>(
+                                         result.depth_sums.corrected_sum())
+                                   : static_cast<double>(
+                                         result.depth_sums.legacy_sum());
+            const double sumsq = options_.corrected_depth_arithmetic
+                                     ? static_cast<double>(
+                                           result.depth_sums.corrected_sumsq())
+                                     : static_cast<double>(
+                                           result.depth_sums.legacy_sumsq());
+            const double count =
+                static_cast<double>(result.depth_sums.count());
+            const double mean = sum / count;
             const double variance =
-                ((result.sumsq_depth /
-                      static_cast<double>(result.depth_count)) -
-                 (mean * mean)) *
-                result.depth_count /
-                static_cast<double>(result.depth_count - 1);
+                ((sumsq / count) - (mean * mean)) *
+                count / (count - 1.0);
             mean_depth_ << result.chrom << '\t' << result.pos << '\t' << mean
                         << '\t' << variance << '\n';
         }
@@ -4486,10 +4540,35 @@ public:
             LdSite site;
             site.chrom = result.chrom;
             site.pos = result.pos;
-            site.dosage.assign(
-                genotype_dosage,
-                genotype_dosage + sample_names_.size());
+            if (options_.output_genotype_r2) {
+                const std::size_t words =
+                    (sample_names_.size() + 63) / 64;
+                site.genotype_bits.assign(words * 3, 0);
+                std::uint64_t* const valid_bits =
+                    site.genotype_bits.data();
+                std::uint64_t* const one_bits = valid_bits + words;
+                std::uint64_t* const two_bits = one_bits + words;
+                for (std::size_t sample = 0;
+                     sample < sample_names_.size(); ++sample) {
+                    const int8_t dosage = genotype_dosage[sample];
+                    if (dosage < 0) {
+                        continue;
+                    }
+                    const std::uint64_t mask =
+                        std::uint64_t{1} << (sample & 63U);
+                    const std::size_t word = sample >> 6U;
+                    valid_bits[word] |= mask;
+                    if (dosage == 1) {
+                        one_bits[word] |= mask;
+                    } else if (dosage == 2) {
+                        two_bits[word] |= mask;
+                    }
+                }
+            }
             if (options_.output_pca) {
+                site.dosage.assign(
+                    genotype_dosage,
+                    genotype_dosage + sample_names_.size());
                 if (!result.fully_diploid) {
                     fail(
                         "PCA only works for fully diploid sites. "
@@ -4693,6 +4772,7 @@ private:
         std::string chrom;
         int64_t pos = 0;
         std::vector<int8_t> dosage;
+        std::vector<std::uint64_t> genotype_bits;
         double alt_frequency = 0.0;
         bool pca_eligible = false;
     };
@@ -4906,29 +4986,60 @@ private:
 
     static std::pair<double, int> genotype_r2(
         const LdSite& first, const LdSite& second) {
-        double x = 0.0;
-        double x2 = 0.0;
-        double y = 0.0;
-        double y2 = 0.0;
-        double xy = 0.0;
-        int individual_count = 0;
-        for (std::size_t sample = 0;
-             sample < first.dosage.size(); ++sample) {
-            if (first.dosage[sample] < 0 ||
-                second.dosage[sample] < 0) {
-                continue;
-            }
-            double sx = first.dosage[sample];
-            double sy = second.dosage[sample];
-            x += sx;
-            y += sy;
-            xy += sx * sy;
-            sx *= sx;
-            sy *= sy;
-            x2 += sx;
-            y2 += sy;
-            ++individual_count;
+        std::uint64_t x_sum = 0;
+        std::uint64_t x2_sum = 0;
+        std::uint64_t y_sum = 0;
+        std::uint64_t y2_sum = 0;
+        std::uint64_t xy_sum = 0;
+        std::uint64_t individual_count = 0;
+        const std::size_t words = first.genotype_bits.size() / 3;
+        const std::uint64_t* const first_valid =
+            first.genotype_bits.data();
+        const std::uint64_t* const first_one = first_valid + words;
+        const std::uint64_t* const first_two = first_one + words;
+        const std::uint64_t* const second_valid =
+            second.genotype_bits.data();
+        const std::uint64_t* const second_one = second_valid + words;
+        const std::uint64_t* const second_two = second_one + words;
+        for (std::size_t word = 0;
+             word < words; ++word) {
+            const std::uint64_t common =
+                first_valid[word] & second_valid[word];
+            const std::uint64_t first_one_common =
+                first_one[word] & common;
+            const std::uint64_t first_two_common =
+                first_two[word] & common;
+            const std::uint64_t second_one_common =
+                second_one[word] & common;
+            const std::uint64_t second_two_common =
+                second_two[word] & common;
+            const std::uint64_t count_first_one =
+                std::popcount(first_one_common);
+            const std::uint64_t count_first_two =
+                std::popcount(first_two_common);
+            const std::uint64_t count_second_one =
+                std::popcount(second_one_common);
+            const std::uint64_t count_second_two =
+                std::popcount(second_two_common);
+            individual_count += std::popcount(common);
+            x_sum += count_first_one + 2 * count_first_two;
+            x2_sum += count_first_one + 4 * count_first_two;
+            y_sum += count_second_one + 2 * count_second_two;
+            y2_sum += count_second_one + 4 * count_second_two;
+            xy_sum +=
+                std::popcount(first_one_common & second_one_common) +
+                2 * std::popcount(
+                        first_one_common & second_two_common) +
+                2 * std::popcount(
+                        first_two_common & second_one_common) +
+                4 * std::popcount(
+                        first_two_common & second_two_common);
         }
+        double x = static_cast<double>(x_sum);
+        double x2 = static_cast<double>(x2_sum);
+        double y = static_cast<double>(y_sum);
+        double y2 = static_cast<double>(y2_sum);
+        double xy = static_cast<double>(xy_sum);
         x /= individual_count;
         x2 /= individual_count;
         y /= individual_count;
@@ -4940,17 +5051,22 @@ private:
         return {
             covariance * covariance /
                 (variance_x * variance_y),
-            individual_count};
+            static_cast<int>(individual_count)};
     }
 
     void finish_genotype_ld() {
         if (!options_.output_genotype_r2 || ld_sites_.size() < 2) {
             return;
         }
-        std::vector<std::string> ordered_lines(ld_sites_.size() - 1);
-        std::atomic<std::size_t> next_left{0};
+        constexpr std::size_t kLeftSitesPerBlock = 64;
+        const std::size_t left_count = ld_sites_.size() - 1;
+        const std::size_t block_count =
+            (left_count + kLeftSitesPerBlock - 1) /
+            kLeftSitesPerBlock;
+        std::vector<std::string> ordered_blocks(block_count);
+        std::atomic<std::size_t> next_block{0};
         const std::size_t worker_count = std::min<std::size_t>(
-            options_.threads, ld_sites_.size() - 1);
+            options_.threads, block_count);
         std::vector<std::thread> workers;
         workers.reserve(worker_count);
         const int minimum_snp_distance =
@@ -4958,57 +5074,63 @@ private:
         for (std::size_t worker = 0; worker < worker_count; ++worker) {
             workers.emplace_back([&] {
                 while (true) {
-                    const std::size_t left =
-                        next_left.fetch_add(1);
-                    if (left + 1 >= ld_sites_.size()) {
+                    const std::size_t block =
+                        next_block.fetch_add(1);
+                    if (block >= block_count) {
                         return;
                     }
-                    const auto& first = ld_sites_[left];
+                    const std::size_t begin =
+                        block * kLeftSitesPerBlock;
+                    const std::size_t end = std::min(
+                        begin + kLeftSitesPerBlock, left_count);
                     std::ostringstream lines;
-                    for (std::size_t right = left + 1;
-                         right < ld_sites_.size(); ++right) {
-                        if (static_cast<int>(right - left) >
-                            options_.ld_snp_window_size) {
-                            break;
+                    for (std::size_t left = begin; left < end; ++left) {
+                        const auto& first = ld_sites_[left];
+                        for (std::size_t right = left + 1;
+                             right < ld_sites_.size(); ++right) {
+                            if (static_cast<int>(right - left) >
+                                options_.ld_snp_window_size) {
+                                break;
+                            }
+                            if (right <
+                                left +
+                                    static_cast<std::size_t>(
+                                        minimum_snp_distance)) {
+                                continue;
+                            }
+                            const auto& second = ld_sites_[right];
+                            if (first.chrom != second.chrom) {
+                                continue;
+                            }
+                            const int64_t distance =
+                                second.pos - first.pos;
+                            if (distance < options_.ld_bp_window_min) {
+                                continue;
+                            }
+                            if (distance > options_.ld_bp_window_size) {
+                                break;
+                            }
+                            const auto [r2, individual_count] =
+                                genotype_r2(first, second);
+                            if (options_.min_r2 > 0.0 &&
+                                (r2 < options_.min_r2 ||
+                                 std::isnan(r2))) {
+                                continue;
+                            }
+                            lines << first.chrom << '\t' << first.pos
+                                  << '\t' << second.pos << '\t'
+                                  << individual_count << '\t' << r2
+                                  << '\n';
                         }
-                        if (right <
-                            left +
-                                static_cast<std::size_t>(
-                                    minimum_snp_distance)) {
-                            continue;
-                        }
-                        const auto& second = ld_sites_[right];
-                        if (first.chrom != second.chrom) {
-                            continue;
-                        }
-                        const int64_t distance =
-                            second.pos - first.pos;
-                        if (distance < options_.ld_bp_window_min) {
-                            continue;
-                        }
-                        if (distance > options_.ld_bp_window_size) {
-                            break;
-                        }
-                        const auto [r2, individual_count] =
-                            genotype_r2(first, second);
-                        if (options_.min_r2 > 0.0 &&
-                            (r2 < options_.min_r2 ||
-                             std::isnan(r2))) {
-                            continue;
-                        }
-                        lines << first.chrom << '\t' << first.pos
-                              << '\t' << second.pos << '\t'
-                              << individual_count << '\t' << r2
-                              << '\n';
                     }
-                    ordered_lines[left] = std::move(lines).str();
+                    ordered_blocks[block] = std::move(lines).str();
                 }
             });
         }
         for (auto& worker : workers) {
             worker.join();
         }
-        for (const auto& lines : ordered_lines) {
+        for (const auto& lines : ordered_blocks) {
             genotype_ld_ << lines;
         }
     }
@@ -5031,60 +5153,102 @@ private:
                 "than individuals");
         }
 
+        const std::size_t individuals =
+            static_cast<std::size_t>(individual_count);
+        if (individuals > 0 &&
+            individuals >
+                std::numeric_limits<std::size_t>::max() / individuals) {
+            fail("PCA covariance matrix exceeds addressable memory");
+        }
         std::vector<double> matrix(
-            static_cast<std::size_t>(individual_count) *
-                individual_count,
-            0.0);
-        std::atomic<std::size_t> next_cell{0};
-        const std::size_t cell_count =
-            static_cast<std::size_t>(individual_count) *
-            individual_count;
+            individuals * individuals, 0.0);
+        if (individuals > 0 &&
+            site_count >
+                std::numeric_limits<std::size_t>::max() / individuals) {
+            fail("PCA dosage matrix exceeds addressable memory");
+        }
+        std::vector<const LdSite*> eligible_sites;
+        eligible_sites.reserve(site_count);
+        for (const auto& site : ld_sites_) {
+            if (site.pca_eligible) {
+                eligible_sites.push_back(&site);
+            }
+        }
+        std::vector<double> pca_values(site_count * individuals);
+        constexpr std::size_t kPcaSitesPerBlock = 256;
+        std::atomic<std::size_t> next_site{0};
+        const std::size_t normalise_worker_count =
+            std::min<std::size_t>(
+                options_.threads,
+                (site_count + kPcaSitesPerBlock - 1) /
+                    kPcaSitesPerBlock);
+        std::vector<std::thread> normalise_workers;
+        normalise_workers.reserve(normalise_worker_count);
+        for (std::size_t worker = 0;
+             worker < normalise_worker_count; ++worker) {
+            normalise_workers.emplace_back([&] {
+                while (true) {
+                    const std::size_t begin =
+                        next_site.fetch_add(kPcaSitesPerBlock);
+                    if (begin >= site_count) {
+                        return;
+                    }
+                    const std::size_t end = std::min(
+                        begin + kPcaSitesPerBlock, site_count);
+                    for (std::size_t site_index = begin;
+                         site_index < end; ++site_index) {
+                        const auto& site = *eligible_sites[site_index];
+                        const double mean =
+                            site.alt_frequency * 2.0;
+                        const double divisor =
+                            options_.pca_normalise
+                                ? 1.0 /
+                                      std::sqrt(
+                                          site.alt_frequency *
+                                          (1.0 -
+                                           site.alt_frequency))
+                                : 1.0;
+                        for (std::size_t individual = 0;
+                             individual < individuals; ++individual) {
+                            const double genotype =
+                                2.0 - site.dosage[individual];
+                            pca_values[
+                                individual * site_count + site_index] =
+                                (genotype - mean) * divisor;
+                        }
+                    }
+                }
+            });
+        }
+        for (auto& worker : normalise_workers) {
+            worker.join();
+        }
+        std::atomic<std::size_t> next_row{0};
         const std::size_t worker_count = std::min<std::size_t>(
-            options_.threads, cell_count);
+            options_.threads, individuals);
         std::vector<std::thread> workers;
         workers.reserve(worker_count);
         for (std::size_t worker = 0; worker < worker_count; ++worker) {
             workers.emplace_back([&] {
                 while (true) {
-                    const std::size_t cell =
-                        next_cell.fetch_add(1);
-                    if (cell >= cell_count) {
+                    const std::size_t row = next_row.fetch_add(1);
+                    if (row >= individuals) {
                         return;
                     }
-                    const int row = static_cast<int>(
-                        cell / individual_count);
-                    const int column = static_cast<int>(
-                        cell % individual_count);
-                    if (column < row) {
-                        continue;
-                    }
-                    double sum = 0.0;
-                    for (const auto& site : ld_sites_) {
-                        if (!site.pca_eligible) {
-                            continue;
+                    for (std::size_t column = row;
+                         column < individuals; ++column) {
+                        double sum = 0.0;
+                        const double* const row_values =
+                            pca_values.data() + row * site_count;
+                        const double* const column_values =
+                            pca_values.data() + column * site_count;
+                        for (std::size_t site = 0;
+                             site < site_count; ++site) {
+                            sum += row_values[site] *
+                                   column_values[site];
                         }
-                        const double mean =
-                            site.alt_frequency * 2.0;
-                        const double divisor =
-                            1.0 /
-                            std::sqrt(
-                                site.alt_frequency *
-                                (1.0 - site.alt_frequency));
-                        const double row_genotype =
-                            2.0 - site.dosage[row];
-                        const double column_genotype =
-                            2.0 - site.dosage[column];
-                        const double row_value =
-                            options_.pca_normalise
-                                ? (row_genotype - mean) * divisor
-                                : row_genotype - mean;
-                        const double column_value =
-                            options_.pca_normalise
-                                ? (column_genotype - mean) * divisor
-                                : column_genotype - mean;
-                        sum += row_value * column_value;
+                        matrix[row * individuals + column] = sum;
                     }
-                    matrix[cell] = sum;
                 }
             });
         }
@@ -5196,6 +5360,7 @@ private:
         fst_windows_;
     std::vector<std::string> fst_chromosomes_;
     std::string previous_fst_chromosome_;
+    vcftools_ng::OrderedSiteValidator ordered_sites_;
     std::vector<LdSite> ld_sites_;
     bool finished_ = false;
 };
@@ -5279,7 +5444,8 @@ PipelineSummary run_ordered_pipeline(
     const Options& options, const SiteSelector& selector,
     const SampleSelection& samples, bcf_hdr_t* header,
     vcftools_ng::input::OrderedShardSource& source,
-    unsigned compute_threads, OrderedCommitter& committer) {
+    unsigned compute_threads, OrderedCommitter& committer,
+    const QueryPlan& execution_plan) {
     constexpr std::size_t max_in_flight_batches = 3;
     const std::size_t slices_per_worker = 4;
     const std::size_t target_slice =
@@ -5289,8 +5455,51 @@ PipelineSummary run_ordered_pipeline(
                    slices_per_worker);
     const std::size_t slice_size =
         std::clamp<std::size_t>(target_slice, 64, 256);
-    const ExecutionPlan execution_plan =
-        compile_execution_plan(options);
+    const auto fail_reader_after_batches = test_fail_after(
+        "VCFTOOLS_NG_TEST_FAIL_READER_AFTER_BATCHES");
+    const auto fail_worker_after_records = test_fail_after(
+        "VCFTOOLS_NG_TEST_FAIL_WORKER_AFTER_RECORDS");
+    std::atomic<std::uint64_t> processed_worker_records{0};
+    if (compute_threads == 0) {
+        HeaderPtr output_header(
+            bcf_hdr_dup(samples.output_header(header)));
+        if (!output_header) {
+            fail("Could not duplicate serial output header");
+        }
+        Scratch scratch;
+        std::uint64_t batches = 0;
+        while (true) {
+            auto records = source.next_batch(options.batch_size);
+            if (records.empty()) {
+                break;
+            }
+            if (fail_reader_after_batches &&
+                batches >= *fail_reader_after_batches) {
+                fail("Injected ordered-pipeline reader failure");
+            }
+            ++batches;
+            std::vector<SiteResult> results(records.size());
+            BatchAnalysisPayload analysis;
+            analysis.reset(
+                records.size(),
+                static_cast<std::size_t>(samples.count()), options);
+            for (std::size_t index = 0; index < records.size(); ++index) {
+                if (fail_worker_after_records &&
+                    processed_worker_records.fetch_add(
+                        1, std::memory_order_relaxed) >=
+                        *fail_worker_after_records) {
+                    fail("Injected ordered-pipeline worker failure");
+                }
+                results[index] = process_site(
+                    options, execution_plan, selector, samples, header,
+                    output_header.get(), records[index].get(), scratch,
+                    analysis.state_row(index), analysis.depth_row(index),
+                    analysis.dosage_row(index));
+            }
+            committer.commit(results, analysis);
+        }
+        return committer.summary();
+    }
     PipelineState state;
     std::vector<HeaderPtr> worker_output_headers;
     worker_output_headers.reserve(compute_threads);
@@ -5319,6 +5528,7 @@ PipelineSummary run_ordered_pipeline(
     std::thread reader([&] {
         try {
             bool eof = false;
+            std::uint64_t reader_batches = 0;
             while (!eof) {
                 {
                     std::unique_lock lock(state.mutex);
@@ -5336,6 +5546,12 @@ PipelineSummary run_ordered_pipeline(
                 batch->records =
                     source.next_batch(options.batch_size);
                 eof = batch->records.empty();
+
+                if (fail_reader_after_batches &&
+                    reader_batches >= *fail_reader_after_batches) {
+                    fail("Injected ordered-pipeline reader failure");
+                }
+                ++reader_batches;
 
                 if (batch->records.empty()) {
                     std::lock_guard lock(state.mutex);
@@ -5415,6 +5631,12 @@ PipelineSummary run_ordered_pipeline(
 
                     for (std::size_t index = slice.begin;
                          index < slice.end; ++index) {
+                        if (fail_worker_after_records &&
+                            processed_worker_records.fetch_add(
+                                1, std::memory_order_relaxed) >=
+                                *fail_worker_after_records) {
+                            fail("Injected ordered-pipeline worker failure");
+                        }
                         slice.batch->results[index] = process_site(
                             options, execution_plan, selector, samples, header,
                             worker_output_header,
@@ -5525,7 +5747,7 @@ class DiffRecordStream {
 public:
     DiffRecordStream(
         const std::string& path, const Options& options,
-        unsigned io_threads)
+        unsigned io_threads, std::optional<int> indexed_rid = std::nullopt)
         : path_(path),
           input_(hts_open(path.c_str(), "r")) {
         if (!input_) {
@@ -5542,6 +5764,17 @@ public:
         }
         selector_ =
             std::make_unique<SiteSelector>(options, header_.get());
+        if (indexed_rid.has_value()) {
+            index_.reset(bcf_index_load(path.c_str()));
+            if (!index_) {
+                fail("Could not load BCF index for parallel diff: " + path);
+            }
+            iterator_.reset(bcf_itr_queryi(
+                index_.get(), *indexed_rid, 0, HTS_POS_MAX));
+            if (!iterator_) {
+                fail("Could not create BCF contig iterator for parallel diff");
+            }
+        }
         record_.reset(bcf_init());
         advance();
     }
@@ -5568,7 +5801,20 @@ public:
 
     void advance() {
         present_ = false;
-        while (bcf_read(input_.get(), header_.get(), record_.get()) == 0) {
+        while (true) {
+            const int status = iterator_
+                                   ? bcf_itr_next(
+                                         input_.get(), iterator_.get(),
+                                         record_.get())
+                                   : bcf_read(
+                                         input_.get(), header_.get(),
+                                         record_.get());
+            if (status == -1) {
+                return;
+            }
+            if (status < -1) {
+                fail("HTSlib failed while reading diff input: " + path_);
+            }
             if (!selector_->keep(record_.get(), header_.get())) {
                 continue;
             }
@@ -5582,6 +5828,8 @@ private:
     std::string path_;
     HtsFilePtr input_;
     HeaderPtr header_;
+    IndexPtr index_;
+    IteratorPtr iterator_;
     std::unique_ptr<SiteSelector> selector_;
     RecordPtr record_;
     bool present_ = false;
@@ -5773,6 +6021,243 @@ void write_diff_individuals(
     vcftools_ng::output::finish_stream(output, path);
 }
 
+struct ParallelDiffContigResult {
+    std::string site_discordance;
+    std::map<std::string, DiffSiteCounts> individual_counts;
+    std::uint64_t common_sites = 0;
+    std::uint64_t first_only = 0;
+    std::uint64_t second_only = 0;
+};
+
+ParallelDiffContigResult compare_diff_contig(
+    const Options& options, const std::string& chromosome,
+    int first_rid, int second_rid, const DiffSampleMap& samples) {
+    DiffRecordStream first(options.input, options, 0, first_rid);
+    DiffRecordStream second(options.diff_input, options, 0, second_rid);
+    ParallelDiffContigResult result;
+    std::ostringstream site_discordance;
+    DiffGenotypeScratch scratch;
+    while (first.present() || second.present()) {
+        int comparison = 0;
+        if (!second.present()) {
+            comparison = -1;
+        } else if (!first.present()) {
+            comparison = 1;
+        } else {
+            comparison =
+                first.position() < second.position()
+                    ? -1
+                    : (first.position() > second.position() ? 1 : 0);
+        }
+        if (comparison < 0) {
+            ++result.first_only;
+            if (options.output_diff_site_discordance) {
+                site_discordance
+                    << chromosome << '\t' << first.position()
+                    << "\t1\t0\t0\t0\t"
+                    << std::numeric_limits<double>::quiet_NaN() << '\n';
+            }
+            first.advance();
+            continue;
+        }
+        if (comparison > 0) {
+            ++result.second_only;
+            if (options.output_diff_site_discordance) {
+                site_discordance
+                    << chromosome << '\t' << second.position()
+                    << "\t2\t0\t0\t0\t"
+                    << std::numeric_limits<double>::quiet_NaN() << '\n';
+            }
+            second.advance();
+            continue;
+        }
+
+        std::string first_ref = reference_allele(first.record());
+        std::string second_ref = reference_allele(second.record());
+        if (first_ref == "N" || first_ref == "." || first_ref.empty()) {
+            first_ref = second_ref;
+        }
+        if (second_ref == "N" || second_ref == "." ||
+            second_ref.empty()) {
+            second_ref = first_ref;
+        }
+        if (first_ref != second_ref &&
+            first_ref != "N" && second_ref != "N" &&
+            first_ref != "." && second_ref != "." &&
+            !first_ref.empty() && !second_ref.empty()) {
+            first.advance();
+            second.advance();
+            continue;
+        }
+
+        ++result.common_sites;
+        const bool matching_alleles =
+            first_ref == second_ref &&
+            alternate_alleles(first.record()) ==
+                alternate_alleles(second.record());
+        const auto counts = compare_site_genotypes(
+            first.header(), first.record(),
+            second.header(), second.record(), samples, scratch,
+            options.output_diff_individual_discordance
+                ? &result.individual_counts
+                : nullptr);
+        if (options.output_diff_site_discordance) {
+            site_discordance
+                << chromosome << '\t' << first.position()
+                << "\tB\t" << matching_alleles << '\t'
+                << counts.common_called << '\t' << counts.discordant
+                << '\t'
+                << counts.discordant /
+                       static_cast<double>(counts.common_called)
+                << '\n';
+        }
+        first.advance();
+        second.advance();
+    }
+    result.site_discordance = std::move(site_discordance).str();
+    return result;
+}
+
+bool usable_bcf_csi(const std::string& path) {
+    if (!input_is_bcf(path) ||
+        !std::filesystem::is_regular_file(path + ".csi")) {
+        return false;
+    }
+    IndexPtr index(bcf_index_load(path.c_str()));
+    return index != nullptr;
+}
+
+std::optional<int> run_parallel_indexed_diff(const Options& options) {
+    if (options.threads <= 1 || options.output_diff_sites_in_files ||
+        !(options.output_diff_site_discordance ||
+          options.output_diff_individual_discordance) ||
+        !usable_bcf_csi(options.input) ||
+        !usable_bcf_csi(options.diff_input)) {
+        return std::nullopt;
+    }
+
+    DiffRecordStream first_probe(options.input, options, 0);
+    DiffRecordStream second_probe(options.diff_input, options, 0);
+    if (first_probe.header()->n[BCF_DT_CTG] !=
+        second_probe.header()->n[BCF_DT_CTG]) {
+        return std::nullopt;
+    }
+    const int contig_count = first_probe.header()->n[BCF_DT_CTG];
+    std::vector<std::string> chromosomes;
+    chromosomes.reserve(static_cast<std::size_t>(contig_count));
+    for (int rid = 0; rid < contig_count; ++rid) {
+        const std::string first_name =
+            bcf_hdr_id2name(first_probe.header(), rid);
+        const std::string second_name =
+            bcf_hdr_id2name(second_probe.header(), rid);
+        if (first_name != second_name) {
+            return std::nullopt;
+        }
+        chromosomes.push_back(first_name);
+    }
+    SampleSelection first_selection(options, first_probe.header());
+    SampleSelection second_selection(options, second_probe.header());
+    const auto samples = make_diff_sample_map(
+        first_selection, first_probe.header(),
+        second_selection, second_probe.header());
+
+    if (options.output_diff_individuals_in_files) {
+        write_diff_individuals(options, samples);
+    }
+    std::vector<std::optional<ParallelDiffContigResult>> results(
+        chromosomes.size());
+    std::atomic<std::size_t> next_contig{0};
+    std::atomic<bool> cancelled{false};
+    std::mutex error_mutex;
+    std::exception_ptr error;
+    const std::size_t worker_count = std::min<std::size_t>(
+        options.threads, std::max<std::size_t>(1, chromosomes.size()));
+    std::vector<std::thread> workers;
+    workers.reserve(worker_count);
+    for (std::size_t worker = 0; worker < worker_count; ++worker) {
+        workers.emplace_back([&] {
+            try {
+                while (!cancelled.load(std::memory_order_relaxed)) {
+                    const std::size_t rid =
+                        next_contig.fetch_add(1, std::memory_order_relaxed);
+                    if (rid >= chromosomes.size()) {
+                        return;
+                    }
+                    results[rid] = compare_diff_contig(
+                        options, chromosomes[rid],
+                        static_cast<int>(rid), static_cast<int>(rid),
+                        samples);
+                }
+            } catch (...) {
+                std::lock_guard lock(error_mutex);
+                if (!error) {
+                    error = std::current_exception();
+                }
+                cancelled.store(true, std::memory_order_relaxed);
+            }
+        });
+    }
+    for (auto& worker : workers) {
+        worker.join();
+    }
+    if (error) {
+        std::rethrow_exception(error);
+    }
+
+    std::ofstream site_discordance;
+    if (options.output_diff_site_discordance) {
+        site_discordance = vcftools_ng::output::open_stream(
+            options.output_prefix + ".diff.sites");
+        site_discordance
+            << "CHROM\tPOS\tFILES\tMATCHING_ALLELES"
+            << "\tN_COMMON_CALLED\tN_DISCORD\tDISCORDANCE\n";
+    }
+    std::map<std::string, DiffSiteCounts> individual_counts;
+    std::uint64_t common_sites = 0;
+    std::uint64_t first_only = 0;
+    std::uint64_t second_only = 0;
+    for (auto& result : results) {
+        if (!result.has_value()) {
+            fail("Parallel diff contig result is missing");
+        }
+        if (options.output_diff_site_discordance) {
+            site_discordance << result->site_discordance;
+        }
+        for (const auto& [name, counts] : result->individual_counts) {
+            individual_counts[name].common_called += counts.common_called;
+            individual_counts[name].discordant += counts.discordant;
+        }
+        common_sites += result->common_sites;
+        first_only += result->first_only;
+        second_only += result->second_only;
+    }
+    if (options.output_diff_individual_discordance) {
+        const std::string path = options.output_prefix + ".diff.indv";
+        std::ofstream output = vcftools_ng::output::open_stream(path);
+        output << "INDV\tN_COMMON_CALLED\tN_DISCORD\tDISCORDANCE\n";
+        for (const auto& [name, indices] : samples) {
+            (void)indices;
+            const auto counts = individual_counts[name];
+            output << name << '\t' << counts.common_called << '\t'
+                   << counts.discordant << '\t'
+                   << counts.discordant /
+                          static_cast<double>(counts.common_called)
+                   << '\n';
+        }
+        vcftools_ng::output::finish_stream(output, path);
+    }
+    if (options.output_diff_site_discordance) {
+        vcftools_ng::output::finish_stream(
+            site_discordance, options.output_prefix + ".diff.sites");
+    }
+    std::cerr << "Diff backend: indexed-contig-parallel\n"
+              << "Diff workers: " << worker_count << "\n"
+              << "Diff common sites: " << common_sites << "\n"
+              << "Diff sites only in first: " << first_only << "\n"
+              << "Diff sites only in second: " << second_only << "\n";
+    return 0;
+}
+
 int run_diff(const Options& options) {
     if (has_unsupported_diff_filters(options)) {
         fail(
@@ -5786,6 +6271,10 @@ int run_diff(const Options& options) {
         fail(
             "--diff-site cannot yet share a scan with discordance outputs "
             "when overlapping indels are present");
+    }
+    if (const auto parallel = run_parallel_indexed_diff(options);
+        parallel.has_value()) {
+        return *parallel;
     }
 
     const unsigned io_threads =
@@ -6043,10 +6532,9 @@ int run(const Options& options) {
                   << "Fused text fast path: not applicable\n";
         return run_diff(options);
     }
-    if (can_use_fused_site_stats(options)) {
-        const std::string input_format =
-            vcftools_ng::input::describe_input_format(
-                options.input);
+    const QueryPlan query_plan = compile_query_plan(options);
+    if (query_plan.fused_eligible) {
+        const std::string& input_format = query_plan.input_format;
         const bool text_vcf =
             input_format == "Plain VCF" ||
             input_format == "BGZF VCF" ||
@@ -6061,7 +6549,11 @@ int run(const Options& options) {
                 << "\n"
                 << "Execution components: "
                 << execution_components(options) << "\n"
-                << "Fused text fast path: selected\n";
+                << "Fused text fast path: selected\n"
+                << "Parser policy: "
+                << fused_text_parser_policy() << "\n"
+                << "Decode fields: "
+                << query_decode_fields(query_plan) << "\n";
         }
         if (input_format == "Plain VCF" ||
             input_format == "gzip-compressed VCF") {
@@ -6141,7 +6633,33 @@ int run(const Options& options) {
                     fast_recode_bgzf->append(
                         text.data(), text.size());
                 }
-            };
+        };
+        const std::uint16_t fast_capabilities =
+            static_cast<std::uint16_t>(
+                (query_plan.need_gt
+                     ? vcftools_ng::capability_mask(
+                           vcftools_ng::FastCapability::need_gt)
+                     : 0U) |
+                (query_plan.need_dp
+                     ? vcftools_ng::capability_mask(
+                           vcftools_ng::FastCapability::need_dp)
+                     : 0U) |
+                (query_plan.need_gq
+                     ? vcftools_ng::capability_mask(
+                           vcftools_ng::FastCapability::need_gq)
+                     : 0U) |
+                (query_plan.need_ft
+                     ? vcftools_ng::capability_mask(
+                           vcftools_ng::FastCapability::need_ft)
+                     : 0U) |
+                (query_plan.frequency_filter_active
+                     ? vcftools_ng::capability_mask(
+                           vcftools_ng::FastCapability::frequency_filter)
+                     : 0U) |
+                (query_plan.mean_depth_filter_active
+                     ? vcftools_ng::capability_mask(
+                           vcftools_ng::FastCapability::mean_depth_filter)
+                     : 0U));
         const vcftools_ng::FastSiteStatPlan fast_plan{
             .freq = options.output_freq,
             .freq2 = options.output_freq2,
@@ -6149,7 +6667,10 @@ int run(const Options& options) {
             .missing_site = options.output_missing_site,
             .site_depth = options.output_site_depth,
             .site_mean_depth = options.output_site_mean_depth,
+            .corrected_depth_arithmetic =
+                options.corrected_depth_arithmetic,
             .site_quality = options.output_site_quality,
+            .site_pi = options.output_site_pi,
             .pi_window_size = options.pi_window_size,
             .pi_window_step = options.pi_window_step,
             .tajima_window_size = options.tajima_window_size,
@@ -6172,17 +6693,47 @@ int run(const Options& options) {
             .sample_exclude_files =
                 options.sample_exclude_files,
             .population_memberships = {},
+            .population_roles = {},
+            .site_filters_to_keep = options.site_filters_to_keep,
+            .site_filters_to_remove = options.site_filters_to_remove,
+            .remove_all_filtered_sites =
+                options.remove_all_filtered_sites,
+            .info_flags_to_keep = options.info_flags_to_keep,
+            .info_flags_to_remove = options.info_flags_to_remove,
+            .genotype_filters_to_remove =
+                options.genotype_filters_to_remove,
+            .remove_all_filtered_genotypes =
+                options.remove_all_filtered_genotypes,
             .min_alleles = options.min_alleles,
             .max_alleles = options.max_alleles,
+            .remove_indels = options.remove_indels,
+            .keep_only_indels = options.keep_only_indels,
             .min_quality = options.min_qual,
             .min_genotype_quality = options.min_gq,
+            .min_genotype_depth = options.min_dp,
+            .max_genotype_depth = options.max_dp,
             .min_mean_depth = options.min_mean_dp,
+            .max_mean_depth = options.max_mean_dp,
             .min_call_rate = options.min_call_rate,
+            .max_missing_count = options.max_missing_count,
             .min_maf = options.min_maf,
+            .max_maf = options.max_maf,
+            .min_mac = options.min_mac,
+            .max_mac = options.max_mac,
+            .min_hwe = options.min_hwe,
+            .min_non_ref_af = options.min_non_ref_af,
+            .max_non_ref_af = options.max_non_ref_af,
+            .min_non_ref_af_any = options.min_non_ref_af_any,
+            .max_non_ref_af_any = options.max_non_ref_af_any,
+            .min_non_ref_ac = options.min_non_ref_ac,
+            .max_non_ref_ac = options.max_non_ref_ac,
+            .min_non_ref_ac_any = options.min_non_ref_ac_any,
+            .max_non_ref_ac_any = options.max_non_ref_ac_any,
         };
         const auto fused_start = std::chrono::steady_clock::now();
         const auto fast = vcftools_ng::run_fast_text_site_stats(
-            options.output_prefix, fast_options, fast_plan);
+            options.output_prefix, fast_options, fast_plan,
+            fast_capabilities);
         if (fast.has_value()) {
             log_stage_time("fused scan/filter/output", fused_start);
             const auto finalization_start =
@@ -6229,11 +6780,19 @@ int run(const Options& options) {
                 << "Stage concurrency: input "
                 << fast->input_threads
                 << ", HTSlib I/O " << fast->hts_io_threads
-                << ", compute fused\n"
+                << ", compute "
+                << (fast->compute_threads > 0
+                        ? std::to_string(fast->compute_threads)
+                        : "fused")
+                << "\n"
                 << "Input threads: " << fast->input_threads << "\n"
                 << "HTSlib I/O threads: "
                 << fast->hts_io_threads << "\n"
-                << "Compute threads: fused\n"
+                << "Compute threads: "
+                << (fast->compute_threads > 0
+                        ? std::to_string(fast->compute_threads)
+                        : "fused")
+                << "\n"
                 << "Planned input shards: "
                 << fast->planned_shards << "\n"
                 << "Selected samples: " << fast->samples << "\n"
@@ -6252,10 +6811,12 @@ int run(const Options& options) {
     std::cerr << "Execution kernel: generic-ordered-pipeline\n"
               << "Execution components: "
               << execution_components(options) << "\n"
+              << "Parser policy: HTSlib general decoder\n"
+              << "Decode fields: "
+              << query_decode_fields(query_plan) << "\n"
               << "Fused text fast path: not selected\n"
-              << "Fast-path reason: the requested input, selection, "
-                 "filter, or analysis requires the general "
-                 "compatibility pipeline\n";
+              << "Fast-path reason: "
+              << query_plan.fallback_reason << "\n";
     const auto input_planning_start =
         std::chrono::steady_clock::now();
     vcftools_ng::input::SourceOptions source_options{
@@ -6328,7 +6889,7 @@ int run(const Options& options) {
     const auto pipeline_start = std::chrono::steady_clock::now();
     const PipelineSummary summary = run_ordered_pipeline(
         options, selector, samples, header, *source,
-        resources.compute_threads, committer);
+        resources.compute_threads, committer, query_plan);
     log_stage_time("ordered input/compute/commit", pipeline_start);
     const auto finalization_start =
         std::chrono::steady_clock::now();

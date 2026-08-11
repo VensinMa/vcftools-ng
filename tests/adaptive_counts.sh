@@ -6,13 +6,21 @@ source_root=${2:?source root required}
 fixture="$source_root/tests/fixtures/osmanthus412.flags.23chr_1k.vcf.gz"
 bcf_fixture="$source_root/tests/fixtures/osmanthus412.flags.23chr_1k.bcf"
 synthetic="$source_root/tests/fixtures/fast-counts.vcf"
+genotype_forms="$source_root/tests/fixtures/genotype-forms.vcf"
 site_stats="$source_root/tests/fixtures/fast-site-stats.vcf"
 fast_recode="$source_root/tests/fixtures/fast-recode.vcf"
 polyploid="$source_root/tests/fixtures/fast-counts-polyploid.vcf"
+polyploid_positions="$source_root/tests/fixtures/polyploid.positions.txt"
 synthetic_golden="$source_root/tests/golden/fast-counts.frq.count"
+genotype_forms_golden="$source_root/tests/golden/genotype-forms.frq.count"
+genotype_forms_missing_golden="$source_root/tests/golden/genotype-forms.lmiss"
+genotype_forms_indv_golden="$source_root/tests/golden/genotype-forms.imiss"
+genotype_forms_max_missing_golden="$source_root/tests/golden/genotype-forms.max-missing.frq.count"
 site_stats_golden="$source_root/tests/golden/fast-site-stats"
 fast_recode_info_golden="$source_root/tests/golden/fast-recode.info.vcf"
 fast_recode_clear_golden="$source_root/tests/golden/fast-recode.clear-info.vcf"
+polyploid_site_only_golden="$source_root/tests/golden/polyploid-site-only.recode.vcf"
+polyploid_positions_golden="$source_root/tests/golden/polyploid-positions.recode.vcf"
 filtered_stdout_sha256=292684f4994507b09b1ac339dcb03211293e9dd68fcf9b309ed006e1968818c4
 filtered_bgzf_sha256=d8455a9642c220045d95705a74beb794faa9b6eda58ac22c792939f419236e14
 real_filters=(
@@ -46,6 +54,25 @@ for threads in 1 4 8 16 32; do
         "$work/recode-edge-info-t$threads.recode.vcf"
     grep -q 'Input backend: fast-filter-recode-plain' \
         "$work/recode-edge-info-t$threads.log"
+done
+
+for threads in 1 32; do
+    "$ng" --vcf "$genotype_forms" --threads "$threads" \
+        --missing-indv --out "$work/genotype-forms-indv-t$threads" \
+        >/dev/null 2>"$work/genotype-forms-indv-t$threads.log"
+    cmp "$genotype_forms_indv_golden" \
+        "$work/genotype-forms-indv-t$threads.imiss"
+done
+
+# Original's .lmiss haploid quirk must not leak into --max-missing, which
+# still counts a three-character phased partial call as diploid (OVI-011).
+for threads in 1 32; do
+    "$ng" --vcf "$genotype_forms" --threads "$threads" \
+        --max-missing 0.7 --counts \
+        --out "$work/genotype-forms-max-missing-t$threads" \
+        >/dev/null 2>"$work/genotype-forms-max-missing-t$threads.log"
+    cmp "$genotype_forms_max_missing_golden" \
+        "$work/genotype-forms-max-missing-t$threads.frq.count"
 done
 
 "$ng" --vcf "$fast_recode" --threads 8 \
@@ -94,6 +121,40 @@ for threads in 4 8 16 32; do
     grep -q 'Input backend: fast-counts-plain' \
         "$work/plain-t$threads.log"
 done
+
+# Cover every GT family observed in the 23-chromosome DeepVariant/GATK
+# fixtures, plus valid reverse, trailing-partial-missing, phased-partial,
+# haploid-called, and multi-digit-allele spellings.  The golden was generated
+# by Original VCFtools 0.1.17.
+for threads in 1 4 32; do
+    "$ng" --vcf "$genotype_forms" --threads "$threads" \
+        --counts --missing-site --out "$work/genotype-forms-t$threads" \
+        >/dev/null 2>"$work/genotype-forms-t$threads.log"
+    cmp "$genotype_forms_golden" \
+        "$work/genotype-forms-t$threads.frq.count"
+    cmp "$genotype_forms_missing_golden" \
+        "$work/genotype-forms-t$threads.lmiss"
+    grep -q 'Input backend: fast-site-stats-plain' \
+        "$work/genotype-forms-t$threads.log"
+done
+
+# Force both scalar parser policies over the same GT grammar fixture. This is
+# the baseline differential that future AVX2/AVX-512 parsers must also pass.
+for parser in generic specialized; do
+    VCFTOOLS_NG_TEST_PARSER=$parser \
+        "$ng" --vcf "$genotype_forms" --threads 4 \
+        --counts --missing-site \
+        --out "$work/genotype-parser-$parser" \
+        >/dev/null 2>"$work/genotype-parser-$parser.log"
+    cmp "$genotype_forms_golden" \
+        "$work/genotype-parser-$parser.frq.count"
+    cmp "$genotype_forms_missing_golden" \
+        "$work/genotype-parser-$parser.lmiss"
+done
+cmp "$work/genotype-parser-generic.frq.count" \
+    "$work/genotype-parser-specialized.frq.count"
+cmp "$work/genotype-parser-generic.lmiss" \
+    "$work/genotype-parser-specialized.lmiss"
 
 for threads in 1 2 4 8 16 32; do
     "$ng" --vcf "$site_stats" --threads "$threads" \
@@ -156,6 +217,29 @@ done
 "$ng" --bcf "$bcf_fixture" --input-backend stream --threads 4 \
     "${real_filters[@]}" --counts --out "$work/filtered-reference" \
     >/dev/null 2>"$work/filtered-reference.log"
+
+for parser in generic specialized; do
+    VCFTOOLS_NG_TEST_PARSER=$parser \
+        "$ng" --gzvcf "$fixture" --threads 4 \
+        "${real_filters[@]}" --counts \
+        --out "$work/deepvariant-parser-$parser" \
+        >/dev/null 2>"$work/deepvariant-parser-$parser.log"
+    cmp "$work/filtered-reference.frq.count" \
+        "$work/deepvariant-parser-$parser.frq.count"
+done
+cmp "$work/deepvariant-parser-generic.frq.count" \
+    "$work/deepvariant-parser-specialized.frq.count"
+
+if VCFTOOLS_NG_TEST_PARSER=invalid \
+    "$ng" --vcf "$synthetic" --threads 1 --counts \
+    --out "$work/parser-invalid" \
+    >/dev/null 2>"$work/parser-invalid.log"; then
+    printf 'Invalid parser test override unexpectedly succeeded\n' >&2
+    exit 1
+fi
+grep -q 'VCFTOOLS_NG_TEST_PARSER must be' "$work/parser-invalid.log"
+test ! -e "$work/parser-invalid.frq.count"
+
 "$ng" --gzvcf "$fixture" --threads 8 \
     "${real_filters[@]}" --counts --recode --recode-INFO-all \
     --out "$work/filtered-combined" \
@@ -189,13 +273,51 @@ for threads in 1 4 32; do
         "$work/filtered-bgzf-t$threads.log"
 done
 
+# Site-only operations keep GT opaque. Polyploid sample text therefore
+# survives raw recode even though Original 0.1.17 rejects the same safe
+# operation before writing records.
+for threads in 1 32; do
+    "$ng" --vcf "$polyploid" --threads "$threads" \
+        --minQ 30 --recode-vcf --recode-INFO-all \
+        --out "$work/polyploid-site-only-t$threads" \
+        >/dev/null 2>"$work/polyploid-site-only-t$threads.log"
+    cmp "$polyploid_site_only_golden" \
+        "$work/polyploid-site-only-t$threads.recode.vcf"
+
+    "$ng" --vcf "$polyploid" --threads "$threads" \
+        --positions "$polyploid_positions" \
+        --recode-vcf --recode-INFO-all \
+        --out "$work/polyploid-positions-t$threads" \
+        >/dev/null 2>"$work/polyploid-positions-t$threads.log"
+    cmp "$polyploid_positions_golden" \
+        "$work/polyploid-positions-t$threads.recode.vcf"
+done
+
+# Every representative triploid spelling must fail before publication when
+# GT semantics are requested. Coordinate restriction also exercises the
+# generic HTSlib pipeline rather than only the fused text parser.
+for position in 1 2 3 4 5; do
+    prefix="$work/polyploid-semantic-$position"
+    if "$ng" --vcf "$polyploid" --threads 1 \
+        --chr chr1 --from-bp "$position" --to-bp "$position" --counts \
+        --out "$prefix" >/dev/null 2>"$prefix.log"; then
+        printf 'Semantic path accepted polyploid GT at position %s\n' \
+            "$position" >&2
+        exit 1
+    fi
+    grep -q 'Polyploid genotype is not supported' "$prefix.log"
+    test ! -e "$prefix.frq.count"
+done
+
 if "$ng" --vcf "$polyploid" --threads 1 \
-    --counts --out "$work/polyploid" \
-    >/dev/null 2>"$work/polyploid.log"; then
-    printf 'Adaptive counts path unexpectedly accepted polyploid GT\n' >&2
+    --minGQ 30 --recode-vcf --out "$work/polyploid-masking" \
+    >/dev/null 2>"$work/polyploid-masking.log"; then
+    printf 'Genotype masking accepted polyploid GT\n' >&2
     exit 1
 fi
-grep -q 'Polyploid genotype is not supported' "$work/polyploid.log"
+grep -q 'Polyploid genotype is not supported' \
+    "$work/polyploid-masking.log"
+test ! -e "$work/polyploid-masking.recode.vcf"
 
 ln -s "$fixture" "$work/no-index.vcf.gz"
 "$ng" --gzvcf "$work/no-index.vcf.gz" --threads 2 \
@@ -205,6 +327,27 @@ cmp "$work/reference.frq.count" "$work/no-index-vcf.frq.count"
 test ! -e "$work/no-index.vcf.gz.csi"
 grep -q 'Input backend: fast-counts-bgzf' \
     "$work/no-index-vcf.log"
+
+# A serial compressed feeder must not wake more compute workers than its
+# bounded in-flight queue can use. GT-only work caps at four workers; FORMAT
+# and frequency-heavy filtering caps at six. The strict total budget still
+# governs smaller thread requests.
+"$ng" --gzvcf "$work/no-index.vcf.gz" --threads 16 --counts \
+    --out "$work/no-index-cap-light" \
+    >/dev/null 2>"$work/no-index-cap-light.log"
+cmp "$work/reference.frq.count" \
+    "$work/no-index-cap-light.frq.count"
+grep -Fq 'Stage concurrency: input 1, HTSlib I/O 3, compute 4' \
+    "$work/no-index-cap-light.log"
+
+"$ng" --gzvcf "$work/no-index.vcf.gz" --threads 16 \
+    "${real_filters[@]}" --counts \
+    --out "$work/no-index-cap-heavy" \
+    >/dev/null 2>"$work/no-index-cap-heavy.log"
+cmp "$work/filtered-reference.frq.count" \
+    "$work/no-index-cap-heavy.frq.count"
+grep -Fq 'Stage concurrency: input 1, HTSlib I/O 3, compute 6' \
+    "$work/no-index-cap-heavy.log"
 
 ln -s "$fixture" "$work/auto-index.vcf.gz"
 "$ng" --gzvcf "$work/auto-index.vcf.gz" --threads 2 \

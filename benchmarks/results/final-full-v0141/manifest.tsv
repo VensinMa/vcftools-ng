@@ -1,0 +1,30 @@
+key	value
+started	2026-08-11T12:31:05+08:00
+release	v0.14.1
+title	Capability-Planned Exact Analytics
+git_commit	0e442f58909604b6d60dee59b5bbdd986ad4bc56
+tracked_diff_sha256	d9d3d619898b2ddb53c27151752116ad2ccb058691f7d63f1e5ddab398cde751
+source_tree_sha256	aa344095c24b51d802822481eaf15754f5b303920b5f55f6cf8a04a57c120769
+candidate	/home/vensin/workspace/vcftools-ng/build-pgo-v0141-final/vcftools-ng
+candidate_sha256	0d585fe4e146feac1b63dd93a0cd238b2cd5b1baaa1d51a21a367c8f4b0b714e
+ng_version	vcftools-ng 0.14.1
+bcftools	bcftools 1.24
+bcftools_sha256	5a00f365f43cd8d6d36c520ec80e5eb2393b8cc15b8826d08c24e5177a05d99f
+original	VCFtools 0.1.17, locked v0.12.1 baseline
+original_runs_v0141	0
+original_policy	hash-validated retained oracle and single-run timing; not rerun
+vcftools_ng_max_repeats	3
+expected_records	11230392
+threads	1 2 4 8 12 16 24 28 32
+scenarios	BGZF VCF + TBI;BGZF VCF + automatic CSI;Plain VCF;BCF adaptive stream
+execution	strictly_serial
+cache	operating_system_cache_not_flushed
+workload	--min-alleles 2 --max-alleles 2 --minGQ 10 --minQ 30 --min-meanDP 7 --max-missing 0.9 --maf 0.1 --recode --recode-INFO-all --stdout
+asset_validation	/home/vensin/workspace/vcftools-ng/benchmarks/results/final-full-v0141/asset-validation.tsv
+host	Ubuntu24
+os	Ubuntu 24.04.4 LTS
+kernel	Linux 6.14.0-37-generic x86_64 GNU/Linux
+cpu_model	Intel(R) Core(TM) i9-14900KF
+logical_cpus	32
+memory	125Gi
+first_repeat_gates_passed	2026-08-11T13:51:16+08:00

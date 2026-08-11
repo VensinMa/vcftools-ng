@@ -1,0 +1,23 @@
+Date: 2026-08-10
+Host: local 32-logical-CPU SSD development host
+CPU: Intel Core i9-14900KF
+Topology: 1 socket, 24 physical cores, 32 online logical CPUs, 1 NUMA node
+OS: Ubuntu 24.04
+Compiler: g++ 13.3.0
+CMake: 3.28.3
+Development HTSlib: 1.23 git snapshot
+Development bcftools: 1.23 git snapshot
+Portable package dependency lock: HTSlib 1.24, bcftools 1.24
+Original VCFtools: 0.1.17
+Base master commit: 0e442f58909604b6d60dee59b5bbdd986ad4bc56
+Final local Release candidate SHA-256: 0752e8886ad9095c7865f973aad4398284abbd4b6eeb75e43646e31fd24977cf
+Original VCFtools binary SHA-256: 8950bcdc1900e6c86df93c39502d46752ec5bdaa01426b86f56cbe94c14fae15
+Threads gated: 1, 4, 8, 16, 32
+Primary fixture: 23 chromosomes x 1,000 records, 412 samples
+Secondary fixture: 23 chromosomes x 1,000 GATK-derived records, 205 samples
+Large-data policy: no 2.3-million or 11.23-million-record run for this development gate
+
+Input SHA-256:
+4926a88c14105ba0993f2a357739ef9f690184b3ab8dfefefdbf690b64d5a595  osmanthus412.flags.23chr_1k.vcf
+c83f0b42e82c15a15c9546847b0c08b0b8e14ed044ae7eb2358d9431aa742cc9  osmanthus205.gatk.23chr_1k.vcf
+704d5ddf232e3c541a5c532bfff9926d4d8d49961ff40acd1c66de5e392422a0  osmanthus412.flags.23chr_1k.bcf

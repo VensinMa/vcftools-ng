@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdlib>
 #include <filesystem>
+#include <iostream>
 #include <limits>
 #include <mutex>
 #include <stdexcept>
@@ -54,24 +55,57 @@ std::string unused_private_path(
         "Could not allocate a private output path beside " + path);
 }
 
-void remove_if_present(const std::string& path) noexcept {
+bool remove_if_present(const std::string& path) noexcept {
     std::error_code error;
     std::filesystem::remove(path, error);
+    if (error) {
+        std::cerr
+            << "Warning: could not remove private output path "
+            << path << ": " << error.message() << "\n";
+        return false;
+    }
+    return true;
 }
 
 void restore_backups(std::vector<Entry>& entries) noexcept {
+    const bool inject_restore_failure = [] {
+        const char* value =
+            std::getenv("VCFTOOLS_NG_TEST_FAIL_OUTPUT_RESTORE");
+        return value != nullptr && *value != '\0' &&
+               std::string(value) != "0";
+    }();
+    bool injected = false;
     for (auto iterator = entries.rbegin(); iterator != entries.rend();
          ++iterator) {
         if (iterator->published) {
-            remove_if_present(iterator->final_path);
+            if (!remove_if_present(iterator->final_path)) {
+                std::cerr
+                    << "Error: output recovery could not remove the newly "
+                       "published destination; preserved backup, if any: "
+                    << iterator->backup_path << "\n";
+                continue;
+            }
             iterator->published = false;
         }
         if (!iterator->backup_created) {
             continue;
         }
         std::error_code error;
-        std::filesystem::rename(
-            iterator->backup_path, iterator->final_path, error);
+        if (inject_restore_failure && !injected) {
+            injected = true;
+            error = std::make_error_code(std::errc::io_error);
+        } else {
+            std::filesystem::rename(
+                iterator->backup_path, iterator->final_path, error);
+        }
+        if (error) {
+            std::cerr
+                << "Error: output recovery is incomplete; restore "
+                << iterator->backup_path << " to "
+                << iterator->final_path << " manually: "
+                << error.message() << "\n";
+            continue;
+        }
         iterator->backup_created = false;
     }
 }
@@ -187,8 +221,9 @@ void commit_all() {
         }
         for (auto& entry : registry) {
             if (entry.backup_created) {
-                remove_if_present(entry.backup_path);
-                entry.backup_created = false;
+                if (remove_if_present(entry.backup_path)) {
+                    entry.backup_created = false;
+                }
             }
         }
         registry.clear();

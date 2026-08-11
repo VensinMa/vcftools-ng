@@ -4,8 +4,19 @@
 
 Experimental high-performance, output-compatible successor to VCFtools 0.1.17.
 
-**Latest release:** [v0.13.1 — Adaptive Zero-Copy Population
-Analytics](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.13.1)
+**Latest release:** [v0.14.1 — Capability-Planned Exact
+Analytics](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.14.1)
+
+v0.14.1 incorporates the unreleased v0.13.2 fused-filter and parallel-analysis
+work, closes its failure and GT/ploidy boundaries, and compiles every
+invocation into one immutable capability plan. Required FORMAT fields, the
+exact kernel, and a stable fallback reason are decided once. GT-only analyses
+avoid unused DP/GQ/FT work; compatible analyses still share one decode. LD
+uses contiguous bit planes and fixed ordered formatting blocks, while PCA
+precomputes sample-major normalized dosage without changing accumulation
+order. The 11.23-million-record release gate passed all 36 first-repeat
+scenario/thread configurations byte-for-byte against locked VCFtools 0.1.17
+goldens.
 
 v0.13.1 extends the exact direct-text engine to position inclusion/exclusion,
 selected-sample counts and recode, window pi, Tajima's D, and site/window FST.
@@ -73,15 +84,40 @@ selection plus compact ordered pi, Tajima, and FST reductions. Plain VCF
 workers use aligned read-only mapped ranges when profitable, while indexed
 BGZF workers query ordered tabix regions. Recode and statistics can share one
 scan, and all worker output is bounded and committed in exact input order.
+v0.13.2 adds the complete ten-filter production path, cached DeepVariant/GATK
+FORMAT parsers, FILTER/INFO/FT, integer pi range accumulation, bounded
+no-index BGZF record batches, bitset LD, exact PCA SoA, and indexed BCF diff.
 Unsupported filters, formats, and analyses automatically use the general
 compatibility pipeline.
+
+GT parsing is not restricted to the common `0/0`, `0/1`, `1/1`, `./.` and
+phased examples. The real fixtures include leading partial missingness,
+haploid `.`, phased calls, and multiallelic allele indices through 4; the
+Original-locked synthetic gate also covers reverse heterozygotes, trailing
+and phased partial missingness, called haploids, and multi-digit indices.
+Polyploid GT remains outside statistical compatibility: genotype-semantic
+commands reject it, while site-only filtering plus raw VCF recode preserves
+the sample text without interpreting GT.
+
+Exact `--site-depth` and `--site-mean-depth` retain Original VCFtools 0.1.17's
+unsigned-32-bit wrapping and degenerate `-nan` formatting (OVI-013). The
+explicit vcftools-ng extension `--corrected-depth-arithmetic` uses checked
+64-bit sums instead and must be combined with one or both site-depth outputs.
+Window pi, Tajima's D, window FST, and LD reject decreasing positions or a
+chromosome that reappears after another segment; site-local filters and
+statistics continue to preserve physical input order.
 
 ### Performance claim scope
 
 Speedups are workload-specific. v0.13.1 adds separate locked measurements for
 position/sample selection, window pi, Tajima's D, and FST; those results must
-not be extrapolated to individual reductions, LD, PCA, diff, every input
-format, or every storage system. See the
+not be extrapolated to every input format or storage system. v0.13.2 adds
+separate LD, exact PCA, indexed BCF diff, no-index BGZF, and fused-filter A/B
+records; PCA gains are explicitly modest rather than presented as a broad
+speedup. v0.14.1 adds same-source PGO A/B and a single-repeat complete-data
+exact-recode matrix; those values are not multi-run means. Strict-budget
+low-thread BCF remains record-decode limited and is reported as a compatibility
+path rather than generalized scaling evidence. See the
 [representative workload benchmark matrix](docs/benchmark-workload-matrix.md)
 for the fixed development, release-candidate, and full-data evidence policy.
 
@@ -89,16 +125,19 @@ for the fixed development, release-candidate, and full-data evidence policy.
 
 The portable Linux x86_64 archive is ready to run after extraction. `bin`
 contains only `vcftools-ng`; private bcftools support for automatic CSI
-construction is kept under `libexec`. The v0.13.1 archive bundles bcftools
+construction is kept under `libexec`. The v0.14.1 archive bundles bcftools
 1.24, HTSlib 1.24, and the required non-glibc runtime libraries.
 
 ```bash
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.13.1/vcftools-ng-v0.13.1-linux-x86_64.tar.gz
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.13.1/vcftools-ng-v0.13.1-linux-x86_64.tar.gz.sha256
-sha256sum -c vcftools-ng-v0.13.1-linux-x86_64.tar.gz.sha256
-tar -xzf vcftools-ng-v0.13.1-linux-x86_64.tar.gz
-./vcftools-ng-v0.13.1-linux-x86_64/bin/vcftools-ng --version
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.14.1/vcftools-ng-v0.14.1-linux-x86_64.tar.gz
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.14.1/vcftools-ng-v0.14.1-linux-x86_64.tar.gz.sha256
+sha256sum -c vcftools-ng-v0.14.1-linux-x86_64.tar.gz.sha256
+tar -xzf vcftools-ng-v0.14.1-linux-x86_64.tar.gz
+./vcftools-ng-v0.14.1-linux-x86_64/bin/vcftools-ng --version
 ```
+
+Archive SHA-256:
+`ce225f800bf0cede6151ad178b26c4d9c0a08ecac0f4225db09bd649dc21ecfa`.
 
 The archive requires Linux x86_64 with glibc 2.17 or newer. It is built on a
 CentOS 7-compatible manylinux2014 baseline and is tested in clean CentOS 7
@@ -114,17 +153,18 @@ the technical archive and do not compete with the current usage guidance.
 
 | Release | Problem addressed | Key parameters or behavior | Recommended use |
 |---|---|---|---|
-| [v0.9.0](docs/versions/v0.9.0.md) | Established the first shared high-performance scan | Core site filters and statistics | Historical milestone; use v0.13.1 for new work |
+| [v0.9.0](docs/versions/v0.9.0.md) | Established the first shared high-performance scan | Core site filters and statistics | Historical milestone; use v0.14.1 for new work |
 | [v0.11.2](docs/releases/v0.11.2.md) | Expanded compatibility and parallel input coverage | Individual/population statistics, LD/PCA, conversion, diff, automatic CSI | Historical compatibility milestone |
 | [v0.11.3](docs/releases/v0.11.3.md) | Removed low-core `--counts` regressions | Direct text-to-count fusion and adaptive input | Behavior is inherited by v0.13.0 |
 | [v0.12.1](docs/releases/v0.12.1.md) | Removed repeated site parsing and scaled exact recode | Fused site outputs, `--recode-vcf-gz` | Request multiple compatible site outputs in one run |
 | [v0.12.2](docs/releases/v0.12.2.md) | Replaced format-wide indexing with workload decisions | Adaptive `auto`; advanced `--input-backend`; removed `--no-auto-index` | Keep the default automatic backend |
 | [v0.12.3](docs/releases/v0.12.3.md) | Replaced the minimal terminal help | `--help`, `NO_COLOR`, `CLICOLOR_FORCE` | Check `--help` for combinations and suffixes |
 | [v0.12.4](docs/releases/v0.12.4.md) | Closed the missing run-log gap | Default `PREFIX.log`, `--log-file`, `--no-log-file` | Keep the default log for reproducibility |
-| [v0.13.0](docs/releases/v0.13.0.md) | Prevented large plain-VCF I/O pressure and partial publication | Transactional output; `--recode` defaults to BGZF; `--recode-vcf`; strict thread budget | Inherited by v0.13.1 |
-| [v0.13.1](docs/releases/v0.13.1.md) | Removed generic-pipeline overhead from common selection and population workloads | Direct positions/sample projection; pi/Tajima/FST reductions; adaptive zero-copy Plain VCF | Recommended release for all new runs |
+| [v0.13.0](docs/releases/v0.13.0.md) | Prevented large plain-VCF I/O pressure and partial publication | Transactional output; `--recode` defaults to BGZF; `--recode-vcf`; strict thread budget | Inherited by later releases |
+| [v0.13.1](docs/releases/v0.13.1.md) | Removed generic-pipeline overhead from common selection and population workloads | Direct positions/sample projection; pi/Tajima/FST reductions; adaptive zero-copy Plain VCF | Historical performance milestone |
+| [v0.14.1](docs/releases/v0.14.1.md) | Unified exact capability decisions and reduced unnecessary decode/post-scan work | Immutable QueryPlan; on-demand FORMAT fields; contiguous LD; sample-major PCA; hardened boundaries | Recommended release for all new runs |
 
-### Recommended v0.13.1 parameters
+### Recommended parameters
 
 - Leave `--input-backend auto` unchanged. It selects indexed BGZF regions,
   aligned Plain VCF ranges, or streaming BCF according to the workload.
@@ -399,6 +439,61 @@ overwritten. `--input-backend stream|indexed` remains an advanced override,
 and `--bcftools FILE` selects the executable used when adaptive CSI
 construction is profitable.
 
+## v0.14.1 complete-data release result
+
+All 36 first-repeat configurations passed complete-file comparison on
+11,230,392 records. Original 0.1.17 was not rerun; its unchanged v0.12.1
+goldens and single-run timings were size/SHA-256 validated first. Times below
+are wall seconds, not means.
+
+| Input | Original | 1 | 2 | 4 | 8 | 12 | 16 | 24 | 28 | 32 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| BGZF + TBI | 2267.88 | 203.72 | 146.86 | 75.48 | 44.36 | 33.47 | 34.06 | 32.43 | 30.93 | 32.84 |
+| BGZF + automatic CSI | 2267.88 | 206.13 | 248.91 | 132.26 | 98.61 | 89.97 | 89.53 | 89.16 | 87.79 | 86.22 |
+| Plain VCF | 2092.91 | 204.35 | 97.04 | 58.69 | 44.39 | 42.13 | 43.62 | 41.89 | 42.52 | 41.69 |
+| BCF adaptive stream | 1943.47 | 549.11 | 466.67 | 466.99 | 120.01 | 62.82 | 50.46 | 44.36 | 43.67 | 45.00 |
+
+Speedup over VCFtools 0.1.17:
+
+| Input | 1 | 2 | 4 | 8 | 12 | 16 | 24 | 28 | 32 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| BGZF + TBI | 11.13x | 15.44x | 30.05x | 51.12x | 67.76x | 66.58x | 69.93x | 73.32x | 69.06x |
+| BGZF + automatic CSI | 11.00x | 9.11x | 17.15x | 23.00x | 25.21x | 25.33x | 25.44x | 25.83x | 26.30x |
+| Plain VCF | 10.24x | 21.57x | 35.66x | 47.15x | 49.68x | 47.98x | 49.96x | 49.22x | 50.20x |
+| BCF adaptive stream | 3.54x | 4.16x | 4.16x | 16.19x | 30.94x | 38.52x | 43.81x | 44.50x | 43.19x |
+
+The automatic-CSI values include bcftools 1.24 index construction. CPU, RSS,
+backend, hashes, and the fixed runner are in the
+[complete-data record](benchmarks/results/final-full-v0141/README.md).
+
+## v0.13.2 development evidence incorporated into v0.14.1
+
+The unreleased v0.13.2 development cycle used the locked 23k fixtures for
+exactness and the locked 230k SSD fixture for stable A/B performance against
+v0.13.1. v0.14.1 retains that evidence and adds the later 2.3m and complete
+11.23m release gates documented in its technical record.
+
+| Workload | Threads | v0.13.1 | v0.13.2 | Gain |
+|---|---:|---:|---:|---:|
+| Production ten-filter counts | 1 | 6.73 s | 3.21 s | 2.10x |
+| Production ten-filter counts | 8 | 1.22 s | 0.43 s | 2.84x |
+| Production ten-filter counts | 16 | 0.92 s | 0.33 s | 2.79x |
+| Production ten-filter counts | 32 | 0.57 s | 0.20 s | 2.85x |
+| Site FILTER counts | 1 | 6.70 s | 1.13 s | 5.93x |
+| Site FILTER counts | 32 | 0.54 s | 0.11 s | 4.91x |
+| No-index BGZF ten-filter | 8 | 6.63 s | 0.72 s | 9.21x |
+| No-index BGZF ten-filter | 32 | 6.66 s | 0.79 s | 8.43x |
+
+Pair-dense 23k LD improves from 2.52 to 1.13 seconds at one thread and from
+0.18 to 0.11 seconds at 32 threads. Indexed 100k BCF site discordance improves
+from 30.12 to 15.83 seconds at two threads and from 8.94 to 2.00 seconds at
+32 threads. Exact PCA improves only about 2%-4% on its useful low-missing
+fixture and is effectively neutral at the highest tested thread counts.
+
+The [fixed v0.13.2 gate and evidence](benchmarks/results/v0132-development-gate/README.md)
+contains oracle hashes, environment, safety gates, PGO findings, and the exact
+runner.
+
 ## v0.13.1 selection and population-statistics performance
 
 The locked SSD/NVMe matrix uses 230,000 real records and 412 samples. Original
@@ -517,6 +612,10 @@ development gate are documented here:
 - [v0.13.0 input/output/storage release gate](benchmarks/results/v0130-input-output-storage/README.md)
 - [v0.13.1 technical record](docs/versions/v0.13.1.md)
 - [v0.13.1 selection/population matrix](benchmarks/results/workload-matrix-230k-v0130/RESULTS.md)
+- [v0.13.2 technical record](docs/versions/v0.13.2.md)
+- [v0.13.2 fixed development gate](benchmarks/results/v0132-development-gate/README.md)
+- [v0.14.1 technical record](docs/versions/v0.14.1.md)
+- [v0.14.1 complete-data release driver](benchmarks/run-v0141-full-release-matrix.sh)
 
 ## Build from source
 

@@ -1,0 +1,46 @@
+case	threads	wall_s	backend	gate
+ten-filter	1	0.352336	fast-counts-plain (fused aligned byte ranges with direct site statistics)	PASS
+hwe	1	0.320355	fast-counts-plain (fused aligned byte ranges with direct site statistics)	PASS
+site-info	1	0.167873	fast-filter-recode-plain (fused aligned byte ranges with direct filtering/recode)	PASS
+ft	1	0.160144	fast-filter-recode-plain (zero-copy mapped aligned ranges with direct filtering/recode)	PASS
+site-pi-multi	1	0.137659	fast-site-stats-plain (fused aligned byte ranges with direct site statistics)	PASS
+noindex-bgzf	1	0.401658	fast-counts-bgzf (bounded ordered record batches with parallel BGZF decompression and compute)	PASS
+ld	1	0.783190	stream (HTSlib ordered stream, non-rotational storage (fallback: adaptive policy: low-thread Plain VCF favors streaming))	PASS
+pca	1	0.723831	stream (HTSlib ordered stream, non-rotational storage (fallback: adaptive policy: low-thread Plain VCF favors streaming))	PASS
+indexed-diff	1	0.364727	unknown	PASS
+ten-filter	4	0.134096	fast-counts-plain (zero-copy mapped aligned ranges with direct site statistics)	PASS
+hwe	4	0.113430	fast-counts-plain (zero-copy mapped aligned ranges with direct site statistics)	PASS
+site-info	4	0.055191	fast-filter-recode-plain (zero-copy mapped aligned ranges with direct filtering/recode)	PASS
+ft	4	0.073834	fast-filter-recode-plain (zero-copy mapped aligned ranges with direct filtering/recode)	PASS
+site-pi-multi	4	0.041634	fast-site-stats-plain (zero-copy mapped aligned ranges with direct site statistics)	PASS
+noindex-bgzf	4	0.285386	fast-counts-bgzf (bounded ordered record batches with parallel BGZF decompression and compute)	PASS
+ld	4	0.293404	plain-ranges (plain VCF aligned byte ranges, non-rotational storage)	PASS
+pca	4	0.261867	plain-ranges (plain VCF aligned byte ranges, non-rotational storage)	PASS
+indexed-diff	4	0.109409	indexed-contig-parallel	PASS
+ten-filter	8	0.085105	fast-counts-plain (zero-copy mapped aligned ranges with direct site statistics)	PASS
+hwe	8	0.070980	fast-counts-plain (zero-copy mapped aligned ranges with direct site statistics)	PASS
+site-info	8	0.046474	fast-filter-recode-plain (zero-copy mapped aligned ranges with direct filtering/recode)	PASS
+ft	8	0.045301	fast-filter-recode-plain (zero-copy mapped aligned ranges with direct filtering/recode)	PASS
+site-pi-multi	8	0.042875	fast-site-stats-plain (zero-copy mapped aligned ranges with direct site statistics)	PASS
+noindex-bgzf	8	0.103474	fast-counts-bgzf (bounded ordered record batches with parallel BGZF decompression and compute)	PASS
+ld	8	0.168781	plain-ranges (plain VCF aligned byte ranges, non-rotational storage)	PASS
+pca	8	0.146028	plain-ranges (plain VCF aligned byte ranges, non-rotational storage)	PASS
+indexed-diff	8	0.071513	indexed-contig-parallel	PASS
+ten-filter	16	0.050466	fast-counts-plain (zero-copy mapped aligned ranges with direct site statistics)	PASS
+hwe	16	0.048047	fast-counts-plain (zero-copy mapped aligned ranges with direct site statistics)	PASS
+site-info	16	0.047223	fast-filter-recode-plain (zero-copy mapped aligned ranges with direct filtering/recode)	PASS
+ft	16	0.036209	fast-filter-recode-plain (zero-copy mapped aligned ranges with direct filtering/recode)	PASS
+site-pi-multi	16	0.025898	fast-site-stats-plain (zero-copy mapped aligned ranges with direct site statistics)	PASS
+noindex-bgzf	16	0.122059	fast-counts-bgzf (bounded ordered record batches with parallel BGZF decompression and compute)	PASS
+ld	16	0.127075	plain-ranges (plain VCF aligned byte ranges, non-rotational storage)	PASS
+pca	16	0.118811	plain-ranges (plain VCF aligned byte ranges, non-rotational storage)	PASS
+indexed-diff	16	0.042423	indexed-contig-parallel	PASS
+ten-filter	32	0.034159	fast-counts-plain (zero-copy mapped aligned ranges with direct site statistics)	PASS
+hwe	32	0.030418	fast-counts-plain (zero-copy mapped aligned ranges with direct site statistics)	PASS
+site-info	32	0.041302	fast-filter-recode-plain (zero-copy mapped aligned ranges with direct filtering/recode)	PASS
+ft	32	0.028614	fast-filter-recode-plain (zero-copy mapped aligned ranges with direct filtering/recode)	PASS
+site-pi-multi	32	0.016150	fast-site-stats-plain (zero-copy mapped aligned ranges with direct site statistics)	PASS
+noindex-bgzf	32	0.113738	fast-counts-bgzf (bounded ordered record batches with parallel BGZF decompression and compute)	PASS
+ld	32	0.104967	plain-ranges (plain VCF aligned byte ranges, non-rotational storage)	PASS
+pca	32	0.089338	plain-ranges (plain VCF aligned byte ranges, non-rotational storage)	PASS
+indexed-diff	32	0.032373	indexed-contig-parallel	PASS
