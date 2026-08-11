@@ -1,0 +1,2 @@
+scenario	threads	repeat	version	wall_s	durable_s	flush_s	cpu_pct	max_rss_kb	output_bytes	sha256	exact	kept	total	backend
+bcf	28	1	v0.14.2	44.27	51.057	6.783	1892	177988	57211771106	dde9edd98d5d05aa885e0e2f78a9696cfe0802c472d4dfd81ccffb49339107f3	PASS	5425725	11230392	stream (HTSlib ordered stream, non-rotational storage (fallback: adaptive policy: BCF full-file recode favors streaming))

@@ -5,8 +5,10 @@ version=$(tr -d '[:space:]' </source/VERSION)
 readonly version
 readonly htslib_version=1.24
 readonly bcftools_version=1.24
+readonly libdeflate_version=1.25
 readonly htslib_sha256=28a8de191381c7a97a35675ceac76fa1ea95e7b678d6a2e9d600a7874e4077de
 readonly bcftools_sha256=8caddc22610ee2851666047c859bb91da0c1e32d0c2ec553db6f153ad130e46f
+readonly libdeflate_sha256=d11473c1ad4c57d874695e8026865e38b47116bbcb872bfc622ec8f37a86017d
 readonly archive_name="vcftools-ng-v${version}-linux-x86_64"
 readonly work_directory=/tmp/vcftools-ng-portable
 readonly dependency_prefix="${work_directory}/prefix"
@@ -35,20 +37,43 @@ curl -fsSL \
 curl -fsSL \
     "https://github.com/samtools/bcftools/releases/download/${bcftools_version}/bcftools-${bcftools_version}.tar.bz2" \
     -o "${work_directory}/downloads/bcftools.tar.bz2"
+curl -fsSL \
+    "https://github.com/ebiggers/libdeflate/archive/refs/tags/v${libdeflate_version}.tar.gz" \
+    -o "${work_directory}/downloads/libdeflate.tar.gz"
 
 echo "${htslib_sha256}  ${work_directory}/downloads/htslib.tar.bz2" \
     | sha256sum --check --status
 echo "${bcftools_sha256}  ${work_directory}/downloads/bcftools.tar.bz2" \
     | sha256sum --check --status
+echo "${libdeflate_sha256}  ${work_directory}/downloads/libdeflate.tar.gz" \
+    | sha256sum --check --status
 
 tar -xjf "${work_directory}/downloads/htslib.tar.bz2" -C "${work_directory}"
 tar -xjf "${work_directory}/downloads/bcftools.tar.bz2" -C "${work_directory}"
+tar -xzf "${work_directory}/downloads/libdeflate.tar.gz" -C "${work_directory}"
+
+cmake \
+    -S "${work_directory}/libdeflate-${libdeflate_version}" \
+    -B "${work_directory}/libdeflate-build" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX="${dependency_prefix}" \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DLIBDEFLATE_BUILD_STATIC_LIB=OFF \
+    -DLIBDEFLATE_BUILD_GZIP=OFF \
+    -DLIBDEFLATE_BUILD_TESTS=OFF \
+    >/dev/null
+cmake --build "${work_directory}/libdeflate-build" \
+    --parallel "$(nproc)" >/dev/null
+cmake --install "${work_directory}/libdeflate-build" >/dev/null
 
 pushd "${work_directory}/htslib-${htslib_version}" >/dev/null
+CPPFLAGS="-I${dependency_prefix}/include" \
+LDFLAGS="-L${dependency_prefix}/lib" \
 ./configure \
     --prefix="${dependency_prefix}" \
     --disable-bz2 \
     --disable-lzma \
+    --with-libdeflate \
     >/dev/null
 make -j"$(nproc)" >/dev/null
 make install >/dev/null
@@ -60,7 +85,10 @@ pushd "${work_directory}/bcftools-${bcftools_version}" >/dev/null
 # consumed by make and the backslash preserves the remaining dollar for the
 # linker, producing a literal $ORIGIN/../lib runtime search path.
 # shellcheck disable=SC2016
-LDFLAGS='-Wl,-rpath,\$$ORIGIN/../lib' ./configure \
+CPPFLAGS="-I${dependency_prefix}/include" \
+PKG_CONFIG_PATH="${dependency_prefix}/lib/pkgconfig" \
+LDFLAGS="-L${dependency_prefix}/lib -Wl,-rpath-link,${dependency_prefix}/lib "'-Wl,-rpath,\$$ORIGIN/../lib' \
+./configure \
     --prefix="${dependency_prefix}" \
     --with-htslib="${dependency_prefix}" \
     --disable-bcftools-plugins \
@@ -95,6 +123,8 @@ cp "${work_directory}/htslib-${htslib_version}/LICENSE" \
     "${package_root}/LICENSES/HTSlib-LICENSE"
 cp "${work_directory}/bcftools-${bcftools_version}/LICENSE" \
     "${package_root}/LICENSES/BCFtools-LICENSE"
+cp "${work_directory}/libdeflate-${libdeflate_version}/COPYING" \
+    "${package_root}/LICENSES/libdeflate-LICENSE"
 
 sed -i "s/@VERSION@/${version}/g" "${package_root}/README.md"
 chmod 0755 "${package_root}/bin/vcftools-ng" \

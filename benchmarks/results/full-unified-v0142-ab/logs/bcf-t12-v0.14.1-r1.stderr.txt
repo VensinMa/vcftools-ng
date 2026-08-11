@@ -1,0 +1,79 @@
+vcftools-ng 0.14.1
+Log format: vcftools-ng-text-v1
+Start time: 2026-08-12T01:06:54+08:00
+Command: /home/vensin/workspace/vcftools-ng-benchmark-v0142/binaries/v0141/vcftools-ng-v0.14.1-linux-x86_64/libexec/vcftools-ng.bin --bcf /home/vensin/workspace/vcftools-ng/data/osmanthus412.snps.bcf --threads 12 --min-alleles 2 --max-alleles 2 --minGQ 10 --minQ 30 --min-meanDP 7 --max-missing 0.9 --maf 0.1 --recode-vcf --recode-INFO-all --no-log-file --out /home/vensin/workspace/vcftools-ng-benchmark-v0142/ssd/bcf-t12-v0.14.1-r1/output
+Working directory: /home/vensin/workspace/vcftools-ng
+Log file: disabled (--no-log-file)
+
+Input: /home/vensin/workspace/vcftools-ng/data/osmanthus412.snps.bcf
+Input format: BCF
+Input size: 22074294040 bytes
+Storage: non-rotational
+Requested threads: 12
+Effective threads: 12
+Batch size: 2048
+
+Outputs:
+  Recode VCF: /home/vensin/workspace/vcftools-ng-benchmark-v0142/ssd/bcf-t12-v0.14.1-r1/output.recode.vcf
+  Log: disabled
+  INFO fields: all (--recode-INFO-all)
+
+Output parameters:
+  --recode-vcf
+  --recode-INFO-all
+
+Filters:
+  --min-alleles 2
+  --max-alleles 2
+  --minQ 30
+  --minGQ 10
+  --min-meanDP 7
+  --max-missing 0.9
+  --maf 0.1
+
+Execution kernel: generic-ordered-pipeline
+Execution components: vcf-recode
+Parser policy: HTSlib general decoder
+Decode fields: GT,DP,GQ
+Fused text fast path: not selected
+Fast-path reason: the fused parser supports text VCF input; detected BCF
+Index policy: automatic
+Index workload: full-file recode
+Existing sidecar: /home/vensin/workspace/vcftools-ng/data/osmanthus412.snps.bcf.csi
+Index type: CSI
+Index validation: PASS (/home/vensin/workspace/vcftools-ng/data/osmanthus412.snps.bcf.csi)
+Decision: preserve existing sidecars; do not build or use an index
+Reason: adaptive policy: BCF full-file recode favors streaming; BCF, full-file recode, 12 effective threads
+Selected backend: stream
+Index used: no
+Stage time [input/index planning]: 0.013 seconds
+Input backend: stream (HTSlib ordered stream, non-rotational storage (fallback: adaptive policy: BCF full-file recode favors streaming))
+Samples: 412
+Threads: 12 (user specified)
+Stage concurrency: input 1, HTSlib I/O 3, compute 8
+Input threads: 1
+HTSlib I/O threads: 3
+Compute threads: 8
+Planned input shards: 0
+Batch size: 2048
+Selected samples: 412
+Stage time [pipeline setup]: 0.000 seconds
+Scheduler: bounded ordered pipeline (3 batches)
+Stage time [ordered input/compute/commit]: 68.690 seconds
+Stage time [output finalization]: 0.000 seconds
+After filtering, kept 5425725 out of 11230392 sites
+Kept sites: 5425725
+Total sites: 11230392
+
+Output results:
+  Output format: Plain VCF
+  Recode VCF: /home/vensin/workspace/vcftools-ng-benchmark-v0142/ssd/bcf-t12-v0.14.1-r1/output.recode.vcf
+  Output bytes: 57211771106
+
+Wall time: 68.705 seconds
+User CPU time: 755.650 seconds
+System CPU time: 30.503 seconds
+Average CPU: 1144.249%
+Peak RSS: 134552 KiB
+Exit status: success
+End time: 2026-08-12T01:08:03+08:00

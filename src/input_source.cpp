@@ -40,7 +40,8 @@
 namespace vcftools_ng::input {
 
 ResourcePlan plan_stream_resources(
-    unsigned total_threads, bool compressed) {
+    unsigned total_threads, bool compressed,
+    bool bcf_stream) {
     ResourcePlan plan;
     plan.total_threads = std::max(1u, total_threads);
     if (plan.total_threads == 1) {
@@ -50,10 +51,23 @@ ResourcePlan plan_stream_resources(
         return plan;
     }
     plan.input_threads = 1;
-    plan.hts_io_threads =
-        compressed && plan.total_threads > 2
-            ? std::min(3u, plan.total_threads - 2)
-            : 0;
+    if (bcf_stream && plan.total_threads > 2) {
+        // BCF full scans spend substantially more time in HTSlib record
+        // decoding than BGZF VCF text streams.  A quarter of the strict
+        // budget was the stable knee across 4-32 threads on the locked real
+        // BCF fixture.  Keep one reader and at least one compute worker, and
+        // let the share grow on larger hosts instead of encoding a local
+        // fixed worker ceiling.
+        const unsigned decode_share =
+            (plan.total_threads + 3u) / 4u;
+        plan.hts_io_threads = std::min(
+            decode_share, plan.total_threads - 2u);
+    } else {
+        plan.hts_io_threads =
+            compressed && plan.total_threads > 2
+                ? std::min(3u, plan.total_threads - 2)
+                : 0;
+    }
     plan.compute_threads =
         plan.total_threads - plan.input_threads - plan.hts_io_threads;
     return plan;
@@ -742,7 +756,8 @@ ResourcePlan plan_resources(
     unsigned requested_threads, bool parallel_input,
     bool compressed_stream, bool text_parsing = false,
     std::optional<bool> rotational = std::nullopt,
-    bool page_cache_prefetched = false) {
+    bool page_cache_prefetched = false,
+    bool bcf_stream = false) {
     ResourcePlan plan;
     plan.total_threads = std::max(1u, requested_threads);
     plan.storage_profile_known = rotational.has_value();
@@ -776,7 +791,7 @@ ResourcePlan plan_resources(
         }
     } else {
         const ResourcePlan stream = plan_stream_resources(
-            plan.total_threads, compressed_stream);
+            plan.total_threads, compressed_stream, bcf_stream);
         plan.input_threads = stream.input_threads;
         plan.hts_io_threads = stream.hts_io_threads;
         plan.compute_threads = stream.compute_threads;
@@ -936,6 +951,8 @@ public:
         const bool compressed =
             format != nullptr &&
             format->compression != no_compression;
+        const bool bcf_stream =
+            format != nullptr && format->format == bcf;
         if (!compressed &&
             hts_set_opt(
                 input_.get(), HTS_OPT_BLOCK_SIZE,
@@ -944,7 +961,7 @@ public:
         }
         resources_ = plan_resources(
             options.total_threads, false, compressed, false,
-            detect_rotational_storage(path_));
+            detect_rotational_storage(path_), false, bcf_stream);
         if (resources_.hts_io_threads > 0 &&
             hts_set_threads(
                 input_.get(),

@@ -1,0 +1,8 @@
+key\tvalue
+workload\t--min-alleles 2 --max-alleles 2 --minGQ 10 --minQ 30 --min-meanDP 7 --max-missing 0.9 --maf 0.1 --recode-vcf --recode-INFO-all
+versions\tv0.13.0;v0.14.1;v0.14.2 portable Linux x86_64
+scenarios\tBGZF VCF + TBI;Plain VCF;BCF adaptive stream
+threads\t1 2 4 8 12 16 24 28 32
+output\tPlain VCF on /dev/nvme3n1p2
+repeat_policy\tone strictly serial run per row; differences within 5% are treated as effectively tied
+execution\tstrictly serial, rotating version order

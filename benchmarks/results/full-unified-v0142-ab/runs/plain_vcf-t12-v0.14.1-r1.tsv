@@ -1,0 +1,2 @@
+scenario	threads	repeat	version	wall_s	durable_s	flush_s	cpu_pct	max_rss_kb	output_bytes	sha256	exact	kept	total	backend
+plain_vcf	12	1	v0.14.1	37.08	47.988	10.900	650	100140688	59434159621	d4f2a15e8c5ad0cc12abf4a3ab308bb48f22adf8ec13776d72ceeaa1f8d402b8	PASS	5425725	11230392	fast-filter-recode-plain (zero-copy mapped aligned ranges with direct filtering/recode)

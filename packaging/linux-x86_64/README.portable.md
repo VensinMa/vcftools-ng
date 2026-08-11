@@ -3,7 +3,7 @@
 This archive is ready to run after extraction. `bin` contains only the public
 `vcftools-ng` launcher. Private bcftools 1.24 support for automatic CSI
 construction is stored under `libexec`; HTSlib 1.24 and the required non-glibc
-runtime libraries are also bundled.
+runtime libraries, including private libdeflate 1.25, are also bundled.
 
 Minimum platform:
 

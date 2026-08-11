@@ -49,6 +49,12 @@ constexpr std::uint64_t kMib = 1024ULL * 1024ULL;
 constexpr std::uint64_t kMinimumShardBytes = 1ULL * kMib;
 constexpr std::uint64_t kMaximumShardBytes = 64ULL * kMib;
 constexpr std::uint64_t kTargetActiveInputBytes = 256ULL * kMib;
+// mmap is excellent for development fixtures and other inputs that remain
+// comfortably cacheable.  On very large VCFs, however, parallel page faults
+// defeat kernel readahead and can make the mapped path slower than explicit
+// aligned pread() workers while also inflating RSS by the input size.
+constexpr std::uint64_t kMaximumAutomaticMappingBytes =
+    8ULL * 1024ULL * kMib;
 constexpr std::size_t kMaximumShards = 65536;
 constexpr std::size_t kOutputFlushBytes = 8ULL * 1024ULL * 1024ULL;
 constexpr std::size_t kInlineAlleles = 16;
@@ -144,6 +150,28 @@ struct ReadOnlyMapping {
     const char* data = nullptr;
     std::size_t length = 0;
 };
+
+bool should_map_plain_input(
+    std::uint64_t file_size, bool mapping_useful) {
+    const char* override_mode =
+        std::getenv("VCFTOOLS_NG_TEST_PLAIN_ACCESS");
+    if (override_mode != nullptr && *override_mode != '\0') {
+        const std::string_view mode(override_mode);
+        if (mode == "mmap") {
+            return mapping_useful;
+        }
+        if (mode == "pread") {
+            return false;
+        }
+        if (mode != "auto") {
+            fail(
+                "VCFTOOLS_NG_TEST_PLAIN_ACCESS must be auto, mmap, or "
+                "pread");
+        }
+    }
+    return mapping_useful &&
+           file_size <= kMaximumAutomaticMappingBytes;
+}
 
 struct HeaderDeleter {
     void operator()(bcf_hdr_t* header) const noexcept {
@@ -2738,12 +2766,13 @@ FastSiteStatsSummary run_plain_site_stats(
     const auto shards = build_plain_shards(
         input_path, header.data_start, file_size,
         requested_threads);
-    const bool prefer_mapping =
+    const bool mapping_useful =
         requested_threads > 1 ||
         plan.position_selection_active() ||
         plan.sample_selection_active();
     const ReadOnlyMapping mapping(
-        input_path, file_size, prefer_mapping);
+        input_path, file_size,
+        should_map_plain_input(file_size, mapping_useful));
     const unsigned worker_count = descriptor_limited_workers(
         requested_threads, shards.size());
 

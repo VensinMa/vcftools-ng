@@ -74,11 +74,13 @@ multi-run mean or monotonic-scaling claims. Resume later with `GATE_ONLY=0`; com
 Original and first-repeat records are hash-validated and skipped. Commit the
 final adaptive-repeat summary to master when it completes.
 
-The v0.14.1 implementation of this contract is
-`benchmarks/run-v0141-full-release-matrix.sh`. It hard-validates the complete
-input/index and Original-golden sizes and SHA-256 identities, separates the
-program log from captured stderr, asserts the selected adaptive backend, and
-removes each large candidate output only after its byte gate passes.
+The v0.14.2 unified portable implementation is
+`benchmarks/run-v0142-unified-full-ab.sh`. It hard-validates complete inputs,
+runs versions serially with rotating order, records both application and
+post-`sync -f` durable time, and removes each large output only after its
+size/SHA-256/site-count gate passes. One run is retained per row; performance
+differences within 5% are treated as effectively tied. This 5% band never
+applies to scientific output, which remains an exact byte contract.
 
 ## 4. User-facing records
 

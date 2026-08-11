@@ -5,15 +5,14 @@
 vcftools-ng 是 VCFtools 0.1.17 的实验性高性能、输出兼容后继实现。
 
 **最新正式版：**
-[v0.14.1 — 能力规划驱动的精确分析](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.14.1)
+[v0.14.2 — 便携版 I/O 性能恢复](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.14.2)
 
-v0.14.1 合并了未正式发布的 v0.13.2 融合过滤与并行分析工作，补齐故障
-路径和 GT/倍性边界，并将每次运行编译为一个不可变能力计划。需要解析的
-FORMAT 字段、精确执行内核和稳定回退原因只决定一次；GT-only 分析不再
-扫描未使用的 DP/GQ/FT，兼容分析仍共享一次解码。LD 使用连续位平面和固定
-有序格式化块，PCA 预计算 sample-major 归一化剂量但不改变累加顺序。完整
-1123 万位点发布门禁的 36 个场景/线程首轮结果全部与锁定的 VCFtools
-0.1.17 golden 逐字节一致。
+v0.14.2 保留v0.14.1不可变能力规划器和精确科学结果契约，同时修复发布
+构建中的I/O回退。便携包现在使用libdeflate 1.25与HTSlib 1.24；BCF采用
+格式感知的严格解码/计算预算；Plain VCF只对不超过8 GiB、适合缓存的输入
+使用mmap，更大文件自动使用有界、对齐的并行`pread`。同主机真实便携包
+A/B在v0.13.0、v0.14.1和v0.14.2之间完成81/81精确输出门禁。相对v0.14.1，
+完整数据实测BGZF最高提升1.67倍、Plain VCF最高1.35倍、BCF最高1.99倍。
 
 v0.13.1 将精确兼容的直接文本内核扩展到位点保留/剔除、样本投影后的
 counts/重编码、窗口 pi、Tajima's D 和逐位点/窗口 FST。Plain VCF 在
@@ -73,6 +72,8 @@ vcftools-ng 使用自适应、有序的输入分片和有界流水线：
   不支持的过滤、输入
   格式或分析会在发布任何输出前自动回退到通用兼容流水线；
 - 乱序 shard 的待提交输出带有背压，内存不会随剩余文件无限增长。
+- Plain VCF在不超过8 GiB且适合缓存时使用零拷贝只读映射；更大输入自动
+  切换到有界、对齐的并行pread，避免输入大小级RSS和并行缺页回退。
 
 GT 解析并不只支持常见的 `0/0`、`0/1`、`1/1`、`./.` 和对应相位形式。
 真实 DeepVariant/GATK 子集还包含前置部分缺失、单倍体 `.`、相位调用和
@@ -102,19 +103,20 @@ Tajima's D 和 FST 增加单独的锁定矩阵；v0.13.2 另行记录LD、精确
 ## 推荐安装方式
 
 Linux x86_64 便携包解压后即可运行。`bin` 中只放 `vcftools-ng`；用于
-自动构建 CSI 的私有 bcftools 放在 `libexec`。v0.14.1 便携构建同时
-打包 bcftools 1.24、HTSlib 1.24 和所需的非 glibc 运行库：
+自动构建 CSI 的私有 bcftools 放在 `libexec`。v0.14.2 便携构建同时
+打包 bcftools 1.24、HTSlib 1.24、libdeflate 1.25 和所需的非 glibc
+运行库：
 
 ```bash
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.14.1/vcftools-ng-v0.14.1-linux-x86_64.tar.gz
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.14.1/vcftools-ng-v0.14.1-linux-x86_64.tar.gz.sha256
-sha256sum -c vcftools-ng-v0.14.1-linux-x86_64.tar.gz.sha256
-tar -xzf vcftools-ng-v0.14.1-linux-x86_64.tar.gz
-./vcftools-ng-v0.14.1-linux-x86_64/bin/vcftools-ng --version
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.14.2/vcftools-ng-v0.14.2-linux-x86_64.tar.gz
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.14.2/vcftools-ng-v0.14.2-linux-x86_64.tar.gz.sha256
+sha256sum -c vcftools-ng-v0.14.2-linux-x86_64.tar.gz.sha256
+tar -xzf vcftools-ng-v0.14.2-linux-x86_64.tar.gz
+./vcftools-ng-v0.14.2-linux-x86_64/bin/vcftools-ng --version
 ```
 
 压缩包SHA-256：
-`ce225f800bf0cede6151ad178b26c4d9c0a08ecac0f4225db09bd649dc21ecfa`。
+`95dd2c3cc431759d77bb2f7c15b9a74a7c081632895f9e80ad7f71eeb052ae41`。
 
 便携包面向 glibc 2.17 或更高版本，在 CentOS 7 兼容的
 manylinux2014 基线上构建。无需安装 CMake、编译器、Conda、系统
@@ -128,7 +130,7 @@ HTSlib 或系统 bcftools。解压后请保持 `bin`、`lib` 和 `libexec`
 
 | 版本 | 解决的问题 | 关键参数或行为 | 推荐方式 |
 |---|---|---|---|
-| [v0.9.0](docs/versions/v0.9.0.md) | 建立首个共享高性能扫描路径 | 核心位点过滤和统计 | 历史里程碑；新任务使用v0.14.1 |
+| [v0.9.0](docs/versions/v0.9.0.md) | 建立首个共享高性能扫描路径 | 核心位点过滤和统计 | 历史里程碑；新任务使用v0.14.2 |
 | [v0.11.2](docs/releases/v0.11.2.md) | 扩展兼容范围与并行输入 | 个体/群体统计、LD/PCA、转换、diff、自动CSI | 历史兼容里程碑 |
 | [v0.11.3](docs/releases/v0.11.3.md) | 修复低核心 `--counts` 回归 | 直接文本计数融合、自适应输入 | v0.13.0已经继承 |
 | [v0.12.1](docs/releases/v0.12.1.md) | 减少重复位点解析并扩展精确重编码 | 融合位点输出、`--recode-vcf-gz` | 可兼容统计应在一次运行中组合 |
@@ -137,7 +139,8 @@ HTSlib 或系统 bcftools。解压后请保持 `bin`、`lib` 和 `libexec`
 | [v0.12.4](docs/releases/v0.12.4.md) | 补齐标准运行日志 | 默认 `PREFIX.log`、`--log-file`、`--no-log-file` | 建议保留默认日志 |
 | [v0.13.0](docs/releases/v0.13.0.md) | 避免大体积普通VCF的I/O压力和部分结果发布 | 事务式输出；`--recode`默认BGZF；`--recode-vcf`；严格线程预算 | 已由后续版本继承 |
 | [v0.13.1](docs/releases/v0.13.1.md) | 消除常用选择和群体统计的通用流水线开销 | 直接位点/样本投影；pi/Tajima/FST归约；Plain VCF自适应零拷贝 | 历史性能里程碑 |
-| [v0.14.1](docs/releases/v0.14.1.md) | 统一精确能力决策并减少无用解码与后处理 | 不可变 QueryPlan；按需 FORMAT；连续 LD；sample-major PCA；边界加固 | 所有新任务的推荐版本 |
+| [v0.14.1](docs/releases/v0.14.1.md) | 统一精确能力决策并减少无用解码与后处理 | 不可变 QueryPlan；按需 FORMAT；连续 LD；sample-major PCA；边界加固 | 已由v0.14.2继承 |
+| [v0.14.2](docs/releases/v0.14.2.md) | 恢复便携版BGZF/BCF及超大Plain VCF性能 | libdeflate 1.25；BCF感知预算；8 GiB以内mmap、更大输入pread | 所有新任务的推荐版本 |
 
 ### 推荐参数
 
@@ -398,6 +401,23 @@ BGZF/BCF区域查询才优先复用或构建索引；紧凑型全文件统计从
 已有索引，但不为单次扫描临时构建索引。`--no-auto-index` 已移除。
 `--input-backend stream|indexed` 仍可用于高级诊断和显式覆盖。
 
+## v0.14.2 统一便携包 A/B
+
+同主机、同输出对比使用真实v0.13.0、v0.14.1和v0.14.2便携包，首轮81/81
+项全部通过精确门禁。下表是最终v0.14.2程序wall time（秒）；每行运行一次，
+5%以内视为基本持平。`sync -f`后的durable时间、CPU、RSS和哈希见
+[完整记录](benchmarks/results/full-unified-v0142-ab/README.zh-CN.md)。
+
+| 输入 | 1 | 2 | 4 | 8 | 12 | 16 | 24 | 28 | 32 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| BGZF + TBI | 214.43 | 151.02 | 77.44 | 40.72 | 34.21 | 31.68 | 26.07 | 28.84 | 28.25 |
+| Plain VCF | 214.12 | 97.63 | 53.83 | 32.51 | 27.42 | 32.05 | 29.65 | 32.72 | 31.72 |
+| BCF自适应stream | 551.39 | 470.46 | 237.79 | 98.22 | 67.59 | 52.30 | 45.45 | 44.27 | 50.43 |
+
+相对v0.14.1，BGZF最高提升1.67倍、Plain VCF最高1.35倍、BCF最高1.99倍。
+v0.13.0在请求BCF 1/2线程时超出声明线程预算，因此这两行不作为严格预算
+基线。
+
 ## v0.14.1 完整数据发布结果
 
 完整11,230,392位点的36个首轮配置全部通过完整文件比较。Original 0.1.17
@@ -580,6 +600,10 @@ ctest --test-dir build --output-on-failure
   [docs/versions/v0.14.1.md](docs/versions/v0.14.1.md)
 - v0.14.1 完整数据发布驱动：
   [benchmarks/run-v0141-full-release-matrix.sh](benchmarks/run-v0141-full-release-matrix.sh)
+- v0.14.2 技术记录：
+  [docs/versions/v0.14.2.md](docs/versions/v0.14.2.md)
+- v0.14.2 统一便携包 A/B：
+  [benchmarks/results/full-unified-v0142-ab/README.zh-CN.md](benchmarks/results/full-unified-v0142-ab/README.zh-CN.md)
 - 参数兼容矩阵：
   [docs/parameter-compatibility.md](docs/parameter-compatibility.md)
 - 版本历史：

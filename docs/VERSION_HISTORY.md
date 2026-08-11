@@ -28,13 +28,14 @@ otherwise, validation uses the real 2,300,000-record, 23-chromosome,
 | [v0.13.1](versions/v0.13.1.md) | Adaptive zero-copy selection and population analytics | 4.16 | 0.38 | 0.32 | PASS (230k locked matrix) |
 | [v0.13.2](versions/v0.13.2.md) | Exact fused filters, no-index BGZF, LD/PCA/diff kernels | inherited | 0.43 | 0.33 | PASS (23k exact, 230k A/B) |
 | [v0.14.1](versions/v0.14.1.md) | Capability-planned exact analytics and hardened boundaries | 2267.88 | 44.36 | 34.06 | PASS (11.23m first-repeat release gate) |
+| [v0.14.2](versions/v0.14.2.md) | Portable libdeflate, BCF-aware planning, and oversized-Plain pread | 2267.88 | 40.72 | 31.68 | PASS (81-row portable A/B plus final Plain gate) |
 
 The workload in each row is the version's representative compatibility
 benchmark; workloads differ between rows. Consult the per-version page before
 comparing versions directly. v0.9.0 also reran the six-output sample workload
 at 3.11/3.13 seconds for 8/16 threads.
 
-## Cumulative supported surface in v0.14.1
+## Cumulative supported surface in v0.14.2
 
 - Inputs: VCF, BGZF VCF, BCF.
 - Outputs: `--freq`, `--freq2`, `--counts`, `--missing-site`, `--site-depth`,
@@ -75,6 +76,15 @@ at 3.11/3.13 seconds for 8/16 threads.
   v0.14.1 compiles field requirements, eligibility, fallback reason, and
   generic decode into one immutable plan; LD/PCA post-scan storage is further
   specialized without changing scientific accumulation or output order.
+  v0.14.2 retains that plan, restores libdeflate in the portable archive,
+  gives BCF stream decoding a format-aware strict budget, and automatically
+  uses aligned pread instead of input-sized mmap for Plain VCF above 8 GiB.
+
+v0.14.2 completed a same-host, same-output portable A/B across v0.13.0,
+v0.14.1, and v0.14.2: three inputs, nine thread counts, and 81/81 exact
+initial outputs. Final post-fix Plain outputs also matched the locked oracle.
+Performance differences within 5% are reported as tied; application and
+durable time remain separate for the 57-59 GB output workload.
 
 v0.14.1 passed a complete 11,230,392-record first-repeat release matrix:
 

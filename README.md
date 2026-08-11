@@ -4,19 +4,17 @@
 
 Experimental high-performance, output-compatible successor to VCFtools 0.1.17.
 
-**Latest release:** [v0.14.1 — Capability-Planned Exact
-Analytics](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.14.1)
+**Latest release:** [v0.14.2 — Portable I/O
+Recovery](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.14.2)
 
-v0.14.1 incorporates the unreleased v0.13.2 fused-filter and parallel-analysis
-work, closes its failure and GT/ploidy boundaries, and compiles every
-invocation into one immutable capability plan. Required FORMAT fields, the
-exact kernel, and a stable fallback reason are decided once. GT-only analyses
-avoid unused DP/GQ/FT work; compatible analyses still share one decode. LD
-uses contiguous bit planes and fixed ordered formatting blocks, while PCA
-precomputes sample-major normalized dosage without changing accumulation
-order. The 11.23-million-record release gate passed all 36 first-repeat
-scenario/thread configurations byte-for-byte against locked VCFtools 0.1.17
-goldens.
+v0.14.2 retains v0.14.1's immutable capability planner and exact scientific
+contract while fixing release-build I/O regressions. The portable archive now
+uses private libdeflate 1.25 with HTSlib 1.24, BCF receives a format-aware
+strict decode/compute budget, and Plain VCF maps only cacheable inputs up to
+8 GiB; larger files use bounded aligned `pread` workers. A same-host portable
+A/B completed 81/81 exact output gates across v0.13.0, v0.14.1, and v0.14.2.
+Relative to v0.14.1, measured gains reached 1.67x for BGZF, 1.35x for Plain
+VCF, and 1.99x for BCF on the locked complete-data workload.
 
 v0.13.1 extends the exact direct-text engine to position inclusion/exclusion,
 selected-sample counts and recode, window pi, Tajima's D, and site/window FST.
@@ -81,8 +79,9 @@ construction. It covers `--freq`, `--freq2`, `--counts`, `--missing-site`,
 applies the same direct kernel to Plain/BGZF VCF recode with
 the common seven-filter workload. v0.13.1 adds direct position and sample
 selection plus compact ordered pi, Tajima, and FST reductions. Plain VCF
-workers use aligned read-only mapped ranges when profitable, while indexed
-BGZF workers query ordered tabix regions. Recode and statistics can share one
+workers use aligned read-only mapped ranges for cacheable inputs up to 8 GiB
+and bounded aligned pread above that threshold, while indexed BGZF workers
+query ordered tabix regions. Recode and statistics can share one
 scan, and all worker output is bounded and committed in exact input order.
 v0.13.2 adds the complete ten-filter production path, cached DeepVariant/GATK
 FORMAT parsers, FILTER/INFO/FT, integer pi range accumulation, bounded
@@ -125,19 +124,20 @@ for the fixed development, release-candidate, and full-data evidence policy.
 
 The portable Linux x86_64 archive is ready to run after extraction. `bin`
 contains only `vcftools-ng`; private bcftools support for automatic CSI
-construction is kept under `libexec`. The v0.14.1 archive bundles bcftools
-1.24, HTSlib 1.24, and the required non-glibc runtime libraries.
+construction is kept under `libexec`. The v0.14.2 archive bundles bcftools
+1.24, HTSlib 1.24, libdeflate 1.25, and the required non-glibc runtime
+libraries.
 
 ```bash
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.14.1/vcftools-ng-v0.14.1-linux-x86_64.tar.gz
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.14.1/vcftools-ng-v0.14.1-linux-x86_64.tar.gz.sha256
-sha256sum -c vcftools-ng-v0.14.1-linux-x86_64.tar.gz.sha256
-tar -xzf vcftools-ng-v0.14.1-linux-x86_64.tar.gz
-./vcftools-ng-v0.14.1-linux-x86_64/bin/vcftools-ng --version
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.14.2/vcftools-ng-v0.14.2-linux-x86_64.tar.gz
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.14.2/vcftools-ng-v0.14.2-linux-x86_64.tar.gz.sha256
+sha256sum -c vcftools-ng-v0.14.2-linux-x86_64.tar.gz.sha256
+tar -xzf vcftools-ng-v0.14.2-linux-x86_64.tar.gz
+./vcftools-ng-v0.14.2-linux-x86_64/bin/vcftools-ng --version
 ```
 
 Archive SHA-256:
-`ce225f800bf0cede6151ad178b26c4d9c0a08ecac0f4225db09bd649dc21ecfa`.
+`95dd2c3cc431759d77bb2f7c15b9a74a7c081632895f9e80ad7f71eeb052ae41`.
 
 The archive requires Linux x86_64 with glibc 2.17 or newer. It is built on a
 CentOS 7-compatible manylinux2014 baseline and is tested in clean CentOS 7
@@ -153,7 +153,7 @@ the technical archive and do not compete with the current usage guidance.
 
 | Release | Problem addressed | Key parameters or behavior | Recommended use |
 |---|---|---|---|
-| [v0.9.0](docs/versions/v0.9.0.md) | Established the first shared high-performance scan | Core site filters and statistics | Historical milestone; use v0.14.1 for new work |
+| [v0.9.0](docs/versions/v0.9.0.md) | Established the first shared high-performance scan | Core site filters and statistics | Historical milestone; use v0.14.2 for new work |
 | [v0.11.2](docs/releases/v0.11.2.md) | Expanded compatibility and parallel input coverage | Individual/population statistics, LD/PCA, conversion, diff, automatic CSI | Historical compatibility milestone |
 | [v0.11.3](docs/releases/v0.11.3.md) | Removed low-core `--counts` regressions | Direct text-to-count fusion and adaptive input | Behavior is inherited by v0.13.0 |
 | [v0.12.1](docs/releases/v0.12.1.md) | Removed repeated site parsing and scaled exact recode | Fused site outputs, `--recode-vcf-gz` | Request multiple compatible site outputs in one run |
@@ -162,7 +162,8 @@ the technical archive and do not compete with the current usage guidance.
 | [v0.12.4](docs/releases/v0.12.4.md) | Closed the missing run-log gap | Default `PREFIX.log`, `--log-file`, `--no-log-file` | Keep the default log for reproducibility |
 | [v0.13.0](docs/releases/v0.13.0.md) | Prevented large plain-VCF I/O pressure and partial publication | Transactional output; `--recode` defaults to BGZF; `--recode-vcf`; strict thread budget | Inherited by later releases |
 | [v0.13.1](docs/releases/v0.13.1.md) | Removed generic-pipeline overhead from common selection and population workloads | Direct positions/sample projection; pi/Tajima/FST reductions; adaptive zero-copy Plain VCF | Historical performance milestone |
-| [v0.14.1](docs/releases/v0.14.1.md) | Unified exact capability decisions and reduced unnecessary decode/post-scan work | Immutable QueryPlan; on-demand FORMAT fields; contiguous LD; sample-major PCA; hardened boundaries | Recommended release for all new runs |
+| [v0.14.1](docs/releases/v0.14.1.md) | Unified exact capability decisions and reduced unnecessary decode/post-scan work | Immutable QueryPlan; on-demand FORMAT fields; contiguous LD; sample-major PCA; hardened boundaries | Inherited by v0.14.2 |
+| [v0.14.2](docs/releases/v0.14.2.md) | Recovered portable BGZF/BCF performance and oversized Plain VCF efficiency | libdeflate 1.25; BCF-aware budget; mmap ≤8 GiB, aligned pread above it | Recommended release for all new runs |
 
 ### Recommended parameters
 
@@ -439,6 +440,24 @@ overwritten. `--input-backend stream|indexed` remains an advanced override,
 and `--bcftools FILE` selects the executable used when adaptive CSI
 construction is profitable.
 
+## v0.14.2 unified portable A/B
+
+The same-host, same-output comparison completed 81/81 initial exact gates
+across real v0.13.0, v0.14.1, and v0.14.2 portable archives. The final
+v0.14.2 application wall seconds are below; each row ran once and differences
+within 5% are treated as tied. Post-`sync -f` durable times, CPU, RSS, and
+hashes are retained in the [full record](benchmarks/results/full-unified-v0142-ab/README.md).
+
+| Input | 1 | 2 | 4 | 8 | 12 | 16 | 24 | 28 | 32 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| BGZF + TBI | 214.43 | 151.02 | 77.44 | 40.72 | 34.21 | 31.68 | 26.07 | 28.84 | 28.25 |
+| Plain VCF | 214.12 | 97.63 | 53.83 | 32.51 | 27.42 | 32.05 | 29.65 | 32.72 | 31.72 |
+| BCF adaptive stream | 551.39 | 470.46 | 237.79 | 98.22 | 67.59 | 52.30 | 45.45 | 44.27 | 50.43 |
+
+Relative to v0.14.1, measured gains reach 1.67x for BGZF, 1.35x for Plain
+VCF, and 1.99x for BCF. v0.13.0 exceeded its requested BCF budget at one and
+two threads; those low-thread rows are not strict-budget baselines.
+
 ## v0.14.1 complete-data release result
 
 All 36 first-repeat configurations passed complete-file comparison on
@@ -616,6 +635,8 @@ development gate are documented here:
 - [v0.13.2 fixed development gate](benchmarks/results/v0132-development-gate/README.md)
 - [v0.14.1 technical record](docs/versions/v0.14.1.md)
 - [v0.14.1 complete-data release driver](benchmarks/run-v0141-full-release-matrix.sh)
+- [v0.14.2 technical record](docs/versions/v0.14.2.md)
+- [v0.14.2 unified portable A/B](benchmarks/results/full-unified-v0142-ab/README.md)
 
 ## Build from source
 

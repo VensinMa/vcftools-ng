@@ -57,6 +57,11 @@ development version.
   and nine thread counts. The v0.12.1 Original timings and scientific goldens
   are reused only after complete size/SHA-256 validation; Original is not
   rerun. Follow-up repeats remain separate from the publication gate.
+- v0.14.2 runs a unified real-portable A/B against v0.13.0 and v0.14.1,
+  restores private libdeflate, adds BCF-aware strict stream planning, and
+  selects aligned pread for Plain VCF above 8 GiB. The initial matrix passes
+  81/81 output gates; final post-fix Plain rows retain the same oracle hash.
+  Performance differences within 5% are treated as effectively tied.
 
 ## Required record for every future version
 
@@ -84,6 +89,8 @@ measurements are mandatory in the same benchmark report.
 - Per-version records: `docs/versions/v*.md`
 - v0.14.1 implementation and decision audit:
   `docs/versions/v0.14.1-resume-plan.md`
+- v0.14.2 portable A/B and release correction:
+  `docs/versions/v0.14.2.md`
 - New-version template: `docs/versions/TEMPLATE.md`
 - Raw timing files: `benchmarks/results/*.time.txt`
 - Detailed benchmark narrative: `benchmarks/README.md`

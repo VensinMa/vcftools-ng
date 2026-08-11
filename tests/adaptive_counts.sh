@@ -113,6 +113,24 @@ for threads in 1 2; do
         "$work/bgzf-t$threads.log"
 done
 
+# The large-file planner uses the same explicit pread path.  Force both
+# access modes on a compact fixture so their scientific output remains a
+# deterministic differential gate independent of host RAM and file size.
+VCFTOOLS_NG_TEST_PLAIN_ACCESS=pread \
+    "$ng" --vcf "$synthetic" --threads 4 --counts \
+    --out "$work/plain-forced-pread" \
+    >/dev/null 2>"$work/plain-forced-pread.log"
+VCFTOOLS_NG_TEST_PLAIN_ACCESS=mmap \
+    "$ng" --vcf "$synthetic" --threads 4 --counts \
+    --out "$work/plain-forced-mmap" \
+    >/dev/null 2>"$work/plain-forced-mmap.log"
+cmp "$work/plain-forced-pread.frq.count" \
+    "$work/plain-forced-mmap.frq.count"
+grep -q 'fused aligned byte ranges' \
+    "$work/plain-forced-pread.log"
+grep -q 'zero-copy mapped aligned ranges' \
+    "$work/plain-forced-mmap.log"
+
 for threads in 4 8 16 32; do
     "$ng" --vcf "$synthetic" --threads "$threads" \
         --counts --out "$work/plain-t$threads" \
@@ -375,5 +393,25 @@ ln -s "$bcf_fixture" "$work/no-index.bcf"
 cmp "$work/reference.frq.count" "$work/no-index-bcf.frq.count"
 test ! -e "$work/no-index.bcf.csi"
 grep -q 'Input backend: stream' "$work/no-index-bcf.log"
+
+# BCF record decoding needs a larger HTSlib share than a BGZF VCF text
+# stream, but the reader, HTSlib workers, and compute workers must still fit
+# inside the requested total.  The quarter-share curve is evidence-selected
+# on the locked 230k BCF fixture and grows beyond the local 32-CPU host
+# without encoding a fixed machine-specific ceiling.
+for spec in 2:0:1 3:1:1 4:1:2 8:2:5 16:4:11 32:8:23; do
+    threads=${spec%%:*}
+    remainder=${spec#*:}
+    hts_io=${remainder%%:*}
+    compute=${remainder#*:}
+    prefix="$work/bcf-resource-t$threads"
+    "$ng" --bcf "$bcf_fixture" --input-backend stream \
+        --threads "$threads" --counts --out "$prefix" \
+        >/dev/null 2>"$prefix.log"
+    cmp "$work/reference.frq.count" "$prefix.frq.count"
+    grep -Fq \
+        "Stage concurrency: input 1, HTSlib I/O $hts_io, compute $compute" \
+        "$prefix.log"
+done
 
 printf 'Adaptive counts regression test passed\n'

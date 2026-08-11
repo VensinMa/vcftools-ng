@@ -44,10 +44,13 @@ struct ResourcePlan {
     bool page_cache_prefetched = false;
 };
 
-// Shared resource planner for ordered Plain/gzip/BGZF stream readers. The
-// input reader and HTSlib workers are included in the total CPU budget.
+// Shared resource planner for ordered Plain/gzip/BGZF/BCF stream readers.
+// The input reader and HTSlib workers are included in the total CPU budget.
+// BCF uses a format-specific decode share; BGZF VCF retains its smaller
+// compressed-text feeder allocation.
 ResourcePlan plan_stream_resources(
-    unsigned total_threads, bool compressed);
+    unsigned total_threads, bool compressed,
+    bool bcf_stream = false);
 
 struct SourceOptions {
     std::string path;

@@ -1,0 +1,10 @@
+scenario	threads	version	wall_s	durable_s	flush_s	cpu_pct	max_rss_kb	output_bytes	sha256	exact	backend
+plain_vcf	1	v0.14.2	214.12	218.001	3.875	97	135328	59434159621	d4f2a15e8c5ad0cc12abf4a3ab308bb48f22adf8ec13776d72ceeaa1f8d402b8	PASS	fast-filter-recode-plain (fused aligned byte ranges with direct filtering/recode)
+plain_vcf	2	v0.14.2	97.63	99.145	1.511	200	241852	59434159621	d4f2a15e8c5ad0cc12abf4a3ab308bb48f22adf8ec13776d72ceeaa1f8d402b8	PASS	fast-filter-recode-plain (fused aligned byte ranges with direct filtering/recode)
+plain_vcf	4	v0.14.2	53.83	59.018	5.178	376	484448	59434159621	d4f2a15e8c5ad0cc12abf4a3ab308bb48f22adf8ec13776d72ceeaa1f8d402b8	PASS	fast-filter-recode-plain (fused aligned byte ranges with direct filtering/recode)
+plain_vcf	8	v0.14.2	32.51	42.811	10.293	662	793268	59434159621	d4f2a15e8c5ad0cc12abf4a3ab308bb48f22adf8ec13776d72ceeaa1f8d402b8	PASS	fast-filter-recode-plain (fused aligned byte ranges with direct filtering/recode)
+plain_vcf	12	v0.14.2	27.42	37.412	9.987	952	770644	59434159621	d4f2a15e8c5ad0cc12abf4a3ab308bb48f22adf8ec13776d72ceeaa1f8d402b8	PASS	fast-filter-recode-plain (fused aligned byte ranges with direct filtering/recode)
+plain_vcf	16	v0.14.2	32.05	42.772	10.715	845	806428	59434159621	d4f2a15e8c5ad0cc12abf4a3ab308bb48f22adf8ec13776d72ceeaa1f8d402b8	PASS	fast-filter-recode-plain (fused aligned byte ranges with direct filtering/recode)
+plain_vcf	24	v0.14.2	29.65	41.995	12.335	1013	810228	59434159621	d4f2a15e8c5ad0cc12abf4a3ab308bb48f22adf8ec13776d72ceeaa1f8d402b8	PASS	fast-filter-recode-plain (fused aligned byte ranges with direct filtering/recode)
+plain_vcf	28	v0.14.2	32.72	44.611	11.882	895	839096	59434159621	d4f2a15e8c5ad0cc12abf4a3ab308bb48f22adf8ec13776d72ceeaa1f8d402b8	PASS	fast-filter-recode-plain (fused aligned byte ranges with direct filtering/recode)
+plain_vcf	32	v0.14.2	31.72	42.858	11.131	940	813072	59434159621	d4f2a15e8c5ad0cc12abf4a3ab308bb48f22adf8ec13776d72ceeaa1f8d402b8	PASS	fast-filter-recode-plain (fused aligned byte ranges with direct filtering/recode)

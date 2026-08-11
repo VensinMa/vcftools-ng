@@ -1,0 +1,77 @@
+vcftools-ng 0.14.2
+Log format: vcftools-ng-text-v1
+Start time: 2026-08-11T19:10:11+08:00
+Command: /home/vensin/workspace/vcftools-ng-benchmark-v0142/binaries/v0142/vcftools-ng-v0.14.2-linux-x86_64/libexec/vcftools-ng.bin --gzvcf /home/vensin/workspace/Sweet_Osmanthus/05.variant_filter/02.vcftools_filter_snp_indel/412samples.SNP.biallelic.minGQ10.minQ30.meanDP6.maxmiss0.8.maf0.05.vcf.gz --threads 2 --min-alleles 2 --max-alleles 2 --minGQ 10 --minQ 30 --min-meanDP 7 --max-missing 0.9 --maf 0.1 --recode-vcf --recode-INFO-all --no-log-file --out /home/vensin/workspace/vcftools-ng-benchmark-v0142/ssd/bgzf_tbi-t2-v0.14.2-r1/output
+Working directory: /home/vensin/workspace/vcftools-ng
+Log file: disabled (--no-log-file)
+
+Input: /home/vensin/workspace/Sweet_Osmanthus/05.variant_filter/02.vcftools_filter_snp_indel/412samples.SNP.biallelic.minGQ10.minQ30.meanDP6.maxmiss0.8.maf0.05.vcf.gz
+Input format: BGZF VCF
+Input size: 18940264903 bytes
+Storage: non-rotational
+Requested threads: 2
+Effective threads: 2
+Batch size: 2048
+
+Outputs:
+  Recode VCF: /home/vensin/workspace/vcftools-ng-benchmark-v0142/ssd/bgzf_tbi-t2-v0.14.2-r1/output.recode.vcf
+  Log: disabled
+  INFO fields: all (--recode-INFO-all)
+
+Output parameters:
+  --recode-vcf
+  --recode-INFO-all
+
+Filters:
+  --min-alleles 2
+  --max-alleles 2
+  --minQ 30
+  --minGQ 10
+  --min-meanDP 7
+  --max-missing 0.9
+  --maf 0.1
+
+Execution kernel: fused-text-filter-recode
+Execution components: vcf-recode
+Fused text fast path: selected
+Parser policy: adaptive specialized with generic fallback
+Decode fields: GT,DP,GQ
+Index policy: automatic
+Index workload: full-file recode
+Index decision reason: adaptive policy: multi-thread BGZF recode favors indexed access; BGZF VCF, 2 effective threads
+Existing sidecar: /home/vensin/workspace/Sweet_Osmanthus/05.variant_filter/02.vcftools_filter_snp_indel/412samples.SNP.biallelic.minGQ10.minQ30.meanDP6.maxmiss0.8.maf0.05.vcf.gz.tbi
+Index type: TBI
+Index validation: PASS (/home/vensin/workspace/Sweet_Osmanthus/05.variant_filter/02.vcftools_filter_snp_indel/412samples.SNP.biallelic.minGQ10.minQ30.meanDP6.maxmiss0.8.maf0.05.vcf.gz.tbi)
+Decision: use existing index
+Reason: adaptive policy: multi-thread BGZF recode favors indexed access
+Index used: yes
+Stage time [fused scan/filter/output]: 151.019 seconds
+Stage time [output finalization]: 0.000 seconds
+Selected backend: fast-filter-recode-indexed-bgzf
+Index used: yes
+Input backend: fast-filter-recode-indexed-bgzf (ordered tabix regions with direct filtering/recode via /home/vensin/workspace/Sweet_Osmanthus/05.variant_filter/02.vcftools_filter_snp_indel/412samples.SNP.biallelic.minGQ10.minQ30.meanDP6.maxmiss0.8.maf0.05.vcf.gz.tbi)
+Samples: 412
+Threads: 2 (user specified)
+Stage concurrency: input 2, HTSlib I/O 0, compute fused
+Input threads: 2
+HTSlib I/O threads: 0
+Compute threads: fused
+Planned input shards: 32
+Selected samples: 412
+Scheduler: adaptive fused text filter/recode
+After filtering, kept 5425725 out of 11230392 sites
+Kept sites: 5425725
+Total sites: 11230392
+
+Output results:
+  Output format: Plain VCF
+  Recode VCF: /home/vensin/workspace/vcftools-ng-benchmark-v0142/ssd/bgzf_tbi-t2-v0.14.2-r1/output.recode.vcf
+  Output bytes: 59434159204
+
+Wall time: 151.019 seconds
+User CPU time: 263.291 seconds
+System CPU time: 50.378 seconds
+Average CPU: 207.702%
+Peak RSS: 6409584 KiB
+Exit status: success
+End time: 2026-08-11T19:12:42+08:00

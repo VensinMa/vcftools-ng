@@ -6,7 +6,7 @@
 存储设备或样本选择密度得到的加速比，不能表述为所有 vcftools-ng 命令的
 统一保证。
 
-## v0.14.1 的实际范围
+## v0.14.2 的实际范围
 
 v0.13.0 的直接文本内核并非只支持统计。对于满足条件的 Plain/BGZF VCF，
 它可以把七参数过滤、位点局部统计和 VCF 重编码融合到一次扫描。七个过滤
@@ -25,6 +25,10 @@ BGZF加入有界解压/计算重叠；满足条件的LD、精确PCA和有索引B
 v0.14.1将每次运行编译为一个不可变能力计划，去掉GT-only分析中未使用的
 FORMAT字段工作，优化确定性LD/PCA后处理存储，并加固异常输入、故障和倍性
 边界；上述未正式发布的v0.13.2工作全部纳入v0.14.1。
+
+v0.14.2不改变上述科学语义，修正便携与存储层：私有libdeflate 1.25、
+格式感知的严格BCF流式规划，以及Plain VCF超过8 GiB后使用对齐pread；
+较小Plain输入继续保留零拷贝mmap。
 
 每次运行日志记录 `Execution kernel`、`Execution components`、输入后端、
 线程分配和高层阶段耗时。基准结果必须同时记录这些字段，让退出 fast path
@@ -57,10 +61,9 @@ Tajima's D 使用 100 kb 窗口。该值来自当前项目配置；以后修改�
 v0.13.1锁定230,000位点SSD/NVMe W03-W10矩阵；v0.13.2为新增内核补充稳定
 230k A/B，避免把23k中亚秒级
 启动噪声当作吞吐结论。更大候选版本使用标准2,300,000位点真实子集；
-v0.14.1稳定本地扩展线程集合为`1 2 4 8 12 16 24 28 32`。其
-11,230,392位点发布门禁在四种代表输入场景（BGZF+TBI、BGZF+automatic
-CSI、Plain VCF、BCF自适应stream）下对同一七参数精确重编码负载测试上述
-九个线程数。
+稳定本地扩展线程集合为`1 2 4 8 12 16 24 28 32`。v0.14.2在同一SSD上
+对BGZF+TBI、Plain VCF和BCF自适应stream进行真实便携包统一A/B，并分别
+记录程序时间及`sync -f`后的durable时间。
 
 可复用驱动是
 [`benchmarks/run-workload-matrix.sh`](../benchmarks/run-workload-matrix.sh)。
@@ -74,7 +77,8 @@ oracle。
 
 - Original VCFtools 0.1.17 的 golden 和时间只生成一次，保存哈希并长期
   复用；日常优化不重新运行 Original。
-- 第一轮执行完整逐字节门禁，通过后后续重复才只用于计时。
+- 日常每行只运行一次并执行完整字节/哈希门禁。性能差异在5%以内视为基本
+  持平；该范围绝不用于科学输出，科学输出仍要求精确字节一致。
 - 文本结果使用 `cmp`；BGZF 解压后与 Original VCF oracle 比较；BCF 使用
   现有的规范化兼容流程。
 - exact 模式下窗口和群体统计仍要求逐字节一致，数值容差不能代替门禁。
@@ -98,6 +102,7 @@ v0.13.1 已提交矩阵、精简计时、oracle/输入哈希和固定runner见
 [`benchmarks/results/workload-matrix-230k-v0130/RESULTS.zh-CN.md`](../benchmarks/results/workload-matrix-230k-v0130/RESULTS.zh-CN.md)。
 v0.13.2九类精确门禁、oracle哈希和A/B摘要见
 [`benchmarks/results/v0132-development-gate/README.md`](../benchmarks/results/v0132-development-gate/README.md)。
-v0.14.1完整数据发布驱动和精简结果分别位于
-[`benchmarks/run-v0141-full-release-matrix.sh`](../benchmarks/run-v0141-full-release-matrix.sh)
-与`benchmarks/results/final-full-v0141/`。
+v0.14.2统一便携包驱动和结果分别位于
+[`benchmarks/run-v0142-unified-full-ab.sh`](../benchmarks/run-v0142-unified-full-ab.sh)
+与
+[`benchmarks/results/full-unified-v0142-ab/`](../benchmarks/results/full-unified-v0142-ab/README.zh-CN.md)。

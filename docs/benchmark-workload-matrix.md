@@ -6,7 +6,7 @@ Performance claims are workload-specific. A speedup measured for one output,
 filter set, input format, storage device, or selected-sample density must not
 be presented as a guarantee for every vcftools-ng command.
 
-## v0.14.1 scope
+## v0.14.2 scope
 
 The v0.13.0 direct text kernel is not limited to statistics. For eligible
 Plain or BGZF VCF input it fuses the common seven-filter workload with
@@ -30,6 +30,11 @@ v0.14.1 compiles every invocation into one immutable capability plan, removes
 unused FORMAT-field work from GT-only analyses, specializes deterministic LD
 and PCA post-scan storage, and hardens malformed-input/failure/ploidy
 boundaries. It incorporates the unreleased v0.13.2 work above.
+
+v0.14.2 preserves those scientific semantics and corrects the portable and
+storage layer: private libdeflate 1.25, format-aware strict BCF stream
+planning, and aligned pread for Plain VCF above 8 GiB. Smaller Plain inputs
+retain zero-copy mmap.
 
 Every run log records `Execution kernel`, `Execution components`, input
 backend, thread allocation, and high-level stage times. These fields must be
@@ -65,10 +70,9 @@ three repeats. v0.13.1 locks a 230,000-record SSD/NVMe matrix for W03-W10;
 v0.13.2 adds stable 230k A/B cases for its new kernels
 so sub-second 23k startup noise is not presented as throughput. Larger
 release-candidate runs use the standard 2,300,000-record real subset. The
-v0.14.1 stabilized local scaling set is `1 2 4 8 12 16 24 28 32`. Its
-11,230,392-record release gate applies the exact seven-filter recode workload
-to four representative input scenarios (BGZF+TBI, BGZF+automatic CSI, Plain
-VCF, and adaptive-stream BCF) at the same nine thread counts.
+stabilized local scaling set is `1 2 4 8 12 16 24 28 32`. v0.14.2 uses a
+unified same-SSD portable A/B for BGZF+TBI, Plain VCF, and adaptive-stream
+BCF. Application and post-`sync -f` durable time are recorded separately.
 
 The reusable driver is
 [`benchmarks/run-workload-matrix.sh`](../benchmarks/run-workload-matrix.sh).
@@ -83,8 +87,9 @@ Original oracle.
 
 - Original VCFtools 0.1.17 goldens and timings are generated once, hashed,
   and retained. They are not regenerated during ordinary optimization.
-- Repeat one is the byte-for-byte gate. Later repeats are timing-only after
-  that gate succeeds.
+- Each routine row runs once and is a complete byte/hash gate. Performance
+  differences within 5% are treated as tied; this band never applies to
+  scientific output bytes.
 - Text outputs use `cmp`; BGZF output is decompressed and compared with the
   Original VCF text oracle; BCF uses the existing canonical compatibility
   procedure.
@@ -114,6 +119,7 @@ runner are in
 [`benchmarks/results/workload-matrix-230k-v0130/RESULTS.md`](../benchmarks/results/workload-matrix-230k-v0130/RESULTS.md).
 The v0.13.2 nine-family exact gate, oracle hashes, and A/B summary are in
 [`benchmarks/results/v0132-development-gate/README.md`](../benchmarks/results/v0132-development-gate/README.md).
-The v0.14.1 complete-data release driver and compact result are
-[`benchmarks/run-v0141-full-release-matrix.sh`](../benchmarks/run-v0141-full-release-matrix.sh)
-and `benchmarks/results/final-full-v0141/`.
+The v0.14.2 unified portable driver and result are
+[`benchmarks/run-v0142-unified-full-ab.sh`](../benchmarks/run-v0142-unified-full-ab.sh)
+and
+[`benchmarks/results/full-unified-v0142-ab/`](../benchmarks/results/full-unified-v0142-ab/README.md).

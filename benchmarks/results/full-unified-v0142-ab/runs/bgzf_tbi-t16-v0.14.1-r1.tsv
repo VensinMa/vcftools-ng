@@ -1,0 +1,2 @@
+scenario	threads	repeat	version	wall_s	durable_s	flush_s	cpu_pct	max_rss_kb	output_bytes	sha256	exact	kept	total	backend
+bgzf_tbi	16	1	v0.14.1	35.79	48.254	12.453	1555	8891544	59434159204	7548416e01d4a318b81c5d1feb9429f60c7995205d66169242c3792af4c4fc14	PASS	5425725	11230392	fast-filter-recode-indexed-bgzf (ordered tabix regions with direct filtering/recode via /home/vensin/workspace/Sweet_Osmanthus/05.variant_filter/02.vcftools_filter_snp_indel/412samples.SNP.biallelic.minGQ10.minQ30.meanDP6.maxmiss0.8.maf0.05.vcf.gz.tbi)
