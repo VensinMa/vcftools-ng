@@ -7,7 +7,6 @@ fixture="$source_root/tests/fixtures/fast-site-stats.vcf"
 numeric_fixture="$source_root/tests/fixtures/numeric-edge.vcf"
 numeric_golden="$source_root/tests/golden/numeric-edge"
 no_contig_fixture="$source_root/tests/fixtures/no-contig.vcf"
-bgzf_fixture="$source_root/tests/fixtures/osmanthus412.flags.23chr_1k.vcf.gz"
 numeric_pop1="$source_root/tests/fixtures/numeric-population-1.txt"
 numeric_pop2="$source_root/tests/fixtures/numeric-population-2.txt"
 multiallelic_fixture="$source_root/tests/fixtures/multiallelic-cutovers.vcf"
@@ -19,6 +18,27 @@ cleanup() {
     rm -rf -- "$work"
 }
 trap cleanup EXIT INT TERM
+
+# Generate the compressed failure-injection fixture from committed text
+# instead of depending on the large local Osmanthus fixture.  The latter is
+# intentionally excluded from Git, so referencing it here made this test pass
+# in the development workspace but fail in every clean CI checkout.  Varying
+# positions keep the BGZF output comfortably larger than the truncation size.
+bgzf_source="$work/generated-bgzf-source.vcf"
+awk 'BEGIN {
+    print "##fileformat=VCFv4.2"
+    print "##contig=<ID=chr1,length=50000>"
+    print "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO"
+    for (i = 1; i <= 50000; ++i) {
+        print "chr1\t" i "\t.\tA\tG\t30\tPASS\t."
+    }
+}' >"$bgzf_source"
+"$ng" --vcf "$bgzf_source" --threads 1 --recode \
+    --out "$work/generated-bgzf" \
+    >"$work/generated-bgzf.stdout" 2>"$work/generated-bgzf.stderr"
+bgzf_fixture="$work/generated-bgzf.recode.vcf.gz"
+test -s "$bgzf_fixture"
+test "$(stat -c %s "$bgzf_fixture")" -gt 8192
 
 # A failed multi-output publication must preserve every old destination and
 # remove all private staged files.
