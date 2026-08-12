@@ -72,7 +72,7 @@ These options are additions, not Original-compatible parameter names:
 
 | Extension | Purpose and validation |
 |---|---|
-| `--threads N`, `-t N` | Sets the shared input/compute/I/O CPU budget. When omitted, vcftools-ng intersects scheduler, affinity, cgroup, and hardware limits and caps automatic selection at 128. |
+| `--threads N`, `-t N` | Sets the process-tree CPU budget. On Linux vcftools-ng and automatic bcftools children inherit an affinity set of at most N CPUs; waiting I/O workers may overlap. When omitted, scheduler, affinity, cgroup, and hardware limits are intersected and automatic selection is capped at 128. |
 | `--batch-size N` | Tunes the bounded generic pipeline batch size. |
 | `--input FILE` | Auto-detected input alias for `--vcf`/`--gzvcf`/`--bcf`. |
 | `--compat exact` | Explicitly selects the only currently implemented compatibility mode. |

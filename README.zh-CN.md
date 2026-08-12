@@ -5,7 +5,7 @@
 vcftools-ng 是面向常用 VCF 过滤、统计、群体遗传分析和格式重编码任务的
 高性能 VCFtools 0.1.17 兼容实现。
 
-**推荐版本：** [v0.14.2 — Portable I/O Recovery](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.14.2)
+**推荐版本：** [v0.14.3 — Strict CPU Budget Recovery](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.14.3)
 
 它保留 VCFtools 风格的命令，并在明确声明兼容的范围内保证科学结果一致；
 内部使用 HTSlib、按工作负载选择的专用解析器、有界并行流水线和自适应输入
@@ -56,11 +56,11 @@ CentOS 7 和 Ubuntu 20.04 容器中验证。`bin` 中只有 `vcftools-ng`，私�
 工具位于 `libexec`，不会污染用户的 PATH。
 
 ```bash
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.14.2/vcftools-ng-v0.14.2-linux-x86_64.tar.gz
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.14.2/vcftools-ng-v0.14.2-linux-x86_64.tar.gz.sha256
-sha256sum -c vcftools-ng-v0.14.2-linux-x86_64.tar.gz.sha256
-tar -xzf vcftools-ng-v0.14.2-linux-x86_64.tar.gz
-./vcftools-ng-v0.14.2-linux-x86_64/bin/vcftools-ng --help
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.14.3/vcftools-ng-v0.14.3-linux-x86_64.tar.gz
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.14.3/vcftools-ng-v0.14.3-linux-x86_64.tar.gz.sha256
+sha256sum -c vcftools-ng-v0.14.3-linux-x86_64.tar.gz.sha256
+tar -xzf vcftools-ng-v0.14.3-linux-x86_64.tar.gz
+./vcftools-ng-v0.14.3-linux-x86_64/bin/vcftools-ng --help
 ```
 
 不需要编译器、CMake、Conda 环境、系统 HTSlib 或系统 bcftools。解压后的
@@ -121,7 +121,7 @@ vcftools-ng --gzvcf input.vcf.gz --threads 16 \
 |---|---|---|
 | 文件形式的 `--recode` | 确定性 BGZF VCF：`PREFIX.recode.vcf.gz` | 用 `--recode-vcf` 输出未压缩的 `PREFIX.recode.vcf` |
 | 输入后端/索引 | 根据格式、工作负载、存储和有效线程自适应 | 高级诊断：`--input-backend stream\|plain\|indexed` |
-| 线程数 | 综合调度器、CPU affinity、cgroup 和硬件限制，自动模式最高 128 | 用 `--threads N` / `-t N` 指定有效资源范围内的预算 |
+| 线程数 | 综合调度器、CPU affinity、cgroup 和硬件限制，自动模式最高 128 | `--threads N` / `-t N` 将完整进程树限制在最多 N 个可运行 CPU；等待 I/O 的 worker 可以重叠，但不会增加可用 CPU 容量 |
 | 运行日志 | 默认写入 `PREFIX.log`，终端信息继续保留 | `--log-file FILE` 或 `--no-log-file` |
 | 多种输出 | 能兼容的分析共享同一次扫描 | 在一条命令中列出全部所需输出参数 |
 | 运行失败 | 科学结果先暂存，全部成功后事务式发布 | 无需设置；失败时保留原有目标文件 |
@@ -156,7 +156,7 @@ BCF 即使已有 CSI，通常仍选择更快的流式路径；限制染色体/�
 
 | 参数 | 默认状态 | 用途 |
 |---|---|---|
-| `--threads N`、`-t N` | 自动，最高 128 | 设置全流程共享 CPU 预算 |
+| `--threads N`、`-t N` | 自动，最高 128 | 设置包含 BGZF 输出压缩在内的全流程严格 CPU 总预算 |
 | `--input FILE` | — | 自动识别 VCF、BGZF VCF 或 BCF |
 | `--recode-vcf-gz` | 关闭 | 显式生成确定性 BGZF VCF |
 | `--recode-vcf` | 关闭 | 显式生成未压缩 VCF |
@@ -173,6 +173,13 @@ BCF 即使已有 CSI，通常仍选择更快的流式路径；限制染色体/�
 - 日常使用保持 `--input-backend auto`。
 - 调度器/cgroup 配置正确时可以不写 `--threads`；否则应填写作业实际获得的
   CPU 数，而不是服务器的总核心数。
+- `--threads N` 是整个进程树的 CPU 上限，不承诺 pthread 对象数恰好不超过
+  N。Linux 下主进程和自动调用的 bcftools 子进程会被限制在最多 N 个 CPU；
+  输入/输出 worker 在等待 I/O 或有序队列时可以重叠，但不能同时在超过 N 个
+  核心上执行。大型服务器可以
+  显式指定超过 128 的值，但仍会与调度器、cgroup、CPU affinity 的实际分配
+  求交；只有自动检测模式最高为 128。资源规划不变量已枚举验证到 65,536
+  个逻辑线程。
 - 优先使用 `--recode` 输出 BGZF，避免产生超大的普通 VCF，机械硬盘上尤其
   重要。只有下游明确要求未压缩 VCF 时才使用 `--recode-vcf`。
 - 需要保留全部 INFO 注释时添加 `--recode-INFO-all`。
@@ -194,6 +201,7 @@ BCF 即使已有 CSI，通常仍选择更快的流式路径；限制染色体/�
 | 每项性能结论由哪个工作负载支持 | [代表性工作负载矩阵](docs/benchmark-workload-matrix.zh-CN.md) |
 | 多版本完整结果和原始基准记录 | [基准档案](benchmarks/README.md) |
 | v0.14.2 完整数据 A/B 与结果门禁 | [v0.14.2 证据](benchmarks/results/full-unified-v0142-ab/README.zh-CN.md) |
+| v0.14.3 严格 CPU 预算设计和公平 23 万 A/B | [v0.14.3 记录](docs/versions/v0.14.3.md) |
 | 从源码构建和验证命令 | [构建与验证](TECHNICAL_REFERENCE.zh-CN.md#从源码构建) |
 | 输入/索引调度和 capability planner | [自适应输入后端](docs/architecture/adaptive-input-backends.md)和 [QueryPlan](docs/architecture/query-plan.md) |
 | Release 如何测试、打包与发布 | [发布流程](docs/release-workflow.md) |

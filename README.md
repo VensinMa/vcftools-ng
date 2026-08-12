@@ -5,7 +5,7 @@
 A high-performance, output-compatible successor to VCFtools 0.1.17 for common
 VCF filtering, statistics, population analyses, and recoding workloads.
 
-**Recommended release:** [v0.14.2 — Portable I/O Recovery](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.14.2)
+**Recommended release:** [v0.14.3 — Strict CPU Budget Recovery](https://github.com/VensinMa/vcftools-ng/releases/tag/v0.14.3)
 
 vcftools-ng keeps VCFtools-style commands and exact scientific output where
 compatibility is claimed, while using HTSlib, workload-specific parsers,
@@ -65,11 +65,11 @@ The portable Linux x86_64 archive runs after extraction. It targets glibc
 `libexec`.
 
 ```bash
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.14.2/vcftools-ng-v0.14.2-linux-x86_64.tar.gz
-curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.14.2/vcftools-ng-v0.14.2-linux-x86_64.tar.gz.sha256
-sha256sum -c vcftools-ng-v0.14.2-linux-x86_64.tar.gz.sha256
-tar -xzf vcftools-ng-v0.14.2-linux-x86_64.tar.gz
-./vcftools-ng-v0.14.2-linux-x86_64/bin/vcftools-ng --help
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.14.3/vcftools-ng-v0.14.3-linux-x86_64.tar.gz
+curl -LO https://github.com/VensinMa/vcftools-ng/releases/download/v0.14.3/vcftools-ng-v0.14.3-linux-x86_64.tar.gz.sha256
+sha256sum -c vcftools-ng-v0.14.3-linux-x86_64.tar.gz.sha256
+tar -xzf vcftools-ng-v0.14.3-linux-x86_64.tar.gz
+./vcftools-ng-v0.14.3-linux-x86_64/bin/vcftools-ng --help
 ```
 
 No compiler, CMake, Conda environment, system HTSlib, or system bcftools is
@@ -131,7 +131,7 @@ segments. Use one sample ID per line in each population file.
 |---|---|---|
 | `--recode` file output | Deterministic BGZF VCF: `PREFIX.recode.vcf.gz` | Use `--recode-vcf` for uncompressed `PREFIX.recode.vcf` |
 | Input backend/index | Adaptive by format, workload, storage, and effective threads | Advanced diagnostics: `--input-backend stream\|plain\|indexed` |
-| Threads | Detect scheduler, affinity, cgroup, and hardware limits; automatic maximum 128 | `--threads N` / `-t N` within the effective allocation |
+| Threads | Detect scheduler, affinity, cgroup, and hardware limits; automatic maximum 128 | `--threads N` / `-t N` restricts the complete process tree to at most N runnable CPUs; I/O-waiting workers may overlap without increasing CPU capacity |
 | Run log | `PREFIX.log` is written and terminal diagnostics remain enabled | `--log-file FILE` or `--no-log-file` |
 | Multiple outputs | Compatible analyses share one scan | List all required output parameters in one command |
 | Failed output | Scientific files are staged and published transactionally | No override; pre-existing destinations are preserved on failure |
@@ -173,7 +173,7 @@ and inherited Original quirks, use the
 
 | Option | Default | Purpose |
 |---|---|---|
-| `--threads N`, `-t N` | Automatic, capped at 128 | Shared CPU budget |
+| `--threads N`, `-t N` | Automatic, capped at 128 | Strict shared CPU budget for the complete pipeline, including BGZF output compression |
 | `--input FILE` | — | Auto-detect VCF, BGZF VCF, or BCF |
 | `--recode-vcf-gz` | Off | Explicit deterministic BGZF VCF output |
 | `--recode-vcf` | Off | Explicit uncompressed VCF output |
@@ -190,6 +190,13 @@ output suffixes, defaults, and examples.
 - Keep `--input-backend auto` unless diagnosing a backend.
 - Omit `--threads` when scheduler/cgroup limits are correct; otherwise set it
   to the CPU allocation actually granted to the job, not the server total.
+- `--threads N` is a process-tree CPU ceiling, not a pthread-count promise.
+  On Linux the process and automatic bcftools children are restricted to at
+  most N allowed CPUs. Input/output workers may overlap while blocked on I/O
+  or ordered queues, but cannot execute on more than N cores. Explicit
+  values may exceed 128 on large servers but are intersected with the actual
+  scheduler/cgroup/affinity allocation; only automatic detection is capped at
+  128. Resource-planning invariants are tested through 65,536 logical threads.
 - Prefer `--recode` (BGZF) to avoid very large plain-VCF writes, especially on
   HDD storage. Use `--recode-vcf` only when another tool requires plain VCF.
 - Add `--recode-INFO-all` when all input INFO annotations must be retained.
@@ -213,6 +220,7 @@ rejected explicitly; they do not silently enter an incompatible fast kernel.
 | Which benchmark supports which performance claim | [Representative workload matrix](docs/benchmark-workload-matrix.md) |
 | Complete multi-version and raw benchmark results | [Benchmark archive](benchmarks/README.md) |
 | v0.14.2 full-data A/B and exact-output gates | [v0.14.2 evidence](benchmarks/results/full-unified-v0142-ab/README.md) |
+| v0.14.3 strict CPU-budget design and fair 230k A/B | [v0.14.3 record](docs/versions/v0.14.3.md) |
 | Build from source and verification commands | [Build and verify](TECHNICAL_REFERENCE.md#build-from-source) |
 | Input/index scheduling and capability planning | [Adaptive input backends](docs/architecture/adaptive-input-backends.md) and [QueryPlan](docs/architecture/query-plan.md) |
 | How a release is tested, packaged, and published | [Release workflow](docs/release-workflow.md) |

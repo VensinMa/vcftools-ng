@@ -134,6 +134,25 @@ install(
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(
+    resource_budget_test
+    tests/resource_budget.cpp
+    src/input_source.cpp
+  )
+  target_include_directories(
+    resource_budget_test
+    PRIVATE
+      "${CMAKE_CURRENT_SOURCE_DIR}/src"
+      "${HTSLIB_INCLUDE_DIR}"
+  )
+  target_link_libraries(
+    resource_budget_test PRIVATE "${HTSLIB_LIBRARY}" Threads::Threads
+  )
+  target_compile_options(
+    resource_budget_test PRIVATE -Wall -Wextra -Wpedantic
+  )
+  add_test(NAME resource_budget COMMAND resource_budget_test)
+
   find_program(BCFTOOLS_EXECUTABLE NAMES bcftools)
   add_test(
     NAME help_output
@@ -153,6 +172,20 @@ if(BUILD_TESTING)
       run_logging PROPERTIES
       ENVIRONMENT "BCFTOOLS=${BCFTOOLS_EXECUTABLE}"
     )
+    # ASan/LSan runtimes create their own helper thread, so /proc task counts
+    # no longer measure the application's strict budget. Keep this gate on
+    # normal Linux builds; sanitizer jobs still exercise all planning,
+    # compatibility, and failure paths.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
+       NOT CMAKE_CXX_FLAGS MATCHES "fsanitize")
+      add_test(
+        NAME thread_budget
+        COMMAND
+          "${CMAKE_CURRENT_SOURCE_DIR}/tests/thread_budget.sh"
+          "$<TARGET_FILE:vcftools-ng>"
+          "${BCFTOOLS_EXECUTABLE}"
+      )
+    endif()
   else()
     message(STATUS "bcftools not found: run_logging test is disabled")
   endif()

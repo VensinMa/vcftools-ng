@@ -39,13 +39,15 @@ struct ResourcePlan {
     unsigned input_threads = 0;
     unsigned compute_threads = 1;
     unsigned hts_io_threads = 0;
+    unsigned hts_coordinator_threads = 0;
     bool storage_profile_known = false;
     bool rotational_storage = false;
     bool page_cache_prefetched = false;
 };
 
 // Shared resource planner for ordered Plain/gzip/BGZF/BCF stream readers.
-// The input reader and HTSlib workers are included in the total CPU budget.
+// The input reader, HTSlib queue coordinator, and workers are included in the
+// total CPU budget.
 // BCF uses a format-specific decode share; BGZF VCF retains its smaller
 // compressed-text feeder allocation.
 ResourcePlan plan_stream_resources(
@@ -60,6 +62,9 @@ struct SourceOptions {
     bool parallel_safe = true;
     WorkloadProfile workload = WorkloadProfile::general;
     std::string bcftools_path = "bcftools";
+    // Background threads already alive in vcftools-ng while a synchronous
+    // automatic-index child is running (for example BGZF output workers).
+    unsigned active_background_threads = 0;
     std::string index_path;
     std::set<std::string> selected_contigs;
     int start_position = -1;
@@ -77,9 +82,11 @@ public:
     virtual std::size_t planned_shards() const noexcept = 0;
     virtual std::string backend_name() const = 0;
     virtual std::string description() const = 0;
+    virtual void release_workers() noexcept {}
 };
 
 AvailableThreads detect_available_threads();
+void enforce_cpu_budget(unsigned maximum_cpus);
 Backend parse_backend(const std::string& value);
 std::string describe_input_format(const std::string& path);
 std::string describe_storage(const std::string& path);

@@ -50,6 +50,10 @@ ResourcePlan plan_stream_resources(
         plan.compute_threads = 0;
         return plan;
     }
+    // HTSlib creates one queue/coordinator thread in addition to the count
+    // passed to hts_set_threads(). The calling thread performs input and
+    // ordered commit in this fused path, so reserve that hidden coordinator
+    // before dividing the remaining strict budget.
     plan.input_threads = 1;
     if (bcf_stream && plan.total_threads > 2) {
         // BCF full scans spend substantially more time in HTSlib record
@@ -61,15 +65,53 @@ ResourcePlan plan_stream_resources(
         const unsigned decode_share =
             (plan.total_threads + 3u) / 4u;
         plan.hts_io_threads = std::min(
-            decode_share, plan.total_threads - 2u);
+            decode_share, plan.total_threads - 3u);
     } else {
         plan.hts_io_threads =
-            compressed && plan.total_threads > 2
-                ? std::min(3u, plan.total_threads - 2)
+            compressed && plan.total_threads > 3
+                ? std::min(3u, plan.total_threads - 3)
                 : 0;
     }
+    plan.hts_coordinator_threads =
+        plan.hts_io_threads > 0 ? 1u : 0u;
     plan.compute_threads =
-        plan.total_threads - plan.input_threads - plan.hts_io_threads;
+        plan.total_threads - plan.input_threads -
+        plan.hts_io_threads - plan.hts_coordinator_threads;
+    return plan;
+}
+
+ResourcePlan plan_ordered_stream_resources(
+    unsigned total_threads, bool compressed,
+    bool bcf_stream) {
+    ResourcePlan plan;
+    plan.total_threads = std::max(1u, total_threads);
+    plan.input_threads = 1;
+    if (plan.total_threads == 1) {
+        // The calling thread reads, computes, and commits synchronously.
+        plan.compute_threads = 0;
+        return plan;
+    }
+    if (plan.total_threads == 2) {
+        // Reader plus calling committer exhaust the budget. HTSlib parallel
+        // decode would create both a queue coordinator and at least one
+        // worker, so it remains synchronous here.
+        plan.compute_threads = 0;
+        return plan;
+    }
+    // The generic ordered pipeline owns one calling committer and one reader.
+    const unsigned stage_budget = plan.total_threads - 2;
+    if (bcf_stream && stage_budget > 2) {
+        const unsigned decode_share = (plan.total_threads + 3u) / 4u;
+        plan.hts_io_threads = std::min(
+            decode_share, stage_budget - 2u);
+    } else if (compressed && stage_budget > 2) {
+        plan.hts_io_threads = std::min(3u, stage_budget - 2u);
+    }
+    plan.hts_coordinator_threads =
+        plan.hts_io_threads > 0 ? 1u : 0u;
+    plan.compute_threads =
+        stage_budget - plan.hts_io_threads -
+        plan.hts_coordinator_threads;
     return plan;
 }
 
@@ -556,8 +598,20 @@ IndexBuildResult build_csi_index_impl(
             std::chrono::steady_clock::now()
                 .time_since_epoch()
                 .count());
+    // With parallel BGZF input, bcftools 1.24 creates the calling thread plus
+    // one queue coordinator plus the value supplied through --threads.  The
+    // waiting vcftools-ng caller and any already-live output workers also
+    // remain in the process tree.  Reserve all of them; for fewer than three
+    // available child slots, --threads 0 selects bcftools' serial indexer.
+    const unsigned child_slots =
+        options.total_threads > 1u + options.active_background_threads
+            ? options.total_threads - 1u -
+                  options.active_background_threads
+            : 1u;
+    const unsigned background_threads =
+        child_slots >= 3u ? child_slots - 2u : 0u;
     const std::string thread_count =
-        std::to_string(std::max(1u, options.total_threads));
+        std::to_string(background_threads);
 
     std::cerr
         << "Auto-index: no CSI/TBI sidecar found; running "
@@ -764,36 +818,37 @@ ResourcePlan plan_resources(
     plan.rotational_storage = rotational.value_or(false);
     plan.page_cache_prefetched = page_cache_prefetched;
     if (parallel_input) {
-        if (plan.rotational_storage &&
+        if (plan.total_threads <= 3) {
+            // The caller consumes, computes, and commits synchronously.
+            plan.input_threads = plan.total_threads - 1;
+            plan.compute_threads = 0;
+        } else if (plan.rotational_storage &&
             !plan.page_cache_prefetched) {
             plan.input_threads = 1;
-            plan.compute_threads =
-                plan.total_threads > 1
-                    ? plan.total_threads - 1
-                    : 1;
+            plan.compute_threads = plan.total_threads - 3;
         } else {
             // VCF range workers also decompress and parse text.  The
             // cross-thread sweep follows an approximately 80:20
             // input-to-compute curve; ceil(total/5) keeps compute growth
             // monotonic when extrapolated beyond the local 32-CPU host.
+            const unsigned stage_budget = plan.total_threads - 2;
             plan.compute_threads =
                 text_parsing
-                    ? std::max(
-                          1u, (plan.total_threads + 4u) / 5u)
-                    : std::max(1u, plan.total_threads / 3u);
+                    ? std::max(1u, (stage_budget + 4u) / 5u)
+                    : std::max(1u, stage_budget / 3u);
             const unsigned input_budget =
-                plan.total_threads > 1
-                    ? plan.total_threads - plan.compute_threads
-                    : 1;
+                stage_budget - plan.compute_threads;
             plan.input_threads = std::min(
                 input_budget,
                 descriptor_limited_input_threads(input_budget));
         }
     } else {
-        const ResourcePlan stream = plan_stream_resources(
+        const ResourcePlan stream = plan_ordered_stream_resources(
             plan.total_threads, compressed_stream, bcf_stream);
         plan.input_threads = stream.input_threads;
         plan.hts_io_threads = stream.hts_io_threads;
+        plan.hts_coordinator_threads =
+            stream.hts_coordinator_threads;
         plan.compute_threads = stream.compute_threads;
     }
     const auto input_override = stage_thread_override(
@@ -822,16 +877,19 @@ ResourcePlan plan_resources(
             *input_override,
             descriptor_limited_input_threads(*input_override));
         plan.hts_io_threads = 0;
+        plan.hts_coordinator_threads = 0;
         plan.compute_threads = *compute_override;
     } else if (hts_io_override) {
         if (parallel_input || !compressed_stream ||
-            *hts_io_override > plan.total_threads ||
+            plan.total_threads <= 1 ||
+            *hts_io_override >= plan.total_threads ||
             *compute_override >
-                plan.total_threads - *hts_io_override) {
+                plan.total_threads - *hts_io_override - 1u) {
             fail("Invalid development HTSlib-I/O/compute thread split");
         }
         plan.input_threads = 0;
         plan.hts_io_threads = *hts_io_override;
+        plan.hts_coordinator_threads = 1;
         plan.compute_threads = *compute_override;
     }
     return plan;
@@ -1022,6 +1080,13 @@ public:
         return result;
     }
 
+    void release_workers() noexcept override {
+        // The ordered pipeline has consumed EOF. Closing the handle also
+        // joins HTSlib's decompression pool before output finalization or
+        // LD/PCA post-processing reuse the thread budget.
+        input_.reset();
+    }
+
 private:
     std::string path_;
     HtsFilePtr input_;
@@ -1086,6 +1151,27 @@ public:
             current_chunk_.records.clear();
             current_record_ = 0;
 
+            if (workers_.empty()) {
+                std::optional<ShardSpec> shard;
+                {
+                    std::lock_guard lock(mutex_);
+                    if (failure_) {
+                        std::rethrow_exception(failure_);
+                    }
+                    if (next_to_assign_ < shards_.size()) {
+                        shard = shards_[next_to_assign_++];
+                    }
+                }
+                if (shard.has_value()) {
+                    try {
+                        read_shard(*shard, 0);
+                    } catch (...) {
+                        std::lock_guard lock(mutex_);
+                        failure_ = std::current_exception();
+                    }
+                }
+            }
+
             std::unique_lock lock(mutex_);
             const auto expected = std::pair{
                 next_shard_to_consume_, next_chunk_to_consume_};
@@ -1119,6 +1205,10 @@ public:
 
     const ResourcePlan& resources() const noexcept override {
         return resources_;
+    }
+
+    void release_workers() noexcept override {
+        stop_workers();
     }
 
     std::size_t planned_shards() const noexcept override {
@@ -1163,8 +1253,7 @@ protected:
     }
 
     void start_workers() {
-        const unsigned count =
-            std::max(1u, resources_.input_threads);
+        const unsigned count = resources_.input_threads;
         workers_.reserve(count);
         for (unsigned worker = 0; worker < count; ++worker) {
             workers_.emplace_back([this, worker] {
@@ -1199,6 +1288,7 @@ protected:
                 worker.join();
             }
         }
+        workers_.clear();
         workers_.clear();
     }
 
@@ -1367,7 +1457,7 @@ public:
               build_plain_shards(
                   options, resources.input_threads),
               resources) {
-        worker_contexts_.resize(resources.input_threads);
+        worker_contexts_.resize(std::max(1u, resources.input_threads));
         for (auto& context : worker_contexts_) {
             context.header = duplicate_header(this->header());
             context.descriptor =
@@ -1838,7 +1928,7 @@ private:
               options, std::move(header),
               std::move(layout.shards), resources),
           is_bcf_(layout.bcf) {
-        contexts_.resize(resources.input_threads);
+        contexts_.resize(std::max(1u, resources.input_threads));
         for (auto& context : contexts_) {
             context.input = open_input(options.path);
             context.header =
@@ -2181,6 +2271,54 @@ AvailableThreads detect_available_threads() {
         });
 }
 
+void enforce_cpu_budget(unsigned maximum_cpus) {
+#if defined(__linux__)
+    maximum_cpus = std::max(1u, maximum_cpus);
+    long configured = sysconf(_SC_NPROCESSORS_CONF);
+    if (configured < 1) {
+        configured = 1;
+    }
+    const std::size_t capacity = std::max<std::size_t>(
+        static_cast<std::size_t>(configured), maximum_cpus);
+    const std::size_t bytes = CPU_ALLOC_SIZE(capacity);
+    cpu_set_t* const current = CPU_ALLOC(capacity);
+    cpu_set_t* const limited = CPU_ALLOC(capacity);
+    if (current == nullptr || limited == nullptr) {
+        CPU_FREE(current);
+        CPU_FREE(limited);
+        fail("Could not allocate dynamic CPU affinity sets");
+    }
+    CPU_ZERO_S(bytes, current);
+    CPU_ZERO_S(bytes, limited);
+    if (sched_getaffinity(0, bytes, current) != 0) {
+        CPU_FREE(current);
+        CPU_FREE(limited);
+        fail(
+            "Could not read CPU affinity for --threads enforcement: " +
+            std::string(std::strerror(errno)));
+    }
+    unsigned selected = 0;
+    for (std::size_t cpu = 0; cpu < capacity && selected < maximum_cpus;
+         ++cpu) {
+        if (CPU_ISSET_S(cpu, bytes, current)) {
+            CPU_SET_S(cpu, bytes, limited);
+            ++selected;
+        }
+    }
+    if (selected == 0 ||
+        sched_setaffinity(0, bytes, limited) != 0) {
+        const std::string detail = std::strerror(errno);
+        CPU_FREE(current);
+        CPU_FREE(limited);
+        fail("Could not enforce --threads CPU affinity: " + detail);
+    }
+    CPU_FREE(current);
+    CPU_FREE(limited);
+#else
+    (void)maximum_cpus;
+#endif
+}
+
 Backend parse_backend(const std::string& value) {
     if (value == "auto") {
         return Backend::automatic;
@@ -2300,7 +2438,15 @@ std::string prepare_variant_index(const SourceOptions& options) {
         << input_format_label(format) << ", full scan, "
         << options.total_threads << " effective threads\n"
         << "Index build threads: "
-        << std::max(1u, options.total_threads) << "\n";
+        << (options.total_threads >
+                    options.active_background_threads + 3u
+                ? options.total_threads -
+                      options.active_background_threads - 3u
+                : 0u)
+        << " bcftools background (strict process-tree budget "
+        << options.total_threads << "; "
+        << options.active_background_threads
+        << " vcftools-ng background already active)\n";
     const IndexBuildResult build = build_csi_index(
         options, format.format == bcf, header.get());
     std::cerr
@@ -2410,7 +2556,15 @@ std::unique_ptr<OrderedShardSource> make_ordered_source(
                 << input_format_label(format) << ", full scan, "
                 << options.total_threads << " effective threads\n"
                 << "Index build threads: "
-                << std::max(1u, options.total_threads) << "\n";
+                << (options.total_threads >
+                            options.active_background_threads + 3u
+                        ? options.total_threads -
+                              options.active_background_threads - 3u
+                        : 0u)
+                << " bcftools background (strict process-tree budget "
+                << options.total_threads << "; "
+                << options.active_background_threads
+                << " vcftools-ng background already active)\n";
             const IndexBuildResult build =
                 build_csi_index(
                     options, format.format == bcf,
@@ -2512,6 +2666,20 @@ std::unique_ptr<OrderedShardSource> make_ordered_source(
         fail(
             "The requested output currently requires the ordered "
             "stream backend");
+    }
+
+    if ((selected == Backend::plain_ranges ||
+         selected == Backend::indexed_regions) &&
+        options.total_threads <= 1) {
+        std::cerr
+            << "Selected backend: stream\n"
+            << "Index used: no\n"
+            << "Reason: strict one-thread budget uses the synchronous "
+               "ordered stream; a range backend requires a background "
+               "input worker\n";
+        return std::make_unique<StreamSource>(
+            prepared,
+            "strict one-thread budget cannot create a range worker");
     }
 
     if (selected == Backend::plain_ranges) {

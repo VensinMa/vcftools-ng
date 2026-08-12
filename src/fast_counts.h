@@ -47,6 +47,11 @@ struct FastSiteStatPlan {
     bool recode = false;
     bool recode_info_all = false;
     std::function<void(std::string_view)> recode_sink;
+    // Optional strict-budget allocations for fused BGZF recode. Index policy
+    // still uses SourceOptions::total_threads; only active worker creation is
+    // constrained by these values.
+    std::optional<unsigned> input_worker_budget;
+    std::optional<unsigned> stream_thread_budget;
     std::string positions_file;
     std::string exclude_positions_file;
     std::map<std::string, std::vector<int>, std::less<>> positions_to_keep;
@@ -122,6 +127,7 @@ struct FastSiteStatsSummary {
     std::size_t samples = 0;
     unsigned input_threads = 1;
     unsigned hts_io_threads = 0;
+    unsigned hts_coordinator_threads = 0;
     unsigned compute_threads = 0;
     std::size_t planned_shards = 1;
     std::string backend;

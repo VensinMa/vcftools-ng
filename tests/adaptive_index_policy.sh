@@ -51,14 +51,24 @@ run_recode bcf "$work/full-scan.bcf" 8 bcf-no-index
 test ! -e "$work/full-scan.bcf.csi"
 grep -q '^Input backend: stream ' "$work/bcf-no-index.log"
 
-# A selective BCF region query should build CSI and use indexed regions.
+# A selective BCF region query should build CSI.  At one thread the strict
+# whole-process budget uses the synchronous stream because indexed regions
+# require a background range worker.  From two threads onward the validated
+# CSI is used by the indexed-region backend.
 cp "$bcf" "$work/region.bcf"
 run_recode bcf "$work/region.bcf" 1 bcf-region-auto --chr chr1
 run_recode bcf "$bcf" 1 bcf-region-stream \
     --input-backend stream --chr chr1
 cmp "$work/bcf-region-stream.vcf" "$work/bcf-region-auto.vcf"
 test -s "$work/region.bcf.csi"
-grep -q '^Input backend: indexed-regions ' "$work/bcf-region-auto.log"
+grep -q '^Input backend: stream ' "$work/bcf-region-auto.log"
+grep -q 'strict one-thread budget uses the synchronous ordered stream' \
+    "$work/bcf-region-auto.log"
+
+run_recode bcf "$work/region.bcf" 2 bcf-region-indexed --chr chr1
+cmp "$work/bcf-region-stream.vcf" "$work/bcf-region-indexed.vcf"
+grep -q '^Input backend: indexed-regions ' \
+    "$work/bcf-region-indexed.log"
 
 # Existing BGZF indexes are skipped at one thread and used from two threads
 # for a full recode.

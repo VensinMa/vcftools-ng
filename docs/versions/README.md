@@ -62,6 +62,10 @@ development version.
   selects aligned pread for Plain VCF above 8 GiB. The initial matrix passes
   81/81 output gates; final post-fix Plain rows retain the same oracle hash.
   Performance differences within 5% are treated as effectively tied.
+- v0.14.3 fixes the v0.14.2 whole-workflow CPU oversubscription defect. Linux
+  process-tree affinity now enforces `--threads N`; waiting I/O/output pools
+  may overlap within those N CPUs. The locked 2.3-million exact suite passes,
+  and fair 230k v0.14.2 A/B deltas at 4/8/16/24/32 CPUs all remain within 5%.
 
 ## Required record for every future version
 
@@ -91,6 +95,8 @@ measurements are mandatory in the same benchmark report.
   `docs/versions/v0.14.1-resume-plan.md`
 - v0.14.2 portable A/B and release correction:
   `docs/versions/v0.14.2.md`
+- v0.14.3 strict CPU-budget correction:
+  `docs/versions/v0.14.3.md`
 - New-version template: `docs/versions/TEMPLATE.md`
 - Raw timing files: `benchmarks/results/*.time.txt`
 - Detailed benchmark narrative: `benchmarks/README.md`

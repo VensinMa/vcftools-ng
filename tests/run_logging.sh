@@ -136,7 +136,9 @@ cp "$work/indexed.vcf.gz" "$work/auto.vcf.gz"
 test -s "$work/auto.vcf.gz.csi"
 grep -Fqx 'Existing sidecar: none' "$work/auto-csi.log"
 grep -Fqx 'Decision: build CSI' "$work/auto-csi.log"
-grep -Fqx 'Index build threads: 2' "$work/auto-csi.log"
+grep -Fqx \
+    'Index build threads: 0 bcftools background (strict process-tree budget 2; 2 vcftools-ng background already active)' \
+    "$work/auto-csi.log"
 grep -Eq '^Index build time: [0-9.]+ seconds$' \
     "$work/auto-csi.log"
 grep -Fqx 'Index build result: PASS' "$work/auto-csi.log"

@@ -45,6 +45,7 @@
 #include "numeric_semantics.h"
 #include "ordered_semantics.h"
 #include "output_transaction.h"
+#include "resource_budget.h"
 #include "run_logger.h"
 #include "version.h"
 
@@ -838,7 +839,7 @@ GENERAL OPTIONS:
                                (vcftools-ng extension)
   --no-log-file               Disable the log file; keep terminal diagnostics
                                (vcftools-ng extension)
-  -t, --threads N              Shared input/compute/I/O worker budget
+  -t, --threads N              Strict shared CPU budget for all stages
                                (default: intersect detected limits, max 128)
   --batch-size N               Records per pipeline batch (default: 2048)
   --compat exact               Exact VCFtools 0.1.17 compatibility mode
@@ -847,6 +848,17 @@ GENERAL OPTIONS:
                                Advanced diagnostic/performance override
   --bcftools FILE              bcftools executable for profitable CSI builds
                                (default: bundled private copy, else PATH)
+
+THREAD BUDGET:
+  N is the maximum CPU concurrency for the complete process tree. On Linux,
+  vcftools-ng restricts itself and automatic bcftools children to N CPUs.
+  I/O and ordered-queue workers may overlap while blocked, but cannot execute
+  on more than N cores. HTSlib decode, filtering/statistics, BGZF or BCF output,
+  serialization, and coordination share this CPU budget. Automatic mode intersects
+  scheduler, affinity, cgroup, and hardware limits and is capped at 128.
+  Explicit N is not capped at 128 but is reduced to the effective allocation.
+  Allocation grows conservatively on large hosts; useful scaling still
+  depends on the input format, workload, and storage.
 
 RUN LOGGING:
   Normal runs overwrite PREFIX.log by default. The terminal and file receive
@@ -2231,7 +2243,9 @@ public:
               vcftools_ng::output::stage_path(path),
               std::ios::binary | std::ios::trunc),
           maximum_in_flight_(
-              std::max<std::size_t>(4, compression_threads * 2)) {
+              std::max<std::size_t>(
+                  4, std::max(1u, compression_threads) * 2)),
+          compression_threads_(compression_threads) {
         if (!output_) {
             fail("Could not open BGZF output: " + path);
         }
@@ -2239,14 +2253,16 @@ public:
             "VCFTOOLS_NG_TEST_FAIL_COMPRESSOR_AFTER_JOBS");
         fail_writer_after_blocks_ = test_fail_after(
             "VCFTOOLS_NG_TEST_FAIL_WRITER_AFTER_BLOCKS");
-        const unsigned worker_count =
-            std::max(1u, compression_threads);
         try {
-            workers_.reserve(worker_count);
-            for (unsigned worker = 0; worker < worker_count; ++worker) {
+            if (compression_threads_ == 0) {
+                synchronous_context_ =
+                    std::make_unique<CompressionContext>();
+            }
+            workers_.reserve(compression_threads_);
+            for (unsigned worker = 0; worker < compression_threads_;
+                 ++worker) {
                 workers_.emplace_back([this] { compression_worker(); });
             }
-            writer_ = std::thread([this] { ordered_writer(); });
         } catch (...) {
             record_failure(std::current_exception());
             signal_producer_done();
@@ -2299,6 +2315,9 @@ public:
             signal_producer_done();
         }
         join_threads();
+        if (compression_threads_ > 0) {
+            drain_completed(true);
+        }
         output_.close();
         rethrow_failure();
         if (!output_) {
@@ -2407,11 +2426,27 @@ private:
     }
 
     void enqueue(std::vector<uint8_t> input) {
+        if (compression_threads_ == 0) {
+            if (fail_compressor_after_jobs_ &&
+                completed_compression_jobs_.fetch_add(
+                    1, std::memory_order_relaxed) >=
+                    *fail_compressor_after_jobs_) {
+                fail("Injected BGZF compressor failure");
+            }
+            write_block(compress_block(input, *synchronous_context_));
+            return;
+        }
         std::unique_lock lock(mutex_);
-        slot_available_.wait(lock, [&] {
-            return failure_ != nullptr ||
-                   in_flight_ < maximum_in_flight_;
-        });
+        while (failure_ == nullptr &&
+               in_flight_ >= maximum_in_flight_) {
+            if (completed_.contains(next_write_id_)) {
+                lock.unlock();
+                drain_completed(false);
+                lock.lock();
+            } else {
+                completed_available_.wait(lock);
+            }
+        }
         if (failure_) {
             std::rethrow_exception(failure_);
         }
@@ -2463,46 +2498,49 @@ private:
         }
     }
 
-    void ordered_writer() {
-        try {
-            std::size_t next = 0;
-            std::size_t written_blocks = 0;
-            while (true) {
-                std::vector<uint8_t> block;
-                {
-                    std::unique_lock lock(mutex_);
+    void write_block(const std::vector<uint8_t>& block) {
+        if (fail_writer_after_blocks_ &&
+            written_blocks_ >= *fail_writer_after_blocks_) {
+            fail("Injected BGZF writer failure");
+        }
+        output_.write(
+            reinterpret_cast<const char*>(block.data()),
+            static_cast<std::streamsize>(block.size()));
+        if (!output_) {
+            fail("Could not write deterministic BGZF block");
+        }
+        ++written_blocks_;
+    }
+
+    void drain_completed(bool all) {
+        while (next_write_id_ < total_jobs_ || !producer_done_ || !all) {
+            std::vector<uint8_t> block;
+            {
+                std::unique_lock lock(mutex_);
+                if (all) {
                     completed_available_.wait(lock, [&] {
                         return failure_ != nullptr ||
-                               completed_.contains(next) ||
-                               (producer_done_ && next == total_jobs_);
+                               completed_.contains(next_write_id_) ||
+                               (producer_done_ &&
+                                next_write_id_ == total_jobs_);
                     });
-                    if (failure_) {
-                        return;
-                    }
-                    if (producer_done_ && next == total_jobs_) {
-                        return;
-                    }
-                    auto found = completed_.find(next);
-                    block = std::move(found->second);
-                    completed_.erase(found);
-                    --in_flight_;
-                    ++next;
                 }
-                slot_available_.notify_one();
-                if (fail_writer_after_blocks_ &&
-                    written_blocks >= *fail_writer_after_blocks_) {
-                    fail("Injected BGZF writer failure");
+                if (failure_) {
+                    std::rethrow_exception(failure_);
                 }
-                output_.write(
-                    reinterpret_cast<const char*>(block.data()),
-                    static_cast<std::streamsize>(block.size()));
-                if (!output_) {
-                    fail("Could not write deterministic BGZF block");
+                auto found = completed_.find(next_write_id_);
+                if (found == completed_.end()) {
+                    return;
                 }
-                ++written_blocks;
+                block = std::move(found->second);
+                completed_.erase(found);
+                --in_flight_;
+                ++next_write_id_;
             }
-        } catch (...) {
-            record_failure(std::current_exception());
+            write_block(block);
+            if (!all) {
+                return;
+            }
         }
     }
 
@@ -2534,9 +2572,6 @@ private:
             if (worker.joinable()) {
                 worker.join();
             }
-        }
-        if (writer_.joinable()) {
-            writer_.join();
         }
     }
 
@@ -2572,14 +2607,17 @@ private:
     std::deque<Job> pending_;
     std::map<std::size_t, std::vector<uint8_t>> completed_;
     std::vector<std::thread> workers_;
-    std::thread writer_;
+    std::unique_ptr<CompressionContext> synchronous_context_;
     std::exception_ptr failure_;
     std::optional<std::uint64_t> fail_compressor_after_jobs_;
     std::optional<std::uint64_t> fail_writer_after_blocks_;
     std::atomic<std::uint64_t> completed_compression_jobs_{0};
     std::size_t next_job_id_ = 0;
+    std::size_t next_write_id_ = 0;
     std::size_t total_jobs_ = 0;
     std::size_t in_flight_ = 0;
+    std::size_t written_blocks_ = 0;
+    unsigned compression_threads_ = 0;
     bool producer_done_ = false;
     bool finished_ = false;
 };
@@ -2588,20 +2626,38 @@ class ExactBcfOutput {
 public:
     ExactBcfOutput(
         const std::string& input_path, const std::string& output_path,
-        unsigned compression_threads)
+        unsigned compression_threads, bool asynchronous_serialization)
         : compressor_(output_path, compression_threads) {
         const auto header = read_raw_bcf_header(input_path);
         compressor_.append(header.data(), header.size());
 
-        int descriptors[2]{-1, -1};
-        if (pipe(descriptors) != 0) {
-            fail("Could not create BCF record serialization pipe");
+        int write_descriptor = -1;
+        if (asynchronous_serialization) {
+            int descriptors[2]{-1, -1};
+            if (pipe(descriptors) != 0) {
+                fail("Could not create BCF record serialization pipe");
+            }
+            read_descriptor_ = descriptors[0];
+            write_descriptor = descriptors[1];
+        } else {
+            std::string pattern =
+                output_path + ".vcftools-ng.records.XXXXXX";
+            std::vector<char> writable(pattern.begin(), pattern.end());
+            writable.push_back('\0');
+            write_descriptor = mkstemp(writable.data());
+            if (write_descriptor < 0) {
+                fail("Could not create synchronous BCF serialization file");
+            }
+            serialized_path_ = writable.data();
         }
-        read_descriptor_ = descriptors[0];
-        hFILE* stream = hdopen(descriptors[1], "w");
+        hFILE* stream = hdopen(write_descriptor, "w");
         if (!stream) {
-            close(descriptors[0]);
-            close(descriptors[1]);
+            if (read_descriptor_ >= 0) {
+                close(read_descriptor_);
+                read_descriptor_ = -1;
+            }
+            close(write_descriptor);
+            cleanup_serialized_file();
             fail("Could not open BCF record serialization stream");
         }
         record_output_.reset(
@@ -2609,10 +2665,16 @@ public:
         if (!record_output_) {
             const int close_status = hclose(stream);
             (void)close_status;
-            close(descriptors[0]);
+            if (read_descriptor_ >= 0) {
+                close(read_descriptor_);
+                read_descriptor_ = -1;
+            }
+            cleanup_serialized_file();
             fail("Could not initialise uncompressed BCF serializer");
         }
-        reader_ = std::thread([this] { read_serialized_records(); });
+        if (asynchronous_serialization) {
+            reader_ = std::thread([this] { read_serialized_records(); });
+        }
     }
 
     ExactBcfOutput(const ExactBcfOutput&) = delete;
@@ -2640,7 +2702,11 @@ public:
         }
         finished_ = true;
         record_output_.reset();
-        reader_.join();
+        if (reader_.joinable()) {
+            reader_.join();
+        } else {
+            read_serialized_file();
+        }
         if (reader_failure_) {
             std::rethrow_exception(reader_failure_);
         }
@@ -2648,6 +2714,43 @@ public:
     }
 
 private:
+    void cleanup_serialized_file() noexcept {
+        if (serialized_path_.empty()) {
+            return;
+        }
+        std::error_code ignored;
+        std::filesystem::remove(serialized_path_, ignored);
+        serialized_path_.clear();
+    }
+
+    void read_serialized_file() {
+        try {
+            std::ifstream input(serialized_path_, std::ios::binary);
+            if (!input) {
+                fail("Could not reopen serialized BCF records");
+            }
+            std::array<uint8_t, 1 << 16> buffer{};
+            while (input) {
+                input.read(
+                    reinterpret_cast<char*>(buffer.data()),
+                    static_cast<std::streamsize>(buffer.size()));
+                const std::streamsize count = input.gcount();
+                if (count > 0) {
+                    compressor_.append(
+                        buffer.data(), static_cast<std::size_t>(count));
+                }
+            }
+            if (!input.eof()) {
+                fail("Could not read serialized BCF records");
+            }
+            input.close();
+            cleanup_serialized_file();
+        } catch (...) {
+            cleanup_serialized_file();
+            throw;
+        }
+    }
+
     void read_serialized_records() {
         try {
             std::array<uint8_t, 1 << 16> buffer{};
@@ -2679,6 +2782,7 @@ private:
     int read_descriptor_ = -1;
     std::thread reader_;
     std::exception_ptr reader_failure_;
+    std::string serialized_path_;
     bool finished_ = false;
 };
 
@@ -4225,9 +4329,11 @@ class Outputs {
 public:
     Outputs(
         const Options& options, bcf_hdr_t* header,
-        bool sample_selection_active)
+        bool sample_selection_active,
+        vcftools_ng::resources::GenericOutputPlan resources)
         : options_(options),
           output_header_(header),
+          resources_(resources),
           selected_chromosome_count_(
               static_cast<uint64_t>(bcf_hdr_nsamples(header)) * 2) {
         const int selected_samples = bcf_hdr_nsamples(header);
@@ -4374,7 +4480,7 @@ public:
                 recode_vcf_gz_ =
                     std::make_unique<DeterministicBgzfWriter>(
                         options.output_prefix + ".recode.vcf.gz",
-                        options.threads);
+                        resources_.vcf_compression_threads);
                 recode_vcf_gz_->append(header_data, header_size);
             }
             std::free(formatted_header.s);
@@ -4391,7 +4497,8 @@ public:
             recode_bcf_ = std::make_unique<ExactBcfOutput>(
                 options.input,
                 options.output_prefix + ".recode.bcf",
-                options.threads);
+                resources_.bcf_compression_threads,
+                resources_.bcf_serialization_threads > 0);
         }
     }
 
@@ -4737,11 +4844,8 @@ public:
                                 << inbreeding << '\n';
             }
         }
-        finish_window_pi();
-        finish_tajima();
-        finish_window_fst();
-        finish_genotype_ld();
-        finish_pca();
+        // Stop persistent output workers before CPU-heavy reductions reuse
+        // the complete thread budget.
         if (recode_bcf_) {
             recode_bcf_->finish();
         }
@@ -4754,6 +4858,11 @@ public:
                 fail("Could not finish recoded VCF output");
             }
         }
+        finish_window_pi();
+        finish_tajima();
+        finish_window_fst();
+        finish_genotype_ld();
+        finish_pca();
         finish(freq_, ".frq");
         finish(counts_, ".frq.count");
         finish(missing_, ".lmiss");
@@ -5077,13 +5186,13 @@ private:
         std::vector<std::string> ordered_blocks(block_count);
         std::atomic<std::size_t> next_block{0};
         const std::size_t worker_count = std::min<std::size_t>(
-            options_.threads, block_count);
+            options_.threads > 1 ? options_.threads - 1 : 0,
+            block_count);
         std::vector<std::thread> workers;
         workers.reserve(worker_count);
         const int minimum_snp_distance =
             std::max(1, options_.ld_snp_window_min);
-        for (std::size_t worker = 0; worker < worker_count; ++worker) {
-            workers.emplace_back([&] {
+        const auto process_blocks = [&] {
                 while (true) {
                     const std::size_t block =
                         next_block.fetch_add(1);
@@ -5136,7 +5245,13 @@ private:
                     }
                     ordered_blocks[block] = std::move(lines).str();
                 }
-            });
+        };
+        if (worker_count == 0) {
+            process_blocks();
+        } else {
+            for (std::size_t worker = 0; worker < worker_count; ++worker) {
+                workers.emplace_back(process_blocks);
+            }
         }
         for (auto& worker : workers) {
             worker.join();
@@ -5190,14 +5305,12 @@ private:
         std::atomic<std::size_t> next_site{0};
         const std::size_t normalise_worker_count =
             std::min<std::size_t>(
-                options_.threads,
+                options_.threads > 1 ? options_.threads - 1 : 0,
                 (site_count + kPcaSitesPerBlock - 1) /
                     kPcaSitesPerBlock);
         std::vector<std::thread> normalise_workers;
         normalise_workers.reserve(normalise_worker_count);
-        for (std::size_t worker = 0;
-             worker < normalise_worker_count; ++worker) {
-            normalise_workers.emplace_back([&] {
+        const auto normalise_sites = [&] {
                 while (true) {
                     const std::size_t begin =
                         next_site.fetch_add(kPcaSitesPerBlock);
@@ -5229,18 +5342,25 @@ private:
                         }
                     }
                 }
-            });
+        };
+        if (normalise_worker_count == 0) {
+            normalise_sites();
+        } else {
+            for (std::size_t worker = 0;
+                 worker < normalise_worker_count; ++worker) {
+                normalise_workers.emplace_back(normalise_sites);
+            }
         }
         for (auto& worker : normalise_workers) {
             worker.join();
         }
         std::atomic<std::size_t> next_row{0};
         const std::size_t worker_count = std::min<std::size_t>(
-            options_.threads, individuals);
+            options_.threads > 1 ? options_.threads - 1 : 0,
+            individuals);
         std::vector<std::thread> workers;
         workers.reserve(worker_count);
-        for (std::size_t worker = 0; worker < worker_count; ++worker) {
-            workers.emplace_back([&] {
+        const auto compute_rows = [&] {
                 while (true) {
                     const std::size_t row = next_row.fetch_add(1);
                     if (row >= individuals) {
@@ -5261,7 +5381,13 @@ private:
                         matrix[row * individuals + column] = sum;
                     }
                 }
-            });
+        };
+        if (worker_count == 0) {
+            compute_rows();
+        } else {
+            for (std::size_t worker = 0; worker < worker_count; ++worker) {
+                workers.emplace_back(compute_rows);
+            }
         }
         for (auto& worker : workers) {
             worker.join();
@@ -5320,6 +5446,7 @@ private:
 
     const Options& options_;
     bcf_hdr_t* output_header_;
+    vcftools_ng::resources::GenericOutputPlan resources_;
     std::ofstream freq_;
     std::ofstream counts_;
     std::ofstream missing_;
@@ -5385,9 +5512,11 @@ class OrderedCommitter {
 public:
     OrderedCommitter(
         const Options& options, bcf_hdr_t* output_header,
-        bool sample_selection_active)
+        bool sample_selection_active,
+        vcftools_ng::resources::GenericOutputPlan resources)
         : outputs_(
-              options, output_header, sample_selection_active),
+              options, output_header, sample_selection_active,
+              resources),
           thin_selector_(options.thin_distance) {}
 
     void commit(std::vector<SiteResult>& results,
@@ -5509,6 +5638,7 @@ PipelineSummary run_ordered_pipeline(
             }
             committer.commit(results, analysis);
         }
+        source.release_workers();
         return committer.summary();
     }
     PipelineState state;
@@ -5716,6 +5846,7 @@ PipelineSummary run_ordered_pipeline(
     if (state.error) {
         std::rethrow_exception(state.error);
     }
+    source.release_workers();
     return committer.summary();
 }
 
@@ -6182,7 +6313,8 @@ std::optional<int> run_parallel_indexed_diff(const Options& options) {
     std::mutex error_mutex;
     std::exception_ptr error;
     const std::size_t worker_count = std::min<std::size_t>(
-        options.threads, std::max<std::size_t>(1, chromosomes.size()));
+        options.threads > 1 ? options.threads - 1 : 1,
+        std::max<std::size_t>(1, chromosomes.size()));
     std::vector<std::thread> workers;
     workers.reserve(worker_count);
     for (std::size_t worker = 0; worker < worker_count; ++worker) {
@@ -6288,10 +6420,19 @@ int run_diff(const Options& options) {
         return *parallel;
     }
 
+    // Each hts_set_threads(k) pool creates k workers plus one hidden queue
+    // coordinator.  Both inputs are live concurrently with the caller, so
+    // 1 + 2 * (k + 1) must fit inside the strict process budget.
     const unsigned io_threads =
-        options.threads > 2
-            ? std::min(4u, std::max(1u, options.threads / 2))
+        options.threads >= 5
+            ? std::min(4u, (options.threads - 3u) / 2u)
             : 0;
+    std::cerr << "Diff HTSlib I/O threads per input: "
+              << io_threads << "\n"
+              << "Diff HTSlib coordinator threads: "
+              << (io_threads > 0 ? 2 : 0) << "\n"
+              << "Diff total HTSlib I/O threads: "
+              << io_threads * 2u << "\n";
     DiffRecordStream first(options.input, options, io_threads);
     DiffRecordStream second(options.diff_input, options, io_threads);
     SampleSelection first_selection(options, first.header());
@@ -6606,6 +6747,7 @@ int run(const Options& options) {
                     : vcftools_ng::input::WorkloadProfile::
                           compact_site_statistics,
             .bcftools_path = options.bcftools_path,
+            .active_background_threads = 0,
             .index_path = {},
             .selected_contigs = {},
             .start_position = -1,
@@ -6614,6 +6756,9 @@ int run(const Options& options) {
         std::ofstream fast_recode_plain;
         std::ostream* fast_recode_stream = nullptr;
         std::unique_ptr<DeterministicBgzfWriter> fast_recode_bgzf;
+        std::optional<
+            vcftools_ng::resources::FusedBgzfRecodePlan>
+            fused_bgzf_resources;
         if (text_vcf && options.output_recode) {
             if (options.output_stdout) {
                 fast_recode_stream = &std::cout;
@@ -6625,10 +6770,15 @@ int run(const Options& options) {
             }
         }
         if (text_vcf && options.output_recode_vcf_gz) {
+            fused_bgzf_resources =
+                vcftools_ng::resources::plan_fused_bgzf_recode(
+                    options.threads);
             fast_recode_bgzf =
                 std::make_unique<DeterministicBgzfWriter>(
                     options.output_prefix + ".recode.vcf.gz",
-                    options.threads);
+                    fused_bgzf_resources->compression_threads);
+            fast_options.active_background_threads =
+                fused_bgzf_resources->compression_threads;
         }
         const auto fast_recode_sink =
             [&](std::string_view text) {
@@ -6693,6 +6843,16 @@ int run(const Options& options) {
                 options.output_recode_vcf_gz,
             .recode_info_all = options.recode_info_all,
             .recode_sink = fast_recode_sink,
+            .input_worker_budget =
+                fused_bgzf_resources.has_value()
+                    ? std::optional<unsigned>(
+                          fused_bgzf_resources->input_worker_threads)
+                    : std::nullopt,
+            .stream_thread_budget =
+                fused_bgzf_resources.has_value()
+                    ? std::optional<unsigned>(
+                          fused_bgzf_resources->stream_thread_budget)
+                    : std::nullopt,
             .positions_file = options.positions_file,
             .exclude_positions_file =
                 options.exclude_positions_file,
@@ -6788,21 +6948,47 @@ int run(const Options& options) {
                                    ? ", capped at 128)"
                                    : ")"))
                 << "\n"
+                << "CPU affinity budget: " << options.threads
+                << " CPUs\n"
+                << "Worker policy: overlap I/O-waiting input and output "
+                   "pools within CPU affinity\n"
                 << "Stage concurrency: input "
                 << fast->input_threads
                 << ", HTSlib I/O " << fast->hts_io_threads
+                << ", HTSlib coordinator "
+                << fast->hts_coordinator_threads
                 << ", compute "
                 << (fast->compute_threads > 0
                         ? std::to_string(fast->compute_threads)
                         : "fused")
+                << ", output compression "
+                << (fused_bgzf_resources.has_value()
+                        ? fused_bgzf_resources->compression_threads
+                        : 0)
+                << ", coordinator "
+                << (fused_bgzf_resources.has_value()
+                        ? fused_bgzf_resources->coordinator_threads
+                        : 1)
                 << "\n"
                 << "Input threads: " << fast->input_threads << "\n"
                 << "HTSlib I/O threads: "
                 << fast->hts_io_threads << "\n"
+                << "HTSlib coordinator threads: "
+                << fast->hts_coordinator_threads << "\n"
                 << "Compute threads: "
                 << (fast->compute_threads > 0
                         ? std::to_string(fast->compute_threads)
                         : "fused")
+                << "\n"
+                << "Output compression threads: "
+                << (fused_bgzf_resources.has_value()
+                        ? fused_bgzf_resources->compression_threads
+                        : 0)
+                << "\n"
+                << "Coordinator threads: "
+                << (fused_bgzf_resources.has_value()
+                        ? fused_bgzf_resources->coordinator_threads
+                        : 1)
                 << "\n"
                 << "Planned input shards: "
                 << fast->planned_shards << "\n"
@@ -6833,7 +7019,11 @@ int run(const Options& options) {
     vcftools_ng::input::SourceOptions source_options{
         .path = options.input,
         .requested_backend = options.input_backend,
-        .total_threads = options.threads,
+        .total_threads = vcftools_ng::resources::plan_generic_outputs(
+                             options.threads,
+                             options.output_recode_vcf_gz,
+                             options.output_recode_bcf)
+                             .pipeline_threads,
         .target_batch_records = options.batch_size,
         .parallel_safe = true,
         .workload =
@@ -6843,6 +7033,7 @@ int run(const Options& options) {
                 ? vcftools_ng::input::WorkloadProfile::full_recode
                 : vcftools_ng::input::WorkloadProfile::general,
         .bcftools_path = options.bcftools_path,
+        .active_background_threads = 0,
         .index_path = {},
         .selected_contigs = options.chromosomes_to_keep,
         .start_position = options.start_position,
@@ -6856,6 +7047,10 @@ int run(const Options& options) {
     const auto detected_threads =
         vcftools_ng::input::detect_available_threads();
     const auto& resources = source->resources();
+    const auto output_resources =
+        vcftools_ng::resources::plan_generic_outputs(
+            options.threads, options.output_recode_vcf_gz,
+            options.output_recode_bcf);
 
     std::cerr << "Input backend: " << source->backend_name()
               << " (" << source->description() << ")\n"
@@ -6875,13 +7070,26 @@ int run(const Options& options) {
                                  ? ", capped at 128)"
                                  : ")"))
               << "\n"
+              << "CPU affinity budget: " << options.threads
+              << " CPUs\n"
+              << "Worker policy: stage workers share process CPU affinity\n"
               << "Stage concurrency: input "
               << resources.input_threads
               << ", HTSlib I/O " << resources.hts_io_threads
-              << ", compute " << resources.compute_threads << "\n"
+              << ", HTSlib coordinator "
+              << resources.hts_coordinator_threads
+              << ", compute " << resources.compute_threads
+              << ", VCF compression "
+              << output_resources.vcf_compression_threads
+              << ", BCF compression "
+              << output_resources.bcf_compression_threads
+              << ", BCF serialization "
+              << output_resources.bcf_serialization_threads << "\n"
               << "Input threads: " << resources.input_threads << "\n"
               << "HTSlib I/O threads: "
               << resources.hts_io_threads << "\n"
+              << "HTSlib coordinator threads: "
+              << resources.hts_coordinator_threads << "\n"
               << "Compute threads: "
               << resources.compute_threads << "\n"
               << "Planned input shards: "
@@ -6894,7 +7102,8 @@ int run(const Options& options) {
     SampleSelection samples(options, header);
     std::cerr << "Selected samples: " << samples.count() << "\n";
     OrderedCommitter committer(
-        options, samples.output_header(header), samples.active());
+        options, samples.output_header(header), samples.active(),
+        output_resources);
     log_stage_time("pipeline setup", pipeline_setup_start);
     std::cerr << "Scheduler: bounded ordered pipeline (3 batches)\n";
     const auto pipeline_start = std::chrono::steady_clock::now();
@@ -6944,6 +7153,19 @@ int main(int argc, char** argv) {
     }
     try {
         const Options options = parse_options(argc, argv);
+        vcftools_ng::input::enforce_cpu_budget(options.threads);
+        // vcftools-ng parallelises PCA normalization and covariance itself.
+        // Keep vendor BLAS/LAPACK runtimes serial so a BLIS/OpenBLAS/MKL/OpenMP
+        // pool cannot silently exceed --threads during the final eigen solve.
+        for (const char* variable : {
+                 "BLIS_NUM_THREADS", "OPENBLAS_NUM_THREADS",
+                 "MKL_NUM_THREADS", "OMP_NUM_THREADS"}) {
+            if (setenv(variable, "1", 1) != 0) {
+                fail(
+                    std::string("Could not enforce serial BLAS runtime: ") +
+                    variable);
+            }
+        }
         validate_output_destinations(options);
         validate_log_destination(options);
         try {

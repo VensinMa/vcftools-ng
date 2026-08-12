@@ -271,7 +271,9 @@ its independent two-stream implementation.
 
 ## Scaling to hundreds of CPUs
 
-`--threads` supplies the shared input/compute/I/O worker budget. Automatic
+`--threads` supplies the process-tree CPU budget. On Linux the process affinity
+is reduced to at most that many CPUs before worker pools or automatic index
+children are created. Automatic
 selection intersects every applicable limit rather than trusting only the
 first one found:
 
@@ -285,11 +287,12 @@ When `--threads` is omitted, the smallest applicable limit is capped at 128.
 An explicit value is not subject to that automatic 128 ceiling, but it is
 still reduced to the detected allocation limit.
 
-The planner shares that budget between input/decompression and parse/compute
-lanes, then applies file-descriptor and storage constraints. Deterministic
-output compression retains its existing effective-thread worker policy, so
-`--threads` is not a promise about the exact instantaneous count of every
-short-lived process thread. Concurrency is also bounded by measured storage
+The planner shares that CPU capacity between input/decompression and
+parse/compute lanes, then applies file-descriptor and storage constraints.
+I/O and ordered-output pools may contain more waitable pthread objects than N
+so a blocked stage does not leave CPUs idle, but the complete process tree can
+execute on at most N allowed CPUs. `--threads` is therefore not a promise about
+the exact instantaneous pthread count. Concurrency is also bounded by storage
 throughput, shard count, memory budget, and output bandwidth. Reporting both
 requested and effective stage concurrency makes such limits visible.
 
@@ -347,9 +350,14 @@ throughput gain.
 10. **Design decision locked in v0.14.1:** unify the semantic
     ordered-shard seam without forcing storage-native zero-copy adapters into
     one owned-string queue.
-11. Build one immutable capability/query plan for field requirements, fused
+11. **Complete in v0.14.3:** enforce `--threads N` as a dynamic Linux CPU
+    affinity budget inherited by bcftools children, explicitly account for
+    hidden HTSlib/bcftools queue coordinators, force vendor BLAS runtimes to
+    one thread, and allow I/O-waiting input/output pools to overlap without
+    restoring the v0.14.2 CPU oversubscription bug.
+12. Build one immutable capability/query plan for field requirements, fused
     eligibility, fallback reason, and logging.
-12. Profile before implementing ordered BGZF block framing, adaptive batches,
+13. Profile before implementing ordered BGZF block framing, adaptive batches,
     analysis lanes, LD cache blocking, SIMD, or further ordered-commit work.
 
 For every scientific-output step, VCFtools 0.1.17 remains the oracle. Routine

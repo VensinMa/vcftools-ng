@@ -2785,13 +2785,65 @@ FastSiteStatsSummary run_plain_site_stats(
     const ReadOnlyMapping mapping(
         input_path, file_size,
         should_map_plain_input(file_size, mapping_useful));
-    const unsigned worker_count = descriptor_limited_workers(
-        requested_threads, shards.size());
+    const unsigned worker_count =
+        requested_threads == 0
+            ? 0
+            : descriptor_limited_workers(
+                  requested_threads, shards.size());
 
     OrderedArtifactSet outputs(
         output_prefix, effective_plan,
         selected_samples.empty() ? header.samples
                                  : selected_samples.size());
+
+    if (worker_count == 0) {
+        FileDescriptor descriptor(
+            mapping.data == nullptr
+                ? ::open(input_path.c_str(), O_RDONLY)
+                : -1);
+        if (mapping.data == nullptr && descriptor.value < 0) {
+            fail(
+                "Could not open plain VCF input: " +
+                std::string(std::strerror(errno)));
+        }
+        std::string input_bytes;
+        FastWorkerScratch scratch(capabilities);
+        std::uint64_t records = 0;
+        std::uint64_t kept = 0;
+        for (const auto& shard : shards) {
+            auto result = process_plain_shard(
+                descriptor.value, mapping.data, shard,
+                input_bytes, scratch, header.samples,
+                selected_samples, effective_plan);
+            outputs.append(result);
+            records += result.records;
+            kept += result.kept;
+        }
+        outputs.validate();
+        return FastSiteStatsSummary{
+            .total = records,
+            .kept = kept,
+            .samples = selected_samples.empty()
+                           ? header.samples
+                           : selected_samples.size(),
+            .input_threads = 1,
+            .hts_io_threads = 0,
+            .hts_coordinator_threads = 0,
+            .planned_shards = shards.size(),
+            .backend = effective_plan.recode
+                           ? "fast-filter-recode-plain"
+                           : plan.counts_only()
+                           ? "fast-counts-plain"
+                           : "fast-site-stats-plain",
+            .description = effective_plan.recode
+                               ? mapping.data != nullptr
+                                     ? "synchronous zero-copy mapped filtering/recode"
+                                     : "synchronous direct filtering/recode"
+                               : mapping.data != nullptr
+                               ? "synchronous zero-copy mapped site statistics"
+                               : "synchronous direct site statistics",
+        };
+    }
 
     std::vector<std::optional<ShardOutput>> completed(shards.size());
     std::mutex mutex;
@@ -2905,6 +2957,7 @@ FastSiteStatsSummary run_plain_site_stats(
                        : selected_samples.size(),
         .input_threads = worker_count,
         .hts_io_threads = 0,
+        .hts_coordinator_threads = 0,
         .planned_shards = shards.size(),
         .backend =
             effective_plan.recode
@@ -3193,6 +3246,8 @@ FastSiteStatsSummary run_compressed_site_stats(
         .samples = samples,
         .input_threads = resources.input_threads,
         .hts_io_threads = io_threads,
+        .hts_coordinator_threads =
+            resources.hts_coordinator_threads,
         .compute_threads =
             compute_threads,
         .planned_shards = planned_batches,
@@ -3366,6 +3421,7 @@ FastSiteStatsSummary run_indexed_site_stats(
     const std::string& index_path,
     const std::string& output_prefix,
     unsigned requested_threads,
+    unsigned worker_budget,
     const FastSiteStatPlan& plan,
     std::uint16_t capabilities) {
     HtsFilePtr probe(hts_open(input_path.c_str(), "r"));
@@ -3387,11 +3443,75 @@ FastSiteStatsSummary run_indexed_site_stats(
     }
     const auto shards = build_indexed_shards(
         index.get(), header.get(), requested_threads);
-    const unsigned worker_count = descriptor_limited_workers(
-        requested_threads, shards.size());
+    const unsigned worker_count =
+        worker_budget == 0
+            ? 0
+            : descriptor_limited_workers(
+                  worker_budget, shards.size());
     const std::vector<std::size_t> all_samples;
 
     OrderedArtifactSet outputs(output_prefix, plan, samples);
+
+    if (worker_count == 0) {
+        HtsFilePtr input(hts_open(input_path.c_str(), "r"));
+        if (!input) {
+            fail("Could not open indexed VCF input");
+        }
+        KStringBuffer line;
+        FastWorkerScratch scratch(capabilities);
+        std::uint64_t records = 0;
+        std::uint64_t kept = 0;
+        for (const auto& shard : shards) {
+            IteratorPtr iterator(tbx_itr_queryi(
+                index.get(), shard.tid, shard.begin, shard.end));
+            if (!iterator) {
+                fail("Could not create tabix region iterator");
+            }
+            ShardOutput result;
+            scratch.begin_shard();
+            int status = 0;
+            while ((status = tbx_itr_next(
+                        input.get(), index.get(), iterator.get(),
+                        &line.value)) >= 0) {
+                const std::string_view text(line.value.s, line.value.l);
+                const hts_pos_t position = record_position(text);
+                if (position < shard.begin ||
+                    (shard.end != HTS_POS_MAX &&
+                     position >= shard.end)) {
+                    continue;
+                }
+                result.kept += append_site_stat_record(
+                    text, samples, all_samples, plan, scratch, result);
+                ++result.records;
+            }
+            if (status < -1) {
+                fail("HTSlib failed while reading indexed VCF shard");
+            }
+            outputs.append(result);
+            records += result.records;
+            kept += result.kept;
+        }
+        outputs.validate();
+        return FastSiteStatsSummary{
+            .total = records,
+            .kept = kept,
+            .samples = samples,
+            .input_threads = 1,
+            .hts_io_threads = 0,
+            .hts_coordinator_threads = 0,
+            .planned_shards = shards.size(),
+            .backend = plan.recode
+                           ? "fast-filter-recode-indexed-bgzf"
+                           : plan.counts_only()
+                           ? "fast-counts-indexed-bgzf"
+                           : "fast-site-stats-indexed-bgzf",
+            .description =
+                (plan.recode
+                     ? "synchronous tabix filtering/recode via "
+                     : "synchronous tabix site statistics via ") +
+                index_path,
+        };
+    }
 
     std::vector<std::optional<ShardOutput>> completed(shards.size());
     std::mutex mutex;
@@ -3529,6 +3649,7 @@ FastSiteStatsSummary run_indexed_site_stats(
         .samples = samples,
         .input_threads = worker_count,
         .hts_io_threads = 0,
+        .hts_coordinator_threads = 0,
         .planned_shards = shards.size(),
         .backend =
             plan.recode
@@ -3579,8 +3700,11 @@ std::optional<FastSiteStatsSummary> run_fast_text_site_stats(
     }
     if (compression == no_compression) {
         probe.reset();
+        const unsigned worker_threads =
+            effective_plan.input_worker_budget.value_or(threads);
         return run_plain_site_stats(
-            input_path, output_prefix, threads, effective_plan,
+            input_path, output_prefix,
+            worker_threads, effective_plan,
             capabilities);
     }
     const bool is_bgzf = compression == bgzf;
@@ -3596,9 +3720,12 @@ std::optional<FastSiteStatsSummary> run_fast_text_site_stats(
         const std::string index_path =
             input::prepare_variant_index(effective_options);
         if (!index_path.empty()) {
+            const unsigned worker_threads =
+                effective_plan.input_worker_budget.value_or(threads);
             return run_indexed_site_stats(
                 input_path, index_path, output_prefix,
-                threads, effective_plan, capabilities);
+                threads, worker_threads,
+                effective_plan, capabilities);
         }
         probe.reset(hts_open(input_path.c_str(), "r"));
         if (!probe) {
@@ -3613,7 +3740,8 @@ std::optional<FastSiteStatsSummary> run_fast_text_site_stats(
     }
     return run_compressed_site_stats(
         std::move(probe), input_path, output_prefix,
-        threads, is_bgzf, effective_plan, capabilities);
+        effective_plan.stream_thread_budget.value_or(threads),
+        is_bgzf, effective_plan, capabilities);
 }
 
 }  // namespace vcftools_ng

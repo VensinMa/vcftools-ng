@@ -355,7 +355,7 @@ grep -q 'Input backend: fast-counts-bgzf' \
     >/dev/null 2>"$work/no-index-cap-light.log"
 cmp "$work/reference.frq.count" \
     "$work/no-index-cap-light.frq.count"
-grep -Fq 'Stage concurrency: input 1, HTSlib I/O 3, compute 4' \
+grep -Fq 'Stage concurrency: input 1, HTSlib I/O 3, HTSlib coordinator 1, compute 4' \
     "$work/no-index-cap-light.log"
 
 "$ng" --gzvcf "$work/no-index.vcf.gz" --threads 16 \
@@ -364,7 +364,7 @@ grep -Fq 'Stage concurrency: input 1, HTSlib I/O 3, compute 4' \
     >/dev/null 2>"$work/no-index-cap-heavy.log"
 cmp "$work/filtered-reference.frq.count" \
     "$work/no-index-cap-heavy.frq.count"
-grep -Fq 'Stage concurrency: input 1, HTSlib I/O 3, compute 6' \
+grep -Fq 'Stage concurrency: input 1, HTSlib I/O 3, HTSlib coordinator 1, compute 6' \
     "$work/no-index-cap-heavy.log"
 
 ln -s "$fixture" "$work/auto-index.vcf.gz"
@@ -395,13 +395,17 @@ test ! -e "$work/no-index.bcf.csi"
 grep -q 'Input backend: stream' "$work/no-index-bcf.log"
 
 # BCF record decoding needs a larger HTSlib share than a BGZF VCF text
-# stream, but the reader, HTSlib workers, and compute workers must still fit
-# inside the requested total.  The quarter-share curve is evidence-selected
-# on the locked 230k BCF fixture and grows beyond the local 32-CPU host
-# without encoding a fixed machine-specific ceiling.
-for spec in 2:0:1 3:1:1 4:1:2 8:2:5 16:4:11 32:8:23; do
+# stream.  The generic ordered pipeline also reserves the calling thread as
+# its committer, so input + HTSlib + compute must be no greater than the
+# requested total and, from three threads upward, exactly one below it.  The
+# quarter-share curve is evidence-selected on the locked 230k BCF fixture and
+# grows beyond the local 32-CPU host without encoding a machine-specific
+# ceiling.
+for spec in 2:1:0:0 3:1:0:1 4:1:0:2 8:1:2:3 16:1:4:9 32:1:8:21; do
     threads=${spec%%:*}
     remainder=${spec#*:}
+    input_threads=${remainder%%:*}
+    remainder=${remainder#*:}
     hts_io=${remainder%%:*}
     compute=${remainder#*:}
     prefix="$work/bcf-resource-t$threads"
@@ -409,9 +413,24 @@ for spec in 2:0:1 3:1:1 4:1:2 8:2:5 16:4:11 32:8:23; do
         --threads "$threads" --counts --out "$prefix" \
         >/dev/null 2>"$prefix.log"
     cmp "$work/reference.frq.count" "$prefix.frq.count"
+    hts_coordinator=0
+    if ((hts_io > 0)); then
+        hts_coordinator=1
+    fi
     grep -Fq \
-        "Stage concurrency: input 1, HTSlib I/O $hts_io, compute $compute" \
+        "Stage concurrency: input $input_threads, HTSlib I/O $hts_io, HTSlib coordinator $hts_coordinator, compute $compute" \
         "$prefix.log"
+    planned=$((input_threads + hts_io + hts_coordinator + compute))
+    if ((planned > threads)); then
+        printf 'BCF plan exceeds budget: %s > %s\n' \
+            "$planned" "$threads" >&2
+        exit 1
+    fi
+    if ((threads >= 3 && planned + 1 != threads)); then
+        printf 'BCF plan does not reserve exactly one committer: %s/%s\n' \
+            "$planned" "$threads" >&2
+        exit 1
+    fi
 done
 
 printf 'Adaptive counts regression test passed\n'

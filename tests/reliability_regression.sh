@@ -140,6 +140,20 @@ VCFTOOLS_NG_TEST_AVAILABLE_THREADS=256 \
     >"$work/explicit-200.stdout" 2>"$work/explicit-200.stderr"
 grep -Fq 'Effective threads: 200' "$work/explicit-200.stderr"
 
+# Large-host planning remains valid beyond the local machine without actually
+# creating hundreds of workers for this tiny fixture. The dedicated planner
+# test exhaustively checks every budget through 65,536; these CLI probes lock
+# the user-visible explicit/automatic semantics at representative server sizes.
+for threads in 64 128 256 512; do
+    VCFTOOLS_NG_TEST_AVAILABLE_THREADS="$threads" \
+        "$ng" --vcf "$fixture" --threads "$threads" --counts \
+        --out "$work/explicit-$threads" \
+        >"$work/explicit-$threads.stdout" \
+        2>"$work/explicit-$threads.stderr"
+    grep -Fq "Effective threads: $threads" \
+        "$work/explicit-$threads.stderr"
+done
+
 # The parallel input and compute allocations share, rather than duplicate,
 # the requested CPU budget.
 VCFTOOLS_NG_TEST_AVAILABLE_THREADS=8 \

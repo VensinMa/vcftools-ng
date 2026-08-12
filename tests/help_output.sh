@@ -39,6 +39,7 @@ grep -Fq 'Usage: vcftools-ng INPUT [FILTERS] OUTPUT [OPTIONS]' \
 for heading in \
     'QUICK EXAMPLES:' \
     'GENERAL OPTIONS:' \
+    'THREAD BUDGET:' \
     'RUN LOGGING:' \
     'INPUT OPTIONS (choose one):' \
     'SITE STATISTICS OUTPUT:' \

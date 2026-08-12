@@ -29,13 +29,14 @@ otherwise, validation uses the real 2,300,000-record, 23-chromosome,
 | [v0.13.2](versions/v0.13.2.md) | Exact fused filters, no-index BGZF, LD/PCA/diff kernels | inherited | 0.43 | 0.33 | PASS (23k exact, 230k A/B) |
 | [v0.14.1](versions/v0.14.1.md) | Capability-planned exact analytics and hardened boundaries | 2267.88 | 44.36 | 34.06 | PASS (11.23m first-repeat release gate) |
 | [v0.14.2](versions/v0.14.2.md) | Portable libdeflate, BCF-aware planning, and oversized-Plain pread | 2267.88 | 40.72 | 31.68 | PASS (81-row portable A/B plus final Plain gate) |
+| [v0.14.3](versions/v0.14.3.md) | Strict process-tree CPU budget with overlapped waiting pools | inherited | 1.79 | 1.35 | PASS (2.3m exact plus fair 230k CPU-budget A/B) |
 
 The workload in each row is the version's representative compatibility
 benchmark; workloads differ between rows. Consult the per-version page before
 comparing versions directly. v0.9.0 also reran the six-output sample workload
 at 3.11/3.13 seconds for 8/16 threads.
 
-## Cumulative supported surface in v0.14.2
+## Cumulative supported surface in v0.14.3
 
 - Inputs: VCF, BGZF VCF, BCF.
 - Outputs: `--freq`, `--freq2`, `--counts`, `--missing-site`, `--site-depth`,
