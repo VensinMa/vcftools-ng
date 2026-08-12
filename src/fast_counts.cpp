@@ -1062,6 +1062,18 @@ void append_floating(std::string& output, double value) {
     output.append(buffer.data(), converted.ptr);
 }
 
+void append_legacy_depth_floating(std::string& output, double value) {
+    // Original VCFtools renders the degenerate zero- and one-observation
+    // site-depth cases as "-nan".  The NaN sign bit of the intermediate
+    // arithmetic is not stable across optimizers or sanitizer instrumentation,
+    // so reproduce the observable text at this output boundary explicitly.
+    if (std::isnan(value)) {
+        output.append("-nan");
+        return;
+    }
+    append_floating(output, value);
+}
+
 enum class SampleParserKind : std::uint8_t {
     generic,
     gt_dp_ad_gq,
@@ -2541,9 +2553,9 @@ bool append_site_stat_record(
             depth_count / (depth_count - 1.0);
         append_position(text);
         text.push_back('\t');
-        append_floating(text, mean);
+        append_legacy_depth_floating(text, mean);
         text.push_back('\t');
-        append_floating(text, variance);
+        append_legacy_depth_floating(text, variance);
         text.push_back('\n');
     }
     if (plan.site_quality) {

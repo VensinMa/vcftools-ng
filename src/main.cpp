@@ -4494,8 +4494,19 @@ public:
             const double variance =
                 ((sumsq / count) - (mean * mean)) *
                 count / (count - 1.0);
-            mean_depth_ << result.chrom << '\t' << result.pos << '\t' << mean
-                        << '\t' << variance << '\n';
+            mean_depth_ << result.chrom << '\t' << result.pos << '\t';
+            if (std::isnan(mean)) {
+                mean_depth_ << "-nan";
+            } else {
+                mean_depth_ << mean;
+            }
+            mean_depth_ << '\t';
+            if (std::isnan(variance)) {
+                mean_depth_ << "-nan";
+            } else {
+                mean_depth_ << variance;
+            }
+            mean_depth_ << '\n';
         }
         if (options_.output_site_quality) {
             site_quality_ << result.chrom << '\t' << result.pos << '\t'

@@ -359,8 +359,12 @@ if "$ng" --gzvcf "$work/truncated.vcf.gz" --threads 4 --counts \
     echo 'Truncated BGZF input unexpectedly succeeded' >&2
     exit 1
 fi
-grep -Fq 'HTSlib failed while reading compressed VCF records' \
-    "$work/truncated.stderr"
+# HTSlib 1.13 and 1.19+ use different low-level diagnostics for the same
+# truncated final BGZF block.  Lock the stable vcftools-ng contract instead:
+# the malformed input is an error, the run is recorded as failed, and no
+# scientific or private staged output is published.
+grep -Fq 'Error:' "$work/truncated.stderr"
+grep -Fq 'Exit status: failed' "$work/truncated.stderr"
 test ! -e "$work/truncated.frq.count"
 test -z "$(find "$work" -name '*.vcftools-ng.tmp.*' -print -quit)"
 
