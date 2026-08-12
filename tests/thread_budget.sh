@@ -48,6 +48,32 @@ affinity_cpu_count() {
     }'
 }
 
+available_cpus=$(affinity_cpu_count /proc/self/status)
+if [[ ! "$available_cpus" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Could not determine the test process CPU allocation" >&2
+    exit 1
+fi
+
+effective_budget() {
+    local requested=$1
+    if ((requested < available_cpus)); then
+        printf '%s\n' "$requested"
+    else
+        printf '%s\n' "$available_cpus"
+    fi
+}
+
+dump_failure() {
+    local message=$1
+    local stderr_file=$2
+    echo "$message" >&2
+    echo "Test allocation: $available_cpus CPU(s)" >&2
+    if [[ -s "$stderr_file" ]]; then
+        echo "--- vcftools-ng stderr ---" >&2
+        sed -n '1,240p' "$stderr_file" >&2
+    fi
+}
+
 tree_max_affinity_count() {
     local root=$1
     local maximum=0
@@ -76,6 +102,8 @@ tree_max_affinity_count() {
 
 run_and_sample() {
     local budget=$1
+    local effective
+    effective=$(effective_budget "$budget")
     local scenario=$2
     shift 2
     local prefix="$work/${scenario}-${budget}"
@@ -83,15 +111,18 @@ run_and_sample() {
         >"$prefix.stdout" 2>"$prefix.stderr" &
     local pid=$!
     local peak=0
-    : >"$prefix.affinity"
+    local peak_affinity=0
     while [[ -d "/proc/$pid/task" ]]; do
         local tasks
         tasks=$(tree_thread_count "$pid")
         if ((tasks > peak)); then
             peak=$tasks
         fi
-        tree_max_affinity_count "$pid" \
-            >"$prefix.affinity" 2>/dev/null || true
+        local affinity=0
+        affinity=$(tree_max_affinity_count "$pid" 2>/dev/null || true)
+        if [[ "$affinity" =~ ^[0-9]+$ ]] && ((affinity > peak_affinity)); then
+            peak_affinity=$affinity
+        fi
     done
     if ! wait "$pid"; then
         sed -n '1,240p' "$prefix.stderr" >&2
@@ -100,13 +131,19 @@ run_and_sample() {
     # Worker pools may overlap while blocked on I/O or ordered queues. The
     # process-wide affinity is the strict CPU budget: every thread and child
     # inherits at most N runnable CPUs even when more waitable pthreads exist.
-    local affinity_count
-    affinity_count=$(<"$prefix.affinity")
-    if ((affinity_count > budget)); then
-        echo "CPU budget exceeded: scenario=$scenario requested=$budget affinity=$affinity_count" >&2
+    if ((peak_affinity > effective)); then
+        dump_failure \
+            "CPU budget exceeded: scenario=$scenario requested=$budget effective=$effective affinity=$peak_affinity" \
+            "$prefix.stderr"
         return 1
     fi
-    grep -Fq "Threads: $budget (user specified)" "$prefix.stderr"
+    if ! grep -Fq "Requested threads: $budget" "$prefix.stderr" ||
+       ! grep -Fq "Effective threads: $effective" "$prefix.stderr"; then
+        dump_failure \
+            "Missing thread-budget diagnostic: scenario=$scenario requested=$budget effective=$effective" \
+            "$prefix.stderr"
+        return 1
+    fi
     if ! grep -Fq 'Output compression threads:' "$prefix.stderr"; then
         grep -Fq 'VCF compression ' "$prefix.stderr"
     fi
@@ -155,6 +192,8 @@ tree_thread_count() {
 
 run_and_sample_output() {
     local budget=$1
+    local effective
+    effective=$(effective_budget "$budget")
     local scenario=$2
     local suffix=$3
     shift 3
@@ -163,24 +202,34 @@ run_and_sample_output() {
         >"$prefix.stdout" 2>"$prefix.stderr" &
     local pid=$!
     local peak=0
-    : >"$prefix.affinity"
+    local peak_affinity=0
     while [[ -d "/proc/$pid/task" ]]; do
         local tasks
         tasks=$(tree_thread_count "$pid")
         if ((tasks > peak)); then
             peak=$tasks
         fi
-        tree_max_affinity_count "$pid" \
-            >"$prefix.affinity" 2>/dev/null || true
+        local affinity=0
+        affinity=$(tree_max_affinity_count "$pid" 2>/dev/null || true)
+        if [[ "$affinity" =~ ^[0-9]+$ ]] && ((affinity > peak_affinity)); then
+            peak_affinity=$affinity
+        fi
     done
     if ! wait "$pid"; then
         sed -n '1,240p' "$prefix.stderr" >&2
         return 1
     fi
-    local affinity_count
-    affinity_count=$(<"$prefix.affinity")
-    if ((affinity_count > budget)); then
-        echo "CPU budget exceeded: scenario=$scenario requested=$budget affinity=$affinity_count" >&2
+    if ((peak_affinity > effective)); then
+        dump_failure \
+            "CPU budget exceeded: scenario=$scenario requested=$budget effective=$effective affinity=$peak_affinity" \
+            "$prefix.stderr"
+        return 1
+    fi
+    if ! grep -Fq "Requested threads: $budget" "$prefix.stderr" ||
+       ! grep -Fq "Effective threads: $effective" "$prefix.stderr"; then
+        dump_failure \
+            "Missing thread-budget diagnostic: scenario=$scenario requested=$budget effective=$effective" \
+            "$prefix.stderr"
         return 1
     fi
     if ((budget == 1)); then
@@ -208,7 +257,8 @@ for budget in 1 2 4 8; do
     run_and_sample_output "$budget" auto-index \
         .recode.vcf.gz \
         --gzvcf "$work/auto-index-$budget.vcf.gz" --recode
-    if ((budget == 1)); then
+    budget_effective=$(effective_budget "$budget")
+    if ((budget_effective == 1)); then
         test ! -e "$work/auto-index-$budget.vcf.gz.csi"
     else
         test -s "$work/auto-index-$budget.vcf.gz.csi"
