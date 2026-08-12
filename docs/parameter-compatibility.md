@@ -1,6 +1,6 @@
 # Parameter compatibility and optimization status
 
-This document describes the v0.14.1 command-line surface. VCFtools 0.1.17
+This document describes the v0.14.2 command-line surface. VCFtools 0.1.17
 source and output files are the compatibility oracle.
 
 The terms below are deliberately separate:
@@ -22,7 +22,7 @@ coverage, and execute through a lower-overhead or parallel vcftools-ng path.
 Performance is measured by workload group rather than by claiming an
 independent speedup for every possible combination.
 
-v0.14.1 compiles these requirements into one immutable `QueryPlan`. The plan
+v0.14.1 introduced the immutable `QueryPlan`, retained by v0.14.2. The plan
 decides required FORMAT fields, fused-kernel eligibility, general-pipeline
 decode, and the logged fallback reason before scientific outputs are opened.
 This changes execution cost, not the parameter compatibility categories below.
